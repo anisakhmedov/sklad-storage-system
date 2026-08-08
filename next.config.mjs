@@ -14,6 +14,13 @@ const nextConfig = {
     outputFileTracingIncludes: {
       "/api/**/*": ["./templates/fonts/**"],
     },
+    // pdfkit хранит свои встроенные шрифтовые метрики (Helvetica.afm и т.п.) как файлы
+    // рядом с собой в node_modules/pdfkit и читает их с диска по относительному пути в
+    // рантайме. При обычном webpack-бандлинге serverless-функции эти файлы теряются
+    // (весь код схлопывается в один chunks/*.js) — получаем ENOENT в проде. Исключаем
+    // pdfkit из webpack-бандла: тогда @vercel/nft просто трассирует и копирует его
+    // node_modules-папку как есть, вместе с data/*.afm.
+    serverComponentsExternalPackages: ["pdfkit"],
   },
 };
 
