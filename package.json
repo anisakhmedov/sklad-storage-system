@@ -8,14 +8,17 @@
     "start": "next start",
     "lint": "next lint",
     "seed": "tsx scripts/seed.ts",
-    "set-webhook": "tsx scripts/setWebhook.ts"
+    "set-webhook": "tsx scripts/setWebhook.ts",
+    "extract-contract-template": "node scripts/extractContractTemplate.js"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",
     "grammy": "^1.24.1",
+    "iconv-lite": "^0.6.3",
     "jsonwebtoken": "^9.0.2",
     "mongoose": "^8.5.2",
     "next": "14.2.35",
+    "pdfkit": "^0.15.2",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "recharts": "^2.12.7",
@@ -25,6 +28,7 @@
     "@types/bcryptjs": "^2.4.6",
     "@types/jsonwebtoken": "^9.0.6",
     "@types/node": "^20.14.13",
+    "@types/pdfkit": "^0.13.9",
     "@types/react": "^18.3.3",
     "@types/react-dom": "^18.3.0",
     "autoprefixer": "^10.4.19",

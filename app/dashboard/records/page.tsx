@@ -11,13 +11,31 @@ interface EmployeeRef {
   name: string;
   phone: string;
 }
+
+interface GoodsOwnerIndividual {
+  type: "individual";
+  fullName: string;
+  phone: string;
+  passportData: string;
+  pinfl: string;
+  passportIssueDate: string;
+  passportIssuedBy: string;
+}
+interface GoodsOwnerCompany {
+  type: "company";
+  companyName: string;
+  inn: string;
+  directorName: string;
+}
+type GoodsOwner = GoodsOwnerIndividual | GoodsOwnerCompany;
+
 interface Record_ {
   _id: string;
   containerId: ContainerRef | string;
   productName: string;
   quantity: number;
   unit: string;
-  goodsOwner: { fullName: string; phone: string; passportData: string; pinfl: string };
+  goodsOwner: GoodsOwner;
   payment: { amount: number; method: string };
   createdByEmployeeId?: EmployeeRef | string;
   createdAt: string;
@@ -27,6 +45,22 @@ interface Record_ {
 
 const unitLabels: Record<string, string> = { tonne: "т", kg: "кг", box: "ящ.", piece: "шт." };
 const methodLabels: Record<string, string> = { cash: "Наличные", terminal: "Терминал", transfer: "Перевод" };
+
+const blankIndividual: GoodsOwnerIndividual = {
+  type: "individual",
+  fullName: "",
+  phone: "",
+  passportData: "",
+  pinfl: "",
+  passportIssueDate: "",
+  passportIssuedBy: "",
+};
+const blankCompany: GoodsOwnerCompany = {
+  type: "company",
+  companyName: "",
+  inn: "",
+  directorName: "",
+};
 
 export default function RecordsPage() {
   const [records, setRecords] = useState<Record_[]>([]);
@@ -41,6 +75,8 @@ export default function RecordsPage() {
     to: "",
   });
   const [editing, setEditing] = useState<Record_ | null>(null);
+  const [editError, setEditError] = useState<string | null>(null);
+  const [editBusy, setEditBusy] = useState(false);
   const [historyFor, setHistoryFor] = useState<Record_ | null>(null);
   const [history, setHistory] = useState<any[]>([]);
 
@@ -78,19 +114,30 @@ export default function RecordsPage() {
   async function handleSaveEdit(e: React.FormEvent) {
     e.preventDefault();
     if (!editing) return;
-    await fetch(`/api/records/${editing._id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        productName: editing.productName,
-        quantity: editing.quantity,
-        unit: editing.unit,
-        goodsOwner: editing.goodsOwner,
-        payment: editing.payment,
-      }),
-    });
-    setEditing(null);
-    await load();
+    setEditBusy(true);
+    setEditError(null);
+    try {
+      const res = await fetch(`/api/records/${editing._id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          productName: editing.productName,
+          quantity: editing.quantity,
+          unit: editing.unit,
+          goodsOwner: editing.goodsOwner,
+          payment: editing.payment,
+        }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        setEditError(data.error || "Не удалось сохранить изменения");
+        return;
+      }
+      setEditing(null);
+      await load();
+    } finally {
+      setEditBusy(false);
+    }
   }
 
   async function openHistory(rec: Record_) {
@@ -200,8 +247,28 @@ export default function RecordsPage() {
                     {r.quantity} {unitLabels[r.unit]}
                   </td>
                   <td>
-                    <div>{r.goodsOwner.fullName}</div>
-                    <div className="text-xs text-slate-400">{r.goodsOwner.phone}</div>
+                    {r.goodsOwner.type === "individual" ? (
+                      <>
+                        <div>{r.goodsOwner.fullName}</div>
+                        <div className="text-xs text-slate-400">{r.goodsOwner.phone}</div>
+                      </>
+                    ) : (
+                      <>
+                        <div>{r.goodsOwner.companyName}</div>
+                        <div className="text-xs text-slate-400">
+                          ИНН {r.goodsOwner.inn} · дир. {r.goodsOwner.directorName}
+                        </div>
+                      </>
+                    )}
+                    <span
+                      className={`badge mt-1 ${
+                        r.goodsOwner.type === "individual"
+                          ? "bg-brand-50 text-brand-700"
+                          : "bg-slate-100 text-slate-600"
+                      }`}
+                    >
+                      {r.goodsOwner.type === "individual" ? "физ. лицо" : "юр. лицо"}
+                    </span>
                   </td>
                   <td className="whitespace-nowrap">
                     {r.payment.amount.toLocaleString("ru-RU")} · {methodLabels[r.payment.method]}
@@ -212,7 +279,23 @@ export default function RecordsPage() {
                       : "—"}
                   </td>
                   <td className="whitespace-nowrap">
-                    <button className="btn-secondary mr-2" onClick={() => setEditing(r)}>
+                    {r.goodsOwner.type === "individual" && (
+                      <a
+                        className="btn-secondary mr-2"
+                        href={`/api/records/${r._id}/contract`}
+                        target="_blank"
+                        rel="noreferrer"
+                      >
+                        Договор
+                      </a>
+                    )}
+                    <button
+                      className="btn-secondary mr-2"
+                      onClick={() => {
+                        setEditError(null);
+                        setEditing(r);
+                      }}
+                    >
                       Изменить
                     </button>
                     <button className="btn-secondary mr-2" onClick={() => openHistory(r)}>
@@ -271,53 +354,146 @@ export default function RecordsPage() {
                 </div>
               </div>
 
-              <p className="text-sm font-medium text-slate-600 pt-2">Владелец груза</p>
-              <div className="grid grid-cols-2 gap-3">
-                <input
-                  className="input"
-                  placeholder="ФИО"
-                  value={editing.goodsOwner.fullName}
-                  onChange={(e) =>
-                    setEditing({
-                      ...editing,
-                      goodsOwner: { ...editing.goodsOwner, fullName: e.target.value },
-                    })
-                  }
-                />
-                <input
-                  className="input"
-                  placeholder="Телефон"
-                  value={editing.goodsOwner.phone}
-                  onChange={(e) =>
-                    setEditing({
-                      ...editing,
-                      goodsOwner: { ...editing.goodsOwner, phone: e.target.value },
-                    })
-                  }
-                />
-                <input
-                  className="input"
-                  placeholder="Паспортные данные"
-                  value={editing.goodsOwner.passportData}
-                  onChange={(e) =>
-                    setEditing({
-                      ...editing,
-                      goodsOwner: { ...editing.goodsOwner, passportData: e.target.value },
-                    })
-                  }
-                />
-                <input
-                  className="input"
-                  placeholder="ПИНФЛ"
-                  value={editing.goodsOwner.pinfl}
-                  onChange={(e) =>
-                    setEditing({
-                      ...editing,
-                      goodsOwner: { ...editing.goodsOwner, pinfl: e.target.value },
-                    })
-                  }
-                />
+              <div className="flex items-center justify-between pt-2">
+                <p className="text-sm font-medium text-slate-600">Владелец груза</p>
+                <div className="flex gap-1 text-xs">
+                  <button
+                    type="button"
+                    className={`rounded px-2 py-1 border ${
+                      editing.goodsOwner.type === "individual"
+                        ? "border-brand-600 bg-brand-50 text-brand-700"
+                        : "border-slate-200 text-slate-500"
+                    }`}
+                    onClick={() => setEditing({ ...editing, goodsOwner: { ...blankIndividual } })}
+                  >
+                    Физ. лицо
+                  </button>
+                  <button
+                    type="button"
+                    className={`rounded px-2 py-1 border ${
+                      editing.goodsOwner.type === "company"
+                        ? "border-brand-600 bg-brand-50 text-brand-700"
+                        : "border-slate-200 text-slate-500"
+                    }`}
+                    onClick={() => setEditing({ ...editing, goodsOwner: { ...blankCompany } })}
+                  >
+                    Юр. лицо
+                  </button>
+                </div>
               </div>
+
+              {editing.goodsOwner.type === "individual" ? (
+                <div className="grid grid-cols-2 gap-3">
+                  <input
+                    className="input"
+                    placeholder="ФИО"
+                    value={editing.goodsOwner.fullName}
+                    onChange={(e) =>
+                      setEditing({
+                        ...editing,
+                        goodsOwner: { ...editing.goodsOwner, fullName: e.target.value } as GoodsOwnerIndividual,
+                      })
+                    }
+                  />
+                  <input
+                    className="input"
+                    placeholder="Телефон"
+                    value={editing.goodsOwner.phone}
+                    onChange={(e) =>
+                      setEditing({
+                        ...editing,
+                        goodsOwner: { ...editing.goodsOwner, phone: e.target.value } as GoodsOwnerIndividual,
+                      })
+                    }
+                  />
+                  <input
+                    className="input"
+                    placeholder="Номер паспорта"
+                    value={editing.goodsOwner.passportData}
+                    onChange={(e) =>
+                      setEditing({
+                        ...editing,
+                        goodsOwner: { ...editing.goodsOwner, passportData: e.target.value } as GoodsOwnerIndividual,
+                      })
+                    }
+                  />
+                  <input
+                    className="input"
+                    placeholder="ПИНФЛ"
+                    value={editing.goodsOwner.pinfl}
+                    onChange={(e) =>
+                      setEditing({
+                        ...editing,
+                        goodsOwner: { ...editing.goodsOwner, pinfl: e.target.value } as GoodsOwnerIndividual,
+                      })
+                    }
+                  />
+                  <input
+                    className="input"
+                    placeholder="Дата выдачи паспорта"
+                    value={editing.goodsOwner.passportIssueDate}
+                    onChange={(e) =>
+                      setEditing({
+                        ...editing,
+                        goodsOwner: {
+                          ...editing.goodsOwner,
+                          passportIssueDate: e.target.value,
+                        } as GoodsOwnerIndividual,
+                      })
+                    }
+                  />
+                  <input
+                    className="input"
+                    placeholder="Кем выдан паспорт"
+                    value={editing.goodsOwner.passportIssuedBy}
+                    onChange={(e) =>
+                      setEditing({
+                        ...editing,
+                        goodsOwner: {
+                          ...editing.goodsOwner,
+                          passportIssuedBy: e.target.value,
+                        } as GoodsOwnerIndividual,
+                      })
+                    }
+                  />
+                </div>
+              ) : (
+                <div className="grid grid-cols-2 gap-3">
+                  <input
+                    className="input col-span-2"
+                    placeholder="Наименование фирмы"
+                    value={editing.goodsOwner.companyName}
+                    onChange={(e) =>
+                      setEditing({
+                        ...editing,
+                        goodsOwner: { ...editing.goodsOwner, companyName: e.target.value } as GoodsOwnerCompany,
+                      })
+                    }
+                  />
+                  <input
+                    className="input"
+                    placeholder="ИНН"
+                    value={editing.goodsOwner.inn}
+                    onChange={(e) =>
+                      setEditing({
+                        ...editing,
+                        goodsOwner: { ...editing.goodsOwner, inn: e.target.value } as GoodsOwnerCompany,
+                      })
+                    }
+                  />
+                  <input
+                    className="input"
+                    placeholder="Имя и фамилия директора"
+                    value={editing.goodsOwner.directorName}
+                    onChange={(e) =>
+                      setEditing({
+                        ...editing,
+                        goodsOwner: { ...editing.goodsOwner, directorName: e.target.value } as GoodsOwnerCompany,
+                      })
+                    }
+                  />
+                </div>
+              )}
 
               <p className="text-sm font-medium text-slate-600 pt-2">Оплата</p>
               <div className="grid grid-cols-2 gap-3">
@@ -349,9 +525,19 @@ export default function RecordsPage() {
                 </select>
               </div>
 
+              {editError && <p className="text-sm text-red-600">{editError}</p>}
               <div className="flex gap-2 pt-2">
-                <button className="btn-primary">Сохранить</button>
-                <button type="button" className="btn-secondary" onClick={() => setEditing(null)}>
+                <button className="btn-primary" disabled={editBusy}>
+                  {editBusy ? "Сохранение…" : "Сохранить"}
+                </button>
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  onClick={() => {
+                    setEditError(null);
+                    setEditing(null);
+                  }}
+                >
                   Отмена
                 </button>
               </div>

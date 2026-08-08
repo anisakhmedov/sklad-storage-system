@@ -6,6 +6,7 @@ import { resolveEmployee } from "@/lib/miniAuth";
 import { storageRecordCreateSchema } from "@/lib/validation";
 import { jsonError, zodErrorResponse } from "@/lib/apiHelpers";
 import { logAudit } from "@/lib/audit";
+import { notifyGoodsOwnerRegistered, sendContractToEmployee } from "@/lib/telegramNotify";
 
 export async function POST(req: NextRequest) {
   const { tgUser, employee } = await resolveEmployee(req);
@@ -45,6 +46,16 @@ export async function POST(req: NextRequest) {
       unit: parsed.data.unit,
     },
   });
+
+  // Уведомления — часть 2/3 ТЗ. Best-effort: сбой Telegram (или отсутствие токена в dev)
+  // не должен ронять сохранение записи, поэтому запись уже успешно создана и отвечена
+  // клиенту независимо от результата этих вызовов (см. lib/telegramNotify.ts).
+  if (record.goodsOwner.type === "individual") {
+    await Promise.all([
+      notifyGoodsOwnerRegistered(record, container.name),
+      sendContractToEmployee(employee.telegramId, record, container.name),
+    ]);
+  }
 
   return NextResponse.json({ record: { id: String(record._id) } });
 }

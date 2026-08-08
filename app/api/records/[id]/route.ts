@@ -29,7 +29,9 @@ export async function PATCH(
   if (data.quantity !== undefined) record.quantity = data.quantity;
   if (data.unit !== undefined) record.unit = data.unit;
   if (data.goodsOwner !== undefined) {
-    record.goodsOwner = { ...record.goodsOwner, ...data.goodsOwner } as any;
+    // Полная замена, а не слияние: goodsOwner — дискриминированный union (individual/company),
+    // при смене типа арендатора поля старого варианта не должны "просачиваться" в новый.
+    record.goodsOwner = data.goodsOwner as any;
   }
   if (data.payment !== undefined) {
     record.payment = { ...record.payment, ...data.payment } as any;

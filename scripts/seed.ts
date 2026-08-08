@@ -81,6 +81,9 @@ async function main() {
   );
 
   // --- Тестовые записи ---
+  // Телефон первой записи (+998901234567) сознательно тот же, что стоит указать в
+  // Telegram-профиле при ручной проверке идентификации владельца груза через бота
+  // (см. README → «Уведомления и сводка владельцам груза», раздел «Как проверить руками»).
   const existingRecords = await StorageRecord.countDocuments();
   if (existingRecords === 0) {
     await StorageRecord.create([
@@ -90,10 +93,13 @@ async function main() {
         quantity: 5,
         unit: "tonne",
         goodsOwner: {
+          type: "individual",
           fullName: "Иванов Иван Иванович",
           phone: "+998901234567",
           passportData: "AB1234567",
           pinfl: "12345678901234",
+          passportIssueDate: "12.05.2020",
+          passportIssuedBy: "Самаркандский областной ОВД",
         },
         payment: { amount: 500000, method: "cash" },
         createdByEmployeeId: employee._id,
@@ -104,12 +110,15 @@ async function main() {
         quantity: 120,
         unit: "box",
         goodsOwner: {
-          fullName: "Петров Пётр Петрович",
-          phone: "+998907654321",
-          passportData: "CD7654321",
-          pinfl: "43210987654321",
+          type: "individual",
+          fullName: "Иванов Иван Иванович",
+          phone: "+998901234567",
+          passportData: "AB1234567",
+          pinfl: "12345678901234",
+          passportIssueDate: "12.05.2020",
+          passportIssuedBy: "Самаркандский областной ОВД",
         },
-        payment: { amount: 300000, method: "terminal" },
+        payment: { amount: 150000, method: "terminal" },
         createdByEmployeeId: employee._id,
       },
       {
@@ -118,16 +127,33 @@ async function main() {
         quantity: 2000,
         unit: "kg",
         goodsOwner: {
+          type: "individual",
           fullName: "Сидорова Анна Владимировна",
           phone: "+998909876543",
           passportData: "EF1122334",
           pinfl: "56789012345678",
+          passportIssueDate: "03.11.2018",
+          passportIssuedBy: "Булунгурский районный ОВД",
         },
         payment: { amount: 800000, method: "transfer" },
         createdByEmployeeId: employee._id,
       },
+      {
+        containerId: containerB._id,
+        productName: "Рис (мешки)",
+        quantity: 300,
+        unit: "box",
+        goodsOwner: {
+          type: "company",
+          companyName: 'ООО "Samarqand Agro Trade"',
+          inn: "305874112",
+          directorName: "Каримов Бахтиёр Рустамович",
+        },
+        payment: { amount: 1200000, method: "transfer" },
+        createdByEmployeeId: employee._id,
+      },
     ]);
-    console.log("Тестовые записи созданы (3 шт.)");
+    console.log("Тестовые записи созданы (4 шт.: 3 физлица на 2 номерах + 1 юрлицо)");
   } else {
     console.log("Записи уже существуют — пропускаем создание тестовых записей");
   }

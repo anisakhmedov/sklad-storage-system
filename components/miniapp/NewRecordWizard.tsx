@@ -11,16 +11,25 @@ interface Container {
 
 type Unit = "tonne" | "kg" | "box" | "piece";
 type Method = "cash" | "terminal" | "transfer";
+type OwnerType = "individual" | "company";
 
 const emptyForm = {
   containerId: "",
   productName: "",
   quantity: "",
   unit: "tonne" as Unit,
+  ownerType: "individual" as OwnerType,
+  // физическое лицо
   ownerFullName: "",
   ownerPhone: "",
   ownerPassport: "",
   ownerPinfl: "",
+  ownerPassportIssueDate: "",
+  ownerPassportIssuedBy: "",
+  // юридическое лицо
+  companyName: "",
+  companyInn: "",
+  companyDirector: "",
   amount: "",
   method: "cash" as Method,
 };
@@ -47,8 +56,23 @@ export default function NewRecordWizard({ onExit }: { onExit: () => void }) {
     if (step === 1 && (!form.productName || !form.quantity)) {
       return setError("Заполните наименование и количество");
     }
-    if (step === 2 && (!form.ownerFullName || !form.ownerPhone || !form.ownerPassport || !form.ownerPinfl)) {
-      return setError("Заполните все данные владельца груза");
+    if (step === 2) {
+      if (form.ownerType === "individual") {
+        if (
+          !form.ownerFullName ||
+          !form.ownerPhone ||
+          !form.ownerPassport ||
+          !form.ownerPinfl ||
+          !form.ownerPassportIssueDate ||
+          !form.ownerPassportIssuedBy
+        ) {
+          return setError("Заполните все данные владельца груза (физ. лицо)");
+        }
+      } else {
+        if (!form.companyName || !form.companyInn || !form.companyDirector) {
+          return setError("Заполните все данные владельца груза (юр. лицо)");
+        }
+      }
     }
     if (step === 3 && !form.amount) return setError("Укажите сумму оплаты");
     setStep((s) => s + 1);
@@ -63,6 +87,24 @@ export default function NewRecordWizard({ onExit }: { onExit: () => void }) {
     setBusy(true);
     setError(null);
     try {
+      const goodsOwner =
+        form.ownerType === "individual"
+          ? {
+              type: "individual" as const,
+              fullName: form.ownerFullName,
+              phone: form.ownerPhone,
+              passportData: form.ownerPassport,
+              pinfl: form.ownerPinfl,
+              passportIssueDate: form.ownerPassportIssueDate,
+              passportIssuedBy: form.ownerPassportIssuedBy,
+            }
+          : {
+              type: "company" as const,
+              companyName: form.companyName,
+              inn: form.companyInn,
+              directorName: form.companyDirector,
+            };
+
       const res = await miniAppFetch("/api/miniapp/records", {
         method: "POST",
         body: JSON.stringify({
@@ -70,12 +112,7 @@ export default function NewRecordWizard({ onExit }: { onExit: () => void }) {
           productName: form.productName,
           quantity: form.quantity,
           unit: form.unit,
-          goodsOwner: {
-            fullName: form.ownerFullName,
-            phone: form.ownerPhone,
-            passportData: form.ownerPassport,
-            pinfl: form.ownerPinfl,
-          },
+          goodsOwner,
           payment: { amount: form.amount, method: form.method },
         }),
       });
@@ -101,6 +138,11 @@ export default function NewRecordWizard({ onExit }: { onExit: () => void }) {
       <div className="pt-10 text-center">
         <div className="text-5xl mb-4">✅</div>
         <h1 className="text-lg font-semibold text-slate-800 mb-2">Запись сохранена</h1>
+        <p className="text-sm text-slate-500 mb-2">
+          {form.ownerType === "individual"
+            ? "PDF договора отправлен вам в этот чат."
+            : "Данные юридического лица сохранены. Договор для юрлиц не формируется."}
+        </p>
         <p className="text-sm text-slate-500 mb-6">Хотите добавить ещё одну позицию?</p>
         <div className="space-y-2">
           <button className="btn-primary w-full" onClick={() => startAnother(true)}>
@@ -195,40 +237,121 @@ export default function NewRecordWizard({ onExit }: { onExit: () => void }) {
 
       {step === 2 && (
         <div className="space-y-3">
-          <div>
-            <label className="label">ФИО владельца груза</label>
-            <input
-              className="input"
-              value={form.ownerFullName}
-              onChange={(e) => setForm({ ...form, ownerFullName: e.target.value })}
-            />
+          <label className="label">Тип арендатора</label>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              className={`flex-1 rounded-lg border px-3 py-2 text-sm font-medium ${
+                form.ownerType === "individual"
+                  ? "border-brand-600 bg-brand-50 text-brand-700"
+                  : "border-slate-200 bg-white text-slate-600"
+              }`}
+              onClick={() => setForm({ ...form, ownerType: "individual" })}
+            >
+              Физическое лицо
+            </button>
+            <button
+              type="button"
+              className={`flex-1 rounded-lg border px-3 py-2 text-sm font-medium ${
+                form.ownerType === "company"
+                  ? "border-brand-600 bg-brand-50 text-brand-700"
+                  : "border-slate-200 bg-white text-slate-600"
+              }`}
+              onClick={() => setForm({ ...form, ownerType: "company" })}
+            >
+              Юридическое лицо
+            </button>
           </div>
-          <div>
-            <label className="label">Телефон</label>
-            <input
-              className="input"
-              value={form.ownerPhone}
-              onChange={(e) => setForm({ ...form, ownerPhone: e.target.value })}
-              placeholder="+998901234567"
-            />
-          </div>
-          <div>
-            <label className="label">Паспортные данные</label>
-            <input
-              className="input"
-              value={form.ownerPassport}
-              onChange={(e) => setForm({ ...form, ownerPassport: e.target.value })}
-              placeholder="AB1234567"
-            />
-          </div>
-          <div>
-            <label className="label">ПИНФЛ</label>
-            <input
-              className="input"
-              value={form.ownerPinfl}
-              onChange={(e) => setForm({ ...form, ownerPinfl: e.target.value })}
-            />
-          </div>
+
+          {form.ownerType === "individual" ? (
+            <>
+              <p className="text-xs text-slate-400">
+                Для физлиц автоматически формируется договор — паспортные данные и ПИНФЛ
+                подставляются в его текст.
+              </p>
+              <div>
+                <label className="label">ФИО владельца груза</label>
+                <input
+                  className="input"
+                  value={form.ownerFullName}
+                  onChange={(e) => setForm({ ...form, ownerFullName: e.target.value })}
+                />
+              </div>
+              <div>
+                <label className="label">Телефон</label>
+                <input
+                  className="input"
+                  value={form.ownerPhone}
+                  onChange={(e) => setForm({ ...form, ownerPhone: e.target.value })}
+                  placeholder="+998901234567"
+                />
+              </div>
+              <div>
+                <label className="label">Номер паспорта</label>
+                <input
+                  className="input"
+                  value={form.ownerPassport}
+                  onChange={(e) => setForm({ ...form, ownerPassport: e.target.value })}
+                  placeholder="AB1234567"
+                />
+              </div>
+              <div>
+                <label className="label">ПИНФЛ</label>
+                <input
+                  className="input"
+                  value={form.ownerPinfl}
+                  onChange={(e) => setForm({ ...form, ownerPinfl: e.target.value })}
+                />
+              </div>
+              <div>
+                <label className="label">Дата выдачи паспорта</label>
+                <input
+                  className="input"
+                  value={form.ownerPassportIssueDate}
+                  onChange={(e) => setForm({ ...form, ownerPassportIssueDate: e.target.value })}
+                  placeholder="12.05.2020"
+                />
+              </div>
+              <div>
+                <label className="label">Кем выдан паспорт</label>
+                <input
+                  className="input"
+                  value={form.ownerPassportIssuedBy}
+                  onChange={(e) => setForm({ ...form, ownerPassportIssuedBy: e.target.value })}
+                />
+              </div>
+            </>
+          ) : (
+            <>
+              <p className="text-xs text-slate-400">
+                Для юрлиц договор не формируется — данные только сохраняются.
+              </p>
+              <div>
+                <label className="label">Наименование фирмы</label>
+                <input
+                  className="input"
+                  value={form.companyName}
+                  onChange={(e) => setForm({ ...form, companyName: e.target.value })}
+                />
+              </div>
+              <div>
+                <label className="label">ИНН</label>
+                <input
+                  className="input"
+                  value={form.companyInn}
+                  onChange={(e) => setForm({ ...form, companyInn: e.target.value })}
+                />
+              </div>
+              <div>
+                <label className="label">Имя и фамилия директора</label>
+                <input
+                  className="input"
+                  value={form.companyDirector}
+                  onChange={(e) => setForm({ ...form, companyDirector: e.target.value })}
+                />
+              </div>
+            </>
+          )}
         </div>
       )}
 
@@ -265,10 +388,23 @@ export default function NewRecordWizard({ onExit }: { onExit: () => void }) {
             <Row label="Контейнер" value={containers.find((c) => c.id === form.containerId)?.name} />
             <Row label="Товар" value={form.productName} />
             <Row label="Количество" value={`${form.quantity} ${form.unit}`} />
-            <Row label="Владелец груза" value={form.ownerFullName} />
-            <Row label="Телефон владельца" value={form.ownerPhone} />
-            <Row label="Паспорт" value={form.ownerPassport} />
-            <Row label="ПИНФЛ" value={form.ownerPinfl} />
+            <Row label="Тип арендатора" value={form.ownerType === "individual" ? "Физ. лицо" : "Юр. лицо"} />
+            {form.ownerType === "individual" ? (
+              <>
+                <Row label="Владелец груза" value={form.ownerFullName} />
+                <Row label="Телефон владельца" value={form.ownerPhone} />
+                <Row label="Паспорт" value={form.ownerPassport} />
+                <Row label="ПИНФЛ" value={form.ownerPinfl} />
+                <Row label="Дата выдачи" value={form.ownerPassportIssueDate} />
+                <Row label="Кем выдан" value={form.ownerPassportIssuedBy} />
+              </>
+            ) : (
+              <>
+                <Row label="Фирма" value={form.companyName} />
+                <Row label="ИНН" value={form.companyInn} />
+                <Row label="Директор" value={form.companyDirector} />
+              </>
+            )}
             <Row label="Оплата" value={`${form.amount} (${form.method})`} />
           </div>
         </div>

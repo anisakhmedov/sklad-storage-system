@@ -1,8 +1,10 @@
 import { z } from "zod";
+import { normalizePhone } from "./phone";
 
 export const unitEnum = z.enum(["tonne", "kg", "box", "piece"]);
 export const paymentMethodEnum = z.enum(["cash", "terminal", "transfer"]);
 export const webRoleEnum = z.enum(["owner", "trusted"]);
+export const goodsOwnerTypeEnum = z.enum(["individual", "company"]);
 
 export const loginSchema = z.object({
   identifier: z.string().min(3, "Слишком короткий идентификатор"),
@@ -25,12 +27,34 @@ export const containerCreateSchema = z.object({
 
 export const containerUpdateSchema = containerCreateSchema.partial();
 
-export const goodsOwnerSchema = z.object({
+// Арендатор — физическое лицо: договор формируется именно из этих полей
+// (см. lib/contract/generateContract.ts), поэтому они хранятся открытым текстом.
+export const goodsOwnerIndividualSchema = z.object({
+  type: z.literal("individual"),
   fullName: z.string().min(2, "Укажите ФИО владельца груза").max(200),
-  phone: z.string().min(5, "Укажите телефон владельца груза").max(30),
-  passportData: z.string().min(3, "Укажите паспортные данные").max(100),
+  phone: z
+    .string()
+    .min(5, "Укажите телефон владельца груза")
+    .max(30)
+    .transform((v) => normalizePhone(v)),
+  passportData: z.string().min(3, "Укажите номер паспорта").max(100),
   pinfl: z.string().min(3, "Укажите ПИНФЛ").max(50),
+  passportIssueDate: z.string().min(4, "Укажите дату выдачи паспорта").max(30),
+  passportIssuedBy: z.string().min(2, "Укажите, кем выдан паспорт").max(300),
 });
+
+// Арендатор — юридическое лицо: договор не формируется, поля только сохраняются.
+export const goodsOwnerCompanySchema = z.object({
+  type: z.literal("company"),
+  companyName: z.string().min(2, "Укажите наименование фирмы").max(300),
+  inn: z.string().min(3, "Укажите ИНН").max(50),
+  directorName: z.string().min(2, "Укажите имя и фамилию директора").max(200),
+});
+
+export const goodsOwnerSchema = z.discriminatedUnion("type", [
+  goodsOwnerIndividualSchema,
+  goodsOwnerCompanySchema,
+]);
 
 export const paymentSchema = z.object({
   amount: z.coerce.number().min(0, "Сумма не может быть отрицательной"),
@@ -64,6 +88,7 @@ export const withdrawalCreateSchema = z.object({
 export type LoginInput = z.infer<typeof loginSchema>;
 export type EmployeeRegisterInput = z.infer<typeof employeeRegisterSchema>;
 export type ContainerCreateInput = z.infer<typeof containerCreateSchema>;
+export type GoodsOwnerInput = z.infer<typeof goodsOwnerSchema>;
 export type StorageRecordCreateInput = z.infer<typeof storageRecordCreateSchema>;
 export type WebAccessCreateInput = z.infer<typeof webAccessCreateSchema>;
 export type WithdrawalCreateInput = z.infer<typeof withdrawalCreateSchema>;

@@ -1,8 +1,11 @@
 import { connectDB } from "./db";
-import { StorageRecord } from "@/models/StorageRecord";
+import { StorageRecord, Unit, PaymentMethod } from "@/models/StorageRecord";
 import { Withdrawal } from "@/models/Withdrawal";
 import { Container } from "@/models/Container";
 import { Types } from "mongoose";
+import { PAYMENT_METHOD_LABELS } from "./labels";
+
+export { PAYMENT_METHOD_LABELS };
 
 const UNITS = ["tonne", "kg", "box", "piece"] as const;
 
@@ -90,14 +93,8 @@ export async function getPaymentsByMethod(range: ReportRange) {
     },
   ]);
 
-  const labels: Record<string, string> = {
-    cash: "Наличные",
-    terminal: "Терминал",
-    transfer: "Перевод",
-  };
-
   return rows.map((r) => ({
-    method: labels[r._id as string] || r._id,
+    method: PAYMENT_METHOD_LABELS[r._id as PaymentMethod] || r._id,
     amount: r.total,
     count: r.count,
   }));
@@ -137,4 +134,80 @@ export async function getContainerBalances() {
     name: c.name,
     balances: balanceMap.get(String(c._id)) || emptyUnitRow(),
   }));
+}
+
+// ---------------------------------------------------------------------------
+// Сводка для владельца груза (часть 2 ТЗ) — присылается ботом в чат по запросу
+// (см. lib/goodsOwnerBot.ts). Договор формируется только для физлиц, поэтому и телефон
+// для идентификации есть только у goodsOwner.type === "individual".
+// ---------------------------------------------------------------------------
+
+export interface GoodsOwnerSummaryItem {
+  productName: string;
+  quantity: number;
+  unit: Unit;
+}
+
+export interface GoodsOwnerSummaryContainer {
+  containerId: string;
+  containerName: string;
+  items: GoodsOwnerSummaryItem[];
+  lastDate: Date;
+}
+
+export interface GoodsOwnerSummaryMethodTotal {
+  method: string;
+  amount: number;
+}
+
+export interface GoodsOwnerSummary {
+  recordCount: number;
+  containers: GoodsOwnerSummaryContainer[];
+  totalAmount: number;
+  byMethod: GoodsOwnerSummaryMethodTotal[];
+}
+
+/** Агрегирует все StorageRecord физлица с данным (уже нормализованным) телефоном. */
+export async function getGoodsOwnerSummary(phone: string): Promise<GoodsOwnerSummary> {
+  await connectDB();
+
+  const records = await StorageRecord.find({ "goodsOwner.type": "individual", "goodsOwner.phone": phone })
+    .sort({ createdAt: -1 })
+    .populate<{ containerId: { _id: Types.ObjectId; name: string } }>("containerId", "name")
+    .lean();
+
+  const containerMap = new Map<string, GoodsOwnerSummaryContainer>();
+  let totalAmount = 0;
+  const methodTotals = new Map<PaymentMethod, number>();
+
+  for (const r of records) {
+    const containerRef = r.containerId as unknown as { _id: Types.ObjectId; name: string } | null;
+    const cid = containerRef ? String(containerRef._id) : "unknown";
+    if (!containerMap.has(cid)) {
+      containerMap.set(cid, {
+        containerId: cid,
+        containerName: containerRef?.name || "—",
+        items: [],
+        lastDate: r.createdAt,
+      });
+    }
+    const entry = containerMap.get(cid)!;
+    entry.items.push({ productName: r.productName, quantity: r.quantity, unit: r.unit });
+    if (r.createdAt > entry.lastDate) entry.lastDate = r.createdAt;
+
+    totalAmount += r.payment.amount;
+    methodTotals.set(r.payment.method, (methodTotals.get(r.payment.method) || 0) + r.payment.amount);
+  }
+
+  const byMethod = Array.from(methodTotals.entries()).map(([method, amount]) => ({
+    method: PAYMENT_METHOD_LABELS[method] || method,
+    amount,
+  }));
+
+  return {
+    recordCount: records.length,
+    containers: Array.from(containerMap.values()),
+    totalAmount,
+    byMethod,
+  };
 }
