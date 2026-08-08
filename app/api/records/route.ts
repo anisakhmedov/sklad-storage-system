@@ -1,6 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { connectDB } from "@/lib/db";
 import { StorageRecord } from "@/models/StorageRecord";
+// Модели ниже нигде в этом файле напрямую не используются, но нужны, чтобы
+// mongoose зарегистрировал их схемы для .populate() — на Vercel каждый API-роут
+// собирается в отдельную serverless-функцию по фактическим импортам, и без
+// прямого импорта здесь populate() падает с MissingSchemaError в проде
+// (хотя в `next dev` ошибка не проявляется, т.к. там общий процесс).
+import "@/models/Container";
+import "@/models/Employee";
 import { requireWebUser } from "@/lib/auth";
 import { jsonError } from "@/lib/apiHelpers";
 import { Types } from "mongoose";
