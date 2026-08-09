@@ -30,6 +30,7 @@ const numberFmt = new Intl.NumberFormat("ru-RU");
 
 export interface ContractFillData {
   fullName: string;
+  abbreviatedName: string;
   passportData: string;
   passportIssueDate: string;
   passportIssuedBy: string;
@@ -39,11 +40,20 @@ export interface ContractFillData {
 }
 
 /**
- * Данные, которые реально удалось сопоставить с плейсхолдерами шаблона (см. таблицу
- * в ТЗ части 3). Плейсхолдер `<Имя сокрощенное. Фамилия>` намеренно НЕ подставляется —
- * в шаблоне неясно, что там должно быть (см. README, список вопросов), поэтому он
- * остаётся в тексте буквально как есть.
+ * "Фамилия Имя Отчество" → "И. Фамилия" (напр. "Ахмедов Анисхон Равшанович" → "А. Ахмедов") —
+ * формат для плейсхолдера `<Имя сокрощенное. Фамилия>` рядом с "Ж.Сулаймонов" в блоке подписи,
+ * уточнено пользователем после первой версии (изначально плейсхолдер был непонятен и
+ * оставался как есть — см. историю README).
  */
+function abbreviateFullName(fullName: string): string {
+  const parts = fullName.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return "";
+  const [surname, givenName] = parts;
+  if (!givenName) return surname;
+  return `${givenName[0].toUpperCase()}. ${surname}`;
+}
+
+/** Данные, сопоставленные с плейсхолдерами шаблона (см. таблицу в README, часть 3). */
 export function buildContractFillData(
   record: Pick<IStorageRecord, "productName" | "quantity" | "unit" | "payment" | "goodsOwner">,
   containerName: string
@@ -56,6 +66,7 @@ export function buildContractFillData(
 
   return {
     fullName: owner.fullName,
+    abbreviatedName: abbreviateFullName(owner.fullName),
     passportData: owner.passportData,
     passportIssueDate: owner.passportIssueDate,
     passportIssuedBy: owner.passportIssuedBy,
@@ -75,7 +86,7 @@ function placeholderMap(data: ContractFillData): Record<string, string> {
     "<ПИФНЛ>": data.pinfl,
     "<Информация про всю аренду>": data.rentalInfo,
     "<Тариф>": data.tariffText,
-    // <Имя сокрощенное. Фамилия> сознательно отсутствует в карте — остаётся как в шаблоне.
+    "<Имя сокрощенное. Фамилия>": data.abbreviatedName,
   };
 }
 
@@ -256,10 +267,11 @@ function renderSignatureBlock(doc: PDFKit.PDFDocument, map: Record<string, strin
   doc.text("________________________", leftX, doc.y, { width: colWidth });
   doc.text("О.Рахимов", leftX, doc.y, { width: colWidth });
 
-  // "<Имя сокрощенное. Фамилия>" — неясный плейсхолдер шаблона, оставлен буквально как есть
-  // (не подставляется, см. README → список вопросов по шаблону).
+  // "Ж.Сулаймонов" — фиксированное имя (второй подписант со стороны "Сақловчи", как и
+  // "О.Рахимов" слева), не относится к арендатору. Плейсхолдер после него — сокращённое
+  // имя арендатора, см. abbreviateFullName().
   doc.text("________________________*", rightX, sigY, { width: colWidth });
-  doc.text("Ж.Сулаймонов <Имя сокрощенное. Фамилия>", rightX, doc.y, { width: colWidth });
+  doc.text(fill("Ж.Сулаймонов <Имя сокрощенное. Фамилия>", map), rightX, doc.y, { width: colWidth });
 
   doc.moveDown(1);
 }
