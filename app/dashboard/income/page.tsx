@@ -61,14 +61,24 @@ export default function IncomePage() {
   const [debts, setDebts] = useState<OwnerContainerDebt[]>([]);
   const [incomes, setIncomes] = useState<IncomeEntry[]>([]);
   const [loading, setLoading] = useState(true);
+  const [debtsError, setDebtsError] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<string | null>(null);
 
   const loadDebts = useCallback(async () => {
     setLoading(true);
+    setDebtsError(null);
     const params = new URLSearchParams();
     if (toDate) params.set("to", toDate);
     const res = await fetch(`/api/debts?${params.toString()}`);
-    const data = await res.json();
+    const data = await res.json().catch(() => ({}));
+    // Не путать серверную ошибку с "записей нет" — оба случая раньше выглядели одинаково
+    // (см. баг с r.tariff в lib/debt.ts на записях без тарифа).
+    if (!res.ok) {
+      setDebtsError(data.error || "Не удалось загрузить задолженность");
+      setDebts([]);
+      setLoading(false);
+      return;
+    }
     setDebts(data.debts || []);
     setLoading(false);
   }, [toDate]);
@@ -166,6 +176,11 @@ export default function IncomePage() {
             {[...Array(3)].map((_, i) => (
               <div key={i} className="skeleton h-11 w-full" />
             ))}
+          </div>
+        ) : debtsError ? (
+          <div className="alert-danger">
+            <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" strokeWidth={2} />
+            <span>{debtsError}</span>
           </div>
         ) : debts.length === 0 ? (
           <div className="empty-state">

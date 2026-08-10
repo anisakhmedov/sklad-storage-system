@@ -56,11 +56,21 @@ export default function AddIncomeWizard({ onExit }: { onExit: () => void }) {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [savedScreen, setSavedScreen] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   useEffect(() => {
     miniAppFetch("/api/miniapp/debts")
-      .then((r) => r.json())
-      .then((d) => setDebts(d.debts || []))
+      .then(async (r) => {
+        const d = await r.json().catch(() => ({}));
+        // Не путать серверную ошибку с "записей нет" — раньше оба случая выглядели
+        // одинаково для пользователя (см. баг с r.tariff в lib/debt.ts).
+        if (!r.ok) {
+          setLoadError(d.error || "Не удалось загрузить список владельцев");
+          return;
+        }
+        setDebts(d.debts || []);
+      })
+      .catch(() => setLoadError("Не удалось связаться с сервером"))
       .finally(() => setLoadingDebts(false));
   }, []);
 
@@ -192,6 +202,8 @@ export default function AddIncomeWizard({ onExit }: { onExit: () => void }) {
                 <div key={i} className="skeleton h-16 w-full rounded-2xl" />
               ))}
             </div>
+          ) : loadError ? (
+            <div className="alert-danger">{loadError}</div>
           ) : owners.length === 0 ? (
             <div className="empty-state">
               <div className="empty-state-icon">

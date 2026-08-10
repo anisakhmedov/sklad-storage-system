@@ -97,20 +97,28 @@ export async function getAllOwnerContainerDebts(
     const g = groups.get(groupKey)!;
     if (r.createdAt < g.since) g.since = r.createdAt;
 
-    const accrued = accrueTariff({
-      type: r.tariff.type,
-      rate: r.tariff.rate,
-      quantity: r.quantity,
-      unit: r.unit,
-      from: r.createdAt,
-      to,
-    });
+    // Записи, созданные до появления поля "тариф" (ранние тестовые/сид-записи), не имеют
+    // r.tariff — раньше это роняло весь расчёт задолженности исключением (Cannot read
+    // properties of undefined) для ВСЕХ владельцев и контейнеров разом, из-за чего
+    // /api/debts и /api/miniapp/debts отдавали ошибку, а фронтенд молча показывал "записей
+    // нет" (см. диагностику бага). Такая запись просто не начисляет долг (accrued: 0),
+    // а не ломает остальные.
+    const accrued = r.tariff
+      ? accrueTariff({
+          type: r.tariff.type,
+          rate: r.tariff.rate,
+          quantity: r.quantity,
+          unit: r.unit,
+          from: r.createdAt,
+          to,
+        })
+      : 0;
     g.records.push({
       recordId: String(r._id),
       productName: r.productName,
       quantity: r.quantity,
       unit: r.unit,
-      tariff: r.tariff,
+      tariff: r.tariff || { type: "per_day", rate: 0 },
       since: r.createdAt,
       accrued,
     });
