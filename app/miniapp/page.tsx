@@ -5,9 +5,11 @@ import { initTelegramWebApp, miniAppFetch } from "@/components/miniapp/telegram"
 import RegisterForm from "@/components/miniapp/RegisterForm";
 import PendingScreen from "@/components/miniapp/PendingScreen";
 import NewRecordWizard from "@/components/miniapp/NewRecordWizard";
-import { Boxes, Plus, TriangleAlert } from "lucide-react";
+import AddIncomeWizard from "@/components/miniapp/AddIncomeWizard";
+import { Boxes, Plus, TriangleAlert, Wallet, ChevronRight } from "lucide-react";
 
 type EmployeeStatus = "pending" | "approved" | "rejected";
+type Mode = "menu" | "record" | "income";
 
 interface MeResponse {
   telegram: { id: number; firstName?: string; lastName?: string; username?: string };
@@ -18,7 +20,7 @@ export default function MiniAppPage() {
   const [me, setMe] = useState<MeResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  const [showWizard, setShowWizard] = useState(false);
+  const [mode, setMode] = useState<Mode>("menu");
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -73,8 +75,12 @@ export default function MiniAppPage() {
     return <PendingScreen status={me.employee.status} />;
   }
 
-  if (showWizard) {
-    return <NewRecordWizard onExit={() => setShowWizard(false)} />;
+  if (mode === "record") {
+    return <NewRecordWizard onExit={() => setMode("menu")} />;
+  }
+
+  if (mode === "income") {
+    return <AddIncomeWizard onExit={() => setMode("menu")} />;
   }
 
   return (
@@ -87,13 +93,35 @@ export default function MiniAppPage() {
       </h1>
       <p className="text-sm text-ink-400 mb-8">Учёт хранения продукции в контейнерах</p>
 
-      <button
-        className="btn-primary w-full text-[15px] py-3.5 rounded-2xl"
-        onClick={() => setShowWizard(true)}
-      >
-        <Plus className="h-4.5 w-4.5" strokeWidth={2.25} />
-        Новая запись
-      </button>
+      <div className="space-y-3">
+        <button
+          className="w-full flex items-center gap-3.5 rounded-2xl border border-ink-200 bg-white px-4 py-4 text-left transition-colors hover:border-brand-300 hover:bg-brand-50/40 active:scale-[0.99]"
+          onClick={() => setMode("record")}
+        >
+          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-brand-50 text-brand-600">
+            <Plus className="h-5 w-5" strokeWidth={2.1} />
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="font-medium text-ink-900">Новая запись</div>
+            <div className="text-xs text-ink-400 mt-0.5">Разместить товар в контейнере</div>
+          </div>
+          <ChevronRight className="h-4.5 w-4.5 text-ink-300 shrink-0" strokeWidth={2} />
+        </button>
+
+        <button
+          className="w-full flex items-center gap-3.5 rounded-2xl border border-ink-200 bg-white px-4 py-4 text-left transition-colors hover:border-brand-300 hover:bg-brand-50/40 active:scale-[0.99]"
+          onClick={() => setMode("income")}
+        >
+          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600">
+            <Wallet className="h-5 w-5" strokeWidth={2.1} />
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="font-medium text-ink-900">Записать оплату</div>
+            <div className="text-xs text-ink-400 mt-0.5">Клиент оплатил хранение</div>
+          </div>
+          <ChevronRight className="h-4.5 w-4.5 text-ink-300 shrink-0" strokeWidth={2} />
+        </button>
+      </div>
     </div>
   );
 }

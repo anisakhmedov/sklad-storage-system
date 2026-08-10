@@ -21,7 +21,7 @@ export interface IIncome {
   method: PaymentMethod;
   paidAt: Date;
   note?: string;
-  recordedBy: string; // identifier веб-пользователя, зафиксировавшего оплату
+  recordedBy: string; // identifier веб-пользователя либо имя сотрудника (Mini App), зафиксировавшего оплату
   createdAt: Date;
 }
 
