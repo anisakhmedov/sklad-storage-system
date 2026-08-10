@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
+import { Boxes, PackagePlus, Pencil, Trash2, AlertCircle, X } from "lucide-react";
 
 interface ContainerRow {
   _id: string;
@@ -90,10 +91,20 @@ export default function ContainersPage() {
 
   return (
     <div>
-      <h1 className="text-2xl font-semibold text-slate-800 mb-6">Контейнеры</h1>
+      <div className="mb-7">
+        <p className="section-eyebrow">Склад</p>
+        <h1 className="section-title mt-1">Контейнеры</h1>
+      </div>
 
       <div className="card mb-8 max-w-lg">
-        <h2 className="text-lg font-medium text-slate-700 mb-3">Новый контейнер</h2>
+        <div className="card-header">
+          <div>
+            <h2 className="card-title flex items-center gap-2">
+              <PackagePlus className="h-4 w-4 text-brand-600" strokeWidth={2.1} />
+              Новый контейнер
+            </h2>
+          </div>
+        </div>
         <form onSubmit={handleCreate} className="space-y-3">
           <div>
             <label className="label">Номер / название</label>
@@ -108,8 +119,14 @@ export default function ContainersPage() {
               rows={2}
             />
           </div>
-          {error && !editing && <p className="text-sm text-red-600">{error}</p>}
+          {error && !editing && (
+            <div className="alert-danger">
+              <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" strokeWidth={2} />
+              <span>{error}</span>
+            </div>
+          )}
           <button className="btn-primary" disabled={busy}>
+            <PackagePlus className="h-4 w-4" strokeWidth={2.1} />
             Добавить
           </button>
         </form>
@@ -117,9 +134,18 @@ export default function ContainersPage() {
 
       <div className="card overflow-x-auto">
         {loading ? (
-          <p className="text-sm text-slate-500">Загрузка…</p>
+          <div className="space-y-2.5 p-1">
+            {[...Array(3)].map((_, i) => (
+              <div key={i} className="skeleton h-11 w-full" />
+            ))}
+          </div>
         ) : containers.length === 0 ? (
-          <p className="text-sm text-slate-500">Контейнеров пока нет.</p>
+          <div className="empty-state">
+            <div className="empty-state-icon">
+              <Boxes className="h-5 w-5" strokeWidth={1.8} />
+            </div>
+            <p className="text-sm text-ink-500">Контейнеров пока нет.</p>
+          </div>
         ) : (
           <table className="table-base">
             <thead>
@@ -133,16 +159,27 @@ export default function ContainersPage() {
             <tbody>
               {containers.map((c) => (
                 <tr key={c._id}>
-                  <td>{c.name}</td>
-                  <td className="max-w-xs truncate">{c.description}</td>
-                  <td>{c.createdBy}</td>
+                  <td>
+                    <div className="flex items-center gap-2.5">
+                      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-brand-50 text-brand-600">
+                        <Boxes className="h-4 w-4" strokeWidth={2} />
+                      </div>
+                      <span className="font-medium text-ink-800">{c.name}</span>
+                    </div>
+                  </td>
+                  <td className="max-w-xs truncate text-ink-500">{c.description || "—"}</td>
+                  <td className="text-ink-500">{c.createdBy}</td>
                   <td className="whitespace-nowrap">
-                    <button className="btn-secondary mr-2" onClick={() => setEditing(c)}>
-                      Изменить
-                    </button>
-                    <button className="btn-danger" onClick={() => handleDelete(c._id)}>
-                      Удалить
-                    </button>
+                    <div className="flex justify-end gap-2">
+                      <button className="btn-secondary btn-sm" onClick={() => setEditing(c)}>
+                        <Pencil className="h-3.5 w-3.5" strokeWidth={2} />
+                        Изменить
+                      </button>
+                      <button className="btn-danger-ghost btn-sm" onClick={() => handleDelete(c._id)}>
+                        <Trash2 className="h-3.5 w-3.5" strokeWidth={2} />
+                        Удалить
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -152,9 +189,14 @@ export default function ContainersPage() {
       </div>
 
       {editing && (
-        <div className="fixed inset-0 bg-black/30 flex items-center justify-center p-4 z-50">
-          <div className="card w-full max-w-md">
-            <h3 className="text-lg font-medium text-slate-700 mb-3">Редактирование контейнера</h3>
+        <div className="modal-backdrop" onClick={() => setEditing(null)}>
+          <div className="modal-panel max-w-md" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="card-title">Редактирование контейнера</h3>
+              <button className="btn-icon btn-ghost" onClick={() => setEditing(null)} aria-label="Закрыть">
+                <X className="h-4 w-4" strokeWidth={2} />
+              </button>
+            </div>
             <form onSubmit={handleUpdate} className="space-y-3">
               <div>
                 <label className="label">Номер / название</label>
@@ -173,8 +215,13 @@ export default function ContainersPage() {
                   onChange={(e) => setEditing({ ...editing, description: e.target.value })}
                 />
               </div>
-              {error && <p className="text-sm text-red-600">{error}</p>}
-              <div className="flex gap-2">
+              {error && (
+                <div className="alert-danger">
+                  <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" strokeWidth={2} />
+                  <span>{error}</span>
+                </div>
+              )}
+              <div className="flex gap-2 pt-1">
                 <button className="btn-primary" disabled={busy}>
                   Сохранить
                 </button>

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
+import { Users, Phone, Send, Check, X, ShieldOff } from "lucide-react";
 
 interface Employee {
   _id: string;
@@ -21,8 +22,33 @@ const statusLabels: Record<string, string> = {
 const statusColors: Record<string, string> = {
   pending: "bg-amber-100 text-amber-700",
   approved: "bg-emerald-100 text-emerald-700",
-  rejected: "bg-red-100 text-red-700",
+  rejected: "bg-rose-100 text-rose-700",
 };
+
+const statusDot: Record<string, string> = {
+  pending: "bg-amber-500",
+  approved: "bg-emerald-500",
+  rejected: "bg-rose-500",
+};
+
+function initials(name: string) {
+  return name
+    .trim()
+    .split(/\s+/)
+    .slice(0, 2)
+    .map((p) => p[0]?.toUpperCase())
+    .join("") || "?";
+}
+
+function TableSkeleton() {
+  return (
+    <div className="space-y-2.5 p-1">
+      {[...Array(3)].map((_, i) => (
+        <div key={i} className="skeleton h-11 w-full" />
+      ))}
+    </div>
+  );
+}
 
 export default function EmployeesPage() {
   const [employees, setEmployees] = useState<Employee[]>([]);
@@ -58,24 +84,46 @@ export default function EmployeesPage() {
   const pending = employees.filter((e) => e.status === "pending");
   const others = employees.filter((e) => e.status !== "pending");
 
+  const PersonCell = ({ e }: { e: Employee }) => (
+    <div className="flex items-center gap-2.5">
+      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-brand-100 text-brand-700 text-xs font-semibold">
+        {initials(e.name)}
+      </div>
+      <div className="min-w-0">
+        <div className="font-medium text-ink-800 truncate">{e.name}</div>
+        <div className="text-xs text-ink-400 flex items-center gap-1">
+          <Phone className="h-3 w-3" strokeWidth={2} /> {e.phone}
+        </div>
+      </div>
+    </div>
+  );
+
   return (
     <div>
-      <h1 className="text-2xl font-semibold text-slate-800 mb-6">Сотрудники</h1>
+      <div className="mb-7">
+        <p className="section-eyebrow">Персонал</p>
+        <h1 className="section-title mt-1">Сотрудники</h1>
+      </div>
 
-      <h2 className="text-lg font-medium text-slate-700 mb-3">
-        Заявки на регистрацию {pending.length > 0 && `(${pending.length})`}
-      </h2>
+      <div className="flex items-center gap-2 mb-3">
+        <h2 className="text-base font-semibold text-ink-800">Заявки на регистрацию</h2>
+        {pending.length > 0 && <span className="badge bg-amber-100 text-amber-700">{pending.length}</span>}
+      </div>
       <div className="card mb-8 overflow-x-auto">
         {loading ? (
-          <p className="text-sm text-slate-500">Загрузка…</p>
+          <TableSkeleton />
         ) : pending.length === 0 ? (
-          <p className="text-sm text-slate-500">Новых заявок нет.</p>
+          <div className="empty-state">
+            <div className="empty-state-icon">
+              <Send className="h-5 w-5" strokeWidth={1.8} />
+            </div>
+            <p className="text-sm text-ink-500">Новых заявок нет.</p>
+          </div>
         ) : (
           <table className="table-base">
             <thead>
               <tr>
-                <th>Имя</th>
-                <th>Телефон</th>
+                <th>Сотрудник</th>
                 <th>Telegram</th>
                 <th>Дата заявки</th>
                 <th></th>
@@ -84,25 +132,32 @@ export default function EmployeesPage() {
             <tbody>
               {pending.map((e) => (
                 <tr key={e._id}>
-                  <td>{e.name}</td>
-                  <td>{e.phone}</td>
-                  <td>{e.telegramUsername ? `@${e.telegramUsername}` : e.telegramId}</td>
-                  <td>{new Date(e.createdAt).toLocaleString("ru-RU")}</td>
+                  <td>
+                    <PersonCell e={e} />
+                  </td>
+                  <td className="text-ink-500">{e.telegramUsername ? `@${e.telegramUsername}` : e.telegramId}</td>
+                  <td className="whitespace-nowrap text-ink-500">
+                    {new Date(e.createdAt).toLocaleString("ru-RU")}
+                  </td>
                   <td className="whitespace-nowrap">
-                    <button
-                      className="btn-primary mr-2"
-                      disabled={busyId === e._id}
-                      onClick={() => setStatus(e._id, "approved")}
-                    >
-                      Одобрить
-                    </button>
-                    <button
-                      className="btn-danger"
-                      disabled={busyId === e._id}
-                      onClick={() => setStatus(e._id, "rejected")}
-                    >
-                      Отклонить
-                    </button>
+                    <div className="flex gap-2 justify-end">
+                      <button
+                        className="btn-primary btn-sm"
+                        disabled={busyId === e._id}
+                        onClick={() => setStatus(e._id, "approved")}
+                      >
+                        <Check className="h-3.5 w-3.5" strokeWidth={2.25} />
+                        Одобрить
+                      </button>
+                      <button
+                        className="btn-danger-ghost btn-sm"
+                        disabled={busyId === e._id}
+                        onClick={() => setStatus(e._id, "rejected")}
+                      >
+                        <X className="h-3.5 w-3.5" strokeWidth={2.25} />
+                        Отклонить
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -111,18 +166,22 @@ export default function EmployeesPage() {
         )}
       </div>
 
-      <h2 className="text-lg font-medium text-slate-700 mb-3">Все сотрудники</h2>
+      <h2 className="text-base font-semibold text-ink-800 mb-3">Все сотрудники</h2>
       <div className="card overflow-x-auto">
         {loading ? (
-          <p className="text-sm text-slate-500">Загрузка…</p>
+          <TableSkeleton />
         ) : others.length === 0 ? (
-          <p className="text-sm text-slate-500">Пока нет обработанных сотрудников.</p>
+          <div className="empty-state">
+            <div className="empty-state-icon">
+              <Users className="h-5 w-5" strokeWidth={1.8} />
+            </div>
+            <p className="text-sm text-ink-500">Пока нет обработанных сотрудников.</p>
+          </div>
         ) : (
           <table className="table-base">
             <thead>
               <tr>
-                <th>Имя</th>
-                <th>Телефон</th>
+                <th>Сотрудник</th>
                 <th>Telegram</th>
                 <th>Статус</th>
                 <th></th>
@@ -131,32 +190,38 @@ export default function EmployeesPage() {
             <tbody>
               {others.map((e) => (
                 <tr key={e._id}>
-                  <td>{e.name}</td>
-                  <td>{e.phone}</td>
-                  <td>{e.telegramUsername ? `@${e.telegramUsername}` : e.telegramId}</td>
+                  <td>
+                    <PersonCell e={e} />
+                  </td>
+                  <td className="text-ink-500">{e.telegramUsername ? `@${e.telegramUsername}` : e.telegramId}</td>
                   <td>
                     <span className={`badge ${statusColors[e.status]}`}>
+                      <span className={`badge-dot ${statusDot[e.status]}`} />
                       {statusLabels[e.status]}
                     </span>
                   </td>
                   <td className="whitespace-nowrap">
-                    {e.status === "approved" ? (
-                      <button
-                        className="btn-danger"
-                        disabled={busyId === e._id}
-                        onClick={() => setStatus(e._id, "rejected")}
-                      >
-                        Отозвать доступ
-                      </button>
-                    ) : (
-                      <button
-                        className="btn-primary"
-                        disabled={busyId === e._id}
-                        onClick={() => setStatus(e._id, "approved")}
-                      >
-                        Одобрить
-                      </button>
-                    )}
+                    <div className="flex justify-end">
+                      {e.status === "approved" ? (
+                        <button
+                          className="btn-danger-ghost btn-sm"
+                          disabled={busyId === e._id}
+                          onClick={() => setStatus(e._id, "rejected")}
+                        >
+                          <ShieldOff className="h-3.5 w-3.5" strokeWidth={2.1} />
+                          Отозвать доступ
+                        </button>
+                      ) : (
+                        <button
+                          className="btn-primary btn-sm"
+                          disabled={busyId === e._id}
+                          onClick={() => setStatus(e._id, "approved")}
+                        >
+                          <Check className="h-3.5 w-3.5" strokeWidth={2.25} />
+                          Одобрить
+                        </button>
+                      )}
+                    </div>
                   </td>
                 </tr>
               ))}

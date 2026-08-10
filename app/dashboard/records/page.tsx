@@ -2,6 +2,18 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { TARIFF_TYPES, TARIFF_LABELS, isTariffCompatibleWithUnit, formatTariffText, TariffType } from "@/lib/tariff";
+import {
+  ClipboardList,
+  Search,
+  FileText,
+  Pencil,
+  History,
+  Trash2,
+  X,
+  PlusCircle,
+  Pencil as PencilAlt,
+  Ban,
+} from "lucide-react";
 
 interface ContainerRef {
   _id: string;
@@ -60,6 +72,12 @@ const blankCompany: GoodsOwnerCompany = {
   companyName: "",
   inn: "",
   directorName: "",
+};
+
+const actionMeta: Record<string, { label: string; icon: typeof PlusCircle; tone: string }> = {
+  create: { label: "Создание", icon: PlusCircle, tone: "bg-emerald-100 text-emerald-700" },
+  update: { label: "Изменение", icon: PencilAlt, tone: "bg-amber-100 text-amber-700" },
+  delete: { label: "Удаление", icon: Ban, tone: "bg-rose-100 text-rose-700" },
 };
 
 export default function RecordsPage() {
@@ -149,7 +167,14 @@ export default function RecordsPage() {
 
   return (
     <div>
-      <h1 className="text-2xl font-semibold text-slate-800 mb-6">Записи ({total})</h1>
+      <div className="mb-7 flex items-end justify-between flex-wrap gap-2">
+        <div>
+          <p className="section-eyebrow">Журнал</p>
+          <h1 className="section-title mt-1">
+            Записи <span className="text-ink-300 font-normal">· {total}</span>
+          </h1>
+        </div>
+      </div>
 
       <div className="card mb-6">
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
@@ -170,12 +195,15 @@ export default function RecordsPage() {
           </div>
           <div>
             <label className="label">Товар</label>
-            <input
-              className="input"
-              value={filters.product}
-              onChange={(e) => setFilters({ ...filters, product: e.target.value })}
-              placeholder="поиск по названию"
-            />
+            <div className="input-icon-wrap">
+              <Search className="input-icon h-4 w-4" strokeWidth={2} />
+              <input
+                className="input"
+                value={filters.product}
+                onChange={(e) => setFilters({ ...filters, product: e.target.value })}
+                placeholder="поиск по названию"
+              />
+            </div>
           </div>
           <div>
             <label className="label">Тип тарифа</label>
@@ -215,9 +243,18 @@ export default function RecordsPage() {
 
       <div className="card overflow-x-auto">
         {loading ? (
-          <p className="text-sm text-slate-500">Загрузка…</p>
+          <div className="space-y-2.5 p-1">
+            {[...Array(4)].map((_, i) => (
+              <div key={i} className="skeleton h-11 w-full" />
+            ))}
+          </div>
         ) : records.length === 0 ? (
-          <p className="text-sm text-slate-500">Записей не найдено.</p>
+          <div className="empty-state">
+            <div className="empty-state-icon">
+              <ClipboardList className="h-5 w-5" strokeWidth={1.8} />
+            </div>
+            <p className="text-sm text-ink-500">Записей не найдено.</p>
+          </div>
         ) : (
           <table className="table-base">
             <thead>
@@ -238,26 +275,26 @@ export default function RecordsPage() {
                   <td className="whitespace-nowrap">
                     {new Date(r.createdAt).toLocaleString("ru-RU")}
                     {r.editedAt && (
-                      <div className="text-xs text-amber-600">
+                      <div className="text-xs text-amber-600 mt-0.5">
                         изменено {new Date(r.editedAt).toLocaleDateString("ru-RU")}
                       </div>
                     )}
                   </td>
                   <td>{typeof r.containerId === "object" ? r.containerId.name : r.containerId}</td>
-                  <td>{r.productName}</td>
-                  <td className="whitespace-nowrap">
+                  <td className="font-medium text-ink-800">{r.productName}</td>
+                  <td className="whitespace-nowrap tabular-nums">
                     {r.quantity} {unitLabels[r.unit]}
                   </td>
                   <td>
                     {r.goodsOwner.type === "individual" ? (
                       <>
-                        <div>{r.goodsOwner.fullName}</div>
-                        <div className="text-xs text-slate-400">{r.goodsOwner.phone}</div>
+                        <div className="text-ink-800">{r.goodsOwner.fullName}</div>
+                        <div className="text-xs text-ink-400">{r.goodsOwner.phone}</div>
                       </>
                     ) : (
                       <>
-                        <div>{r.goodsOwner.companyName}</div>
-                        <div className="text-xs text-slate-400">
+                        <div className="text-ink-800">{r.goodsOwner.companyName}</div>
+                        <div className="text-xs text-ink-400">
                           ИНН {r.goodsOwner.inn} · дир. {r.goodsOwner.directorName}
                         </div>
                       </>
@@ -266,44 +303,48 @@ export default function RecordsPage() {
                       className={`badge mt-1 ${
                         r.goodsOwner.type === "individual"
                           ? "bg-brand-50 text-brand-700"
-                          : "bg-slate-100 text-slate-600"
+                          : "bg-ink-100 text-ink-600"
                       }`}
                     >
                       {r.goodsOwner.type === "individual" ? "физ. лицо" : "юр. лицо"}
                     </span>
                   </td>
                   <td className="whitespace-nowrap">{formatTariffText(r.tariff)}</td>
-                  <td>
+                  <td className="text-ink-500">
                     {typeof r.createdByEmployeeId === "object"
                       ? r.createdByEmployeeId?.name
                       : "—"}
                   </td>
                   <td className="whitespace-nowrap">
-                    {r.goodsOwner.type === "individual" && (
-                      <a
-                        className="btn-secondary mr-2"
-                        href={`/api/records/${r._id}/contract`}
-                        target="_blank"
-                        rel="noreferrer"
+                    <div className="flex justify-end gap-1.5">
+                      {r.goodsOwner.type === "individual" && (
+                        <a
+                          className="btn-icon btn-secondary"
+                          href={`/api/records/${r._id}/contract`}
+                          target="_blank"
+                          rel="noreferrer"
+                          title="Договор"
+                        >
+                          <FileText className="h-3.5 w-3.5" strokeWidth={2} />
+                        </a>
+                      )}
+                      <button
+                        className="btn-icon btn-secondary"
+                        title="Изменить"
+                        onClick={() => {
+                          setEditError(null);
+                          setEditing(r);
+                        }}
                       >
-                        Договор
-                      </a>
-                    )}
-                    <button
-                      className="btn-secondary mr-2"
-                      onClick={() => {
-                        setEditError(null);
-                        setEditing(r);
-                      }}
-                    >
-                      Изменить
-                    </button>
-                    <button className="btn-secondary mr-2" onClick={() => openHistory(r)}>
-                      История
-                    </button>
-                    <button className="btn-danger" onClick={() => handleDelete(r._id)}>
-                      Удалить
-                    </button>
+                        <Pencil className="h-3.5 w-3.5" strokeWidth={2} />
+                      </button>
+                      <button className="btn-icon btn-secondary" title="История" onClick={() => openHistory(r)}>
+                        <History className="h-3.5 w-3.5" strokeWidth={2} />
+                      </button>
+                      <button className="btn-icon btn-danger-ghost" title="Удалить" onClick={() => handleDelete(r._id)}>
+                        <Trash2 className="h-3.5 w-3.5" strokeWidth={2} />
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -313,9 +354,14 @@ export default function RecordsPage() {
       </div>
 
       {editing && (
-        <div className="fixed inset-0 bg-black/30 flex items-center justify-center p-4 z-50 overflow-y-auto">
-          <div className="card w-full max-w-lg my-8">
-            <h3 className="text-lg font-medium text-slate-700 mb-3">Редактирование записи</h3>
+        <div className="modal-backdrop overflow-y-auto py-8" onClick={() => setEditing(null)}>
+          <div className="modal-panel w-full max-w-lg my-auto" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="card-title">Редактирование записи</h3>
+              <button className="btn-icon btn-ghost" onClick={() => setEditing(null)} aria-label="Закрыть">
+                <X className="h-4 w-4" strokeWidth={2} />
+              </button>
+            </div>
             <form onSubmit={handleSaveEdit} className="space-y-3">
               <div className="grid grid-cols-2 gap-3">
                 <div>
@@ -363,14 +409,14 @@ export default function RecordsPage() {
               </div>
 
               <div className="flex items-center justify-between pt-2">
-                <p className="text-sm font-medium text-slate-600">Владелец груза</p>
+                <p className="text-sm font-medium text-ink-600">Владелец груза</p>
                 <div className="flex gap-1 text-xs">
                   <button
                     type="button"
-                    className={`rounded px-2 py-1 border ${
+                    className={`rounded-lg px-2.5 py-1.5 border font-medium transition-colors ${
                       editing.goodsOwner.type === "individual"
                         ? "border-brand-600 bg-brand-50 text-brand-700"
-                        : "border-slate-200 text-slate-500"
+                        : "border-ink-200 text-ink-500 hover:bg-ink-50"
                     }`}
                     onClick={() => setEditing({ ...editing, goodsOwner: { ...blankIndividual } })}
                   >
@@ -378,10 +424,10 @@ export default function RecordsPage() {
                   </button>
                   <button
                     type="button"
-                    className={`rounded px-2 py-1 border ${
+                    className={`rounded-lg px-2.5 py-1.5 border font-medium transition-colors ${
                       editing.goodsOwner.type === "company"
                         ? "border-brand-600 bg-brand-50 text-brand-700"
-                        : "border-slate-200 text-slate-500"
+                        : "border-ink-200 text-ink-500 hover:bg-ink-50"
                     }`}
                     onClick={() => setEditing({ ...editing, goodsOwner: { ...blankCompany } })}
                   >
@@ -503,7 +549,7 @@ export default function RecordsPage() {
                 </div>
               )}
 
-              <p className="text-sm font-medium text-slate-600 pt-2">Тариф</p>
+              <p className="text-sm font-medium text-ink-600 pt-2">Тариф</p>
               <div className="grid grid-cols-2 gap-3">
                 <select
                   className="input"
@@ -535,7 +581,7 @@ export default function RecordsPage() {
                 />
               </div>
 
-              {editError && <p className="text-sm text-red-600">{editError}</p>}
+              {editError && <div className="alert-danger">{editError}</div>}
               <div className="flex gap-2 pt-2">
                 <button className="btn-primary" disabled={editBusy}>
                   {editBusy ? "Сохранение…" : "Сохранить"}
@@ -557,35 +603,54 @@ export default function RecordsPage() {
       )}
 
       {historyFor && (
-        <div className="fixed inset-0 bg-black/30 flex items-center justify-center p-4 z-50 overflow-y-auto">
-          <div className="card w-full max-w-lg my-8">
-            <div className="flex justify-between items-center mb-3">
-              <h3 className="text-lg font-medium text-slate-700">
-                История изменений — {historyFor.productName}
-              </h3>
-              <button className="btn-secondary" onClick={() => setHistoryFor(null)}>
-                Закрыть
+        <div className="modal-backdrop overflow-y-auto py-8" onClick={() => setHistoryFor(null)}>
+          <div className="modal-panel w-full max-w-lg my-auto" onClick={(e) => e.stopPropagation()}>
+            <div className="flex justify-between items-center mb-4">
+              <div>
+                <h3 className="card-title">История изменений</h3>
+                <p className="card-subtitle">{historyFor.productName}</p>
+              </div>
+              <button className="btn-icon btn-ghost" onClick={() => setHistoryFor(null)} aria-label="Закрыть">
+                <X className="h-4 w-4" strokeWidth={2} />
               </button>
             </div>
             {history.length === 0 ? (
-              <p className="text-sm text-slate-500">Изменений не зафиксировано.</p>
+              <div className="empty-state py-8">
+                <div className="empty-state-icon">
+                  <History className="h-5 w-5" strokeWidth={1.8} />
+                </div>
+                <p className="text-sm text-ink-500">Изменений не зафиксировано.</p>
+              </div>
             ) : (
-              <div className="space-y-3 max-h-96 overflow-y-auto">
-                {history.map((h) => (
-                  <div key={h._id} className="border border-slate-200 rounded-lg p-3 text-xs">
-                    <div className="flex justify-between text-slate-500 mb-1">
-                      <span>
-                        {h.action === "create" ? "Создание" : h.action === "update" ? "Изменение" : "Удаление"}
-                        {" · "}
-                        {h.actorId} ({h.actorRole})
-                      </span>
-                      <span>{new Date(h.timestamp).toLocaleString("ru-RU")}</span>
+              <div className="space-y-0 max-h-96 overflow-y-auto -mr-1 pr-1">
+                {history.map((h, idx) => {
+                  const meta = actionMeta[h.action] || actionMeta.update;
+                  const Icon = meta.icon;
+                  return (
+                    <div key={h._id} className="flex gap-3">
+                      <div className="flex flex-col items-center">
+                        <div className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full ${meta.tone}`}>
+                          <Icon className="h-3.5 w-3.5" strokeWidth={2.1} />
+                        </div>
+                        {idx < history.length - 1 && <div className="w-px flex-1 bg-ink-100 my-1" />}
+                      </div>
+                      <div className="flex-1 min-w-0 pb-4">
+                        <div className="flex justify-between items-baseline gap-2 flex-wrap">
+                          <span className="text-sm font-medium text-ink-800">{meta.label}</span>
+                          <span className="text-xs text-ink-400 whitespace-nowrap">
+                            {new Date(h.timestamp).toLocaleString("ru-RU")}
+                          </span>
+                        </div>
+                        <div className="text-xs text-ink-400 mb-1.5">
+                          {h.actorId} · {h.actorRole}
+                        </div>
+                        <pre className="whitespace-pre-wrap break-words text-xs text-ink-600 bg-ink-50 rounded-lg border border-ink-100 p-2.5">
+                          {JSON.stringify(h.changes, null, 2)}
+                        </pre>
+                      </div>
                     </div>
-                    <pre className="whitespace-pre-wrap break-words text-slate-600">
-                      {JSON.stringify(h.changes, null, 2)}
-                    </pre>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>

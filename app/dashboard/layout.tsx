@@ -8,9 +8,9 @@ export default async function DashboardLayout({ children }: { children: React.Re
   if (!user) redirect("/login");
 
   return (
-    <div className="flex min-h-screen">
+    <div className="flex min-h-screen flex-col lg:flex-row">
       <Nav identifier={user.identifier} role={user.role} />
-      <main className="flex-1 p-6 md:p-8 max-w-6xl">
+      <main className="flex-1 min-w-0 p-4 sm:p-6 md:p-8 max-w-6xl w-full mx-auto animate-fade-up">
         {user.mustChangePassword && <ChangePasswordGate />}
         {children}
       </main>

@@ -13,6 +13,7 @@ import {
   Cell,
 } from "recharts";
 import { UNIT_COLORS, UNIT_LABELS, METHOD_COLORS, CHART_CHROME } from "@/components/charts/colors";
+import { BarChart3, PackageMinus, Layers3, AlertCircle } from "lucide-react";
 
 interface Summary {
   monthlyVolume: Array<Record<string, number | string>>;
@@ -30,6 +31,17 @@ const months = [
   "Январь", "Февраль", "Март", "Апрель", "Май", "Июнь",
   "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь",
 ];
+
+const tooltipStyle = {
+  contentStyle: {
+    borderRadius: 12,
+    border: `1px solid #e6e9ee`,
+    boxShadow: "0 12px 40px -8px rgb(15 23 42 / 0.18)",
+    fontSize: 12.5,
+    padding: "8px 12px",
+  },
+  cursor: { fill: "rgb(56 104 245 / 0.05)" },
+};
 
 export default function ReportsPage() {
   const [year, setYear] = useState(new Date().getFullYear());
@@ -53,7 +65,10 @@ export default function ReportsPage() {
 
   return (
     <div>
-      <h1 className="text-2xl font-semibold text-slate-800 mb-6">Отчётность</h1>
+      <div className="mb-7">
+        <p className="section-eyebrow">Аналитика</p>
+        <h1 className="section-title mt-1">Отчётность</h1>
+      </div>
 
       <div className="card mb-6 flex flex-wrap gap-3 items-end">
         <div>
@@ -84,25 +99,35 @@ export default function ReportsPage() {
       </div>
 
       {loading || !data ? (
-        <p className="text-sm text-slate-500">Загрузка…</p>
+        <div className="space-y-6">
+          <div className="card h-80 skeleton" />
+          <div className="card h-80 skeleton" />
+        </div>
       ) : (
         <div className="space-y-6">
           <div className="card">
-            <h2 className="text-lg font-medium text-slate-700 mb-1">Объём товара по месяцам</h2>
-            <p className="text-xs text-slate-400 mb-3">
-              Разные единицы измерения показаны отдельными рядами — суммировать между собой их
-              нельзя, сравнивайте значения внутри одного ряда.
-            </p>
+            <div className="card-header">
+              <div>
+                <h2 className="card-title flex items-center gap-2">
+                  <BarChart3 className="h-4 w-4 text-brand-600" strokeWidth={2.1} />
+                  Объём товара по месяцам
+                </h2>
+                <p className="card-subtitle max-w-xl">
+                  Разные единицы измерения показаны отдельными рядами — суммировать между собой их
+                  нельзя, сравнивайте значения внутри одного ряда.
+                </p>
+              </div>
+            </div>
             <div style={{ width: "100%", height: 320 }}>
               <ResponsiveContainer>
                 <BarChart data={data.monthlyVolume}>
                   <CartesianGrid strokeDasharray="3 3" stroke={CHART_CHROME.grid} vertical={false} />
-                  <XAxis dataKey="month" stroke={CHART_CHROME.axis} tick={{ fontSize: 12 }} />
-                  <YAxis stroke={CHART_CHROME.axis} tick={{ fontSize: 12 }} />
-                  <Tooltip />
-                  <Legend formatter={(v) => UNIT_LABELS[v] || v} />
+                  <XAxis dataKey="month" stroke={CHART_CHROME.axis} tick={{ fontSize: 12 }} axisLine={{ stroke: CHART_CHROME.grid }} tickLine={false} />
+                  <YAxis stroke={CHART_CHROME.axis} tick={{ fontSize: 12 }} axisLine={false} tickLine={false} />
+                  <Tooltip {...tooltipStyle} />
+                  <Legend formatter={(v) => UNIT_LABELS[v] || v} wrapperStyle={{ fontSize: 12.5 }} />
                   {Object.keys(UNIT_COLORS).map((unit) => (
-                    <Bar key={unit} dataKey={unit} name={unit} fill={UNIT_COLORS[unit]} radius={[4, 4, 0, 0]} />
+                    <Bar key={unit} dataKey={unit} name={unit} fill={UNIT_COLORS[unit]} radius={[4, 4, 0, 0]} maxBarSize={42} />
                   ))}
                 </BarChart>
               </ResponsiveContainer>
@@ -110,17 +135,22 @@ export default function ReportsPage() {
           </div>
 
           <div className="card">
-            <h2 className="text-lg font-medium text-slate-700 mb-3">Загруженность по контейнерам</h2>
+            <div className="card-header">
+              <h2 className="card-title flex items-center gap-2">
+                <Layers3 className="h-4 w-4 text-brand-600" strokeWidth={2.1} />
+                Загруженность по контейнерам
+              </h2>
+            </div>
             <div style={{ width: "100%", height: 320 }}>
               <ResponsiveContainer>
                 <BarChart data={data.containerLoad}>
                   <CartesianGrid strokeDasharray="3 3" stroke={CHART_CHROME.grid} vertical={false} />
-                  <XAxis dataKey="container" stroke={CHART_CHROME.axis} tick={{ fontSize: 12 }} />
-                  <YAxis stroke={CHART_CHROME.axis} tick={{ fontSize: 12 }} />
-                  <Tooltip />
-                  <Legend formatter={(v) => UNIT_LABELS[v] || v} />
+                  <XAxis dataKey="container" stroke={CHART_CHROME.axis} tick={{ fontSize: 12 }} axisLine={{ stroke: CHART_CHROME.grid }} tickLine={false} />
+                  <YAxis stroke={CHART_CHROME.axis} tick={{ fontSize: 12 }} axisLine={false} tickLine={false} />
+                  <Tooltip {...tooltipStyle} />
+                  <Legend formatter={(v) => UNIT_LABELS[v] || v} wrapperStyle={{ fontSize: 12.5 }} />
                   {Object.keys(UNIT_COLORS).map((unit) => (
-                    <Bar key={unit} dataKey={unit} name={unit} fill={UNIT_COLORS[unit]} radius={[4, 4, 0, 0]} />
+                    <Bar key={unit} dataKey={unit} name={unit} fill={UNIT_COLORS[unit]} radius={[4, 4, 0, 0]} maxBarSize={42} />
                   ))}
                 </BarChart>
               </ResponsiveContainer>
@@ -128,17 +158,19 @@ export default function ReportsPage() {
           </div>
 
           <div className="card">
-            <h2 className="text-lg font-medium text-slate-700 mb-3">Суммы оплат по способам</h2>
+            <div className="card-header">
+              <h2 className="card-title">Суммы оплат по способам</h2>
+            </div>
             <div style={{ width: "100%", height: 280 }}>
               <ResponsiveContainer>
                 <BarChart data={data.paymentsByMethod}>
                   <CartesianGrid strokeDasharray="3 3" stroke={CHART_CHROME.grid} vertical={false} />
-                  <XAxis dataKey="method" stroke={CHART_CHROME.axis} tick={{ fontSize: 12 }} />
-                  <YAxis stroke={CHART_CHROME.axis} tick={{ fontSize: 12 }} />
-                  <Tooltip formatter={(v: number) => v.toLocaleString("ru-RU")} />
-                  <Bar dataKey="amount" name="Сумма" radius={[4, 4, 0, 0]}>
+                  <XAxis dataKey="method" stroke={CHART_CHROME.axis} tick={{ fontSize: 12 }} axisLine={{ stroke: CHART_CHROME.grid }} tickLine={false} />
+                  <YAxis stroke={CHART_CHROME.axis} tick={{ fontSize: 12 }} axisLine={false} tickLine={false} />
+                  <Tooltip {...tooltipStyle} formatter={(v: number) => v.toLocaleString("ru-RU")} />
+                  <Bar dataKey="amount" name="Сумма" radius={[4, 4, 0, 0]} maxBarSize={56}>
                     {data.paymentsByMethod.map((entry) => (
-                      <Cell key={entry.method} fill={METHOD_COLORS[entry.method] || "#2a78d6"} />
+                      <Cell key={entry.method} fill={METHOD_COLORS[entry.method] || "#3868f5"} />
                     ))}
                   </Bar>
                 </BarChart>
@@ -147,9 +179,9 @@ export default function ReportsPage() {
           </div>
 
           <div className="card overflow-x-auto">
-            <h2 className="text-lg font-medium text-slate-700 mb-3">
-              Текущий остаток по контейнерам (приход − списание)
-            </h2>
+            <div className="card-header">
+              <h2 className="card-title">Текущий остаток по контейнерам (приход − списание)</h2>
+            </div>
             <table className="table-base">
               <thead>
                 <tr>
@@ -163,11 +195,11 @@ export default function ReportsPage() {
               <tbody>
                 {data.containerBalances.map((c) => (
                   <tr key={c.containerId}>
-                    <td>{c.name}</td>
-                    <td>{c.balances.tonne}</td>
-                    <td>{c.balances.kg}</td>
-                    <td>{c.balances.box}</td>
-                    <td>{c.balances.piece}</td>
+                    <td className="font-medium text-ink-800">{c.name}</td>
+                    <td className="tabular-nums">{c.balances.tonne}</td>
+                    <td className="tabular-nums">{c.balances.kg}</td>
+                    <td className="tabular-nums">{c.balances.box}</td>
+                    <td className="tabular-nums">{c.balances.piece}</td>
                   </tr>
                 ))}
               </tbody>
@@ -223,7 +255,12 @@ function WithdrawalForm({ onSaved }: { onSaved: () => void }) {
 
   return (
     <div className="card max-w-xl">
-      <h2 className="text-lg font-medium text-slate-700 mb-3">Списание / вывоз товара</h2>
+      <div className="card-header">
+        <h2 className="card-title flex items-center gap-2">
+          <PackageMinus className="h-4 w-4 text-brand-600" strokeWidth={2.1} />
+          Списание / вывоз товара
+        </h2>
+      </div>
       <form onSubmit={handleSubmit} className="space-y-3">
         <div>
           <label className="label">Контейнер</label>
@@ -265,7 +302,12 @@ function WithdrawalForm({ onSaved }: { onSaved: () => void }) {
           <label className="label">Примечание</label>
           <input className="input" value={note} onChange={(e) => setNote(e.target.value)} />
         </div>
-        {error && <p className="text-sm text-red-600">{error}</p>}
+        {error && (
+          <div className="alert-danger">
+            <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" strokeWidth={2} />
+            <span>{error}</span>
+          </div>
+        )}
         <button className="btn-primary" disabled={busy}>
           Зафиксировать списание
         </button>

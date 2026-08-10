@@ -28,7 +28,7 @@ export const METHOD_COLORS: Record<string, string> = {
 };
 
 export const CHART_CHROME = {
-  grid: "#e1e0d9",
-  axis: "#898781",
-  text: "#52514e",
+  grid: "#e6e9ee",
+  axis: "#98a1b3",
+  text: "#545e74",
 };

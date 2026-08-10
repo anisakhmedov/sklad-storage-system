@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
+import { KeyRound, UserPlus, ShieldCheck, ShieldOff, RotateCcw, Copy, Check, AlertCircle } from "lucide-react";
 
 interface AccessRow {
   _id: string;
@@ -19,6 +20,7 @@ export default function AccessPage() {
   const [error, setError] = useState<string | null>(null);
   const [tempInfo, setTempInfo] = useState<{ identifier: string; password: string } | null>(null);
   const [busy, setBusy] = useState(false);
+  const [copied, setCopied] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -66,12 +68,31 @@ export default function AccessPage() {
     await load();
   }
 
+  function copyPassword() {
+    if (!tempInfo) return;
+    navigator.clipboard?.writeText(tempInfo.password).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    });
+  }
+
   return (
     <div>
-      <h1 className="text-2xl font-semibold text-slate-800 mb-6">Доступ к веб-панели</h1>
+      <div className="mb-7">
+        <p className="section-eyebrow">Безопасность</p>
+        <h1 className="section-title mt-1">Доступ к веб-панели</h1>
+      </div>
 
       <div className="card mb-8 max-w-lg">
-        <h2 className="text-lg font-medium text-slate-700 mb-3">Выдать доступ</h2>
+        <div className="card-header">
+          <div>
+            <h2 className="card-title flex items-center gap-2">
+              <UserPlus className="h-4 w-4 text-brand-600" strokeWidth={2.1} />
+              Выдать доступ
+            </h2>
+            <p className="card-subtitle">Новому пользователю будет создан временный пароль</p>
+          </div>
+        </div>
         <form onSubmit={handleGrant} className="space-y-3">
           <div>
             <label className="label">Username (без @) или телефон</label>
@@ -93,26 +114,52 @@ export default function AccessPage() {
               <option value="owner">Владелец</option>
             </select>
           </div>
-          {error && <p className="text-sm text-red-600">{error}</p>}
+          {error && (
+            <div className="alert-danger">
+              <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" strokeWidth={2} />
+              <span>{error}</span>
+            </div>
+          )}
           <button className="btn-primary" disabled={busy}>
+            <KeyRound className="h-4 w-4" strokeWidth={2.1} />
             Выдать доступ
           </button>
         </form>
 
         {tempInfo && (
-          <div className="mt-4 rounded-lg bg-emerald-50 border border-emerald-200 p-3 text-sm text-emerald-800">
-            Доступ выдан для <b>{tempInfo.identifier}</b>. Временный пароль:{" "}
-            <code className="bg-white px-1.5 py-0.5 rounded border">{tempInfo.password}</code>
-            <br />
-            Передайте его пользователю — он будет предложен сменить пароль при первом входе.
+          <div className="alert-success mt-4 items-center animate-fade-up">
+            <ShieldCheck className="h-4 w-4 shrink-0" strokeWidth={2} />
+            <div className="flex-1 min-w-0">
+              Доступ выдан для <b>{tempInfo.identifier}</b>. Временный пароль:{" "}
+              <code className="bg-white px-1.5 py-0.5 rounded border border-emerald-200 font-mono">
+                {tempInfo.password}
+              </code>
+              <div className="mt-1 text-xs text-emerald-700/80">
+                Передайте его пользователю — он будет предложен сменить пароль при первом входе.
+              </div>
+            </div>
+            <button className="btn-icon btn-secondary shrink-0" onClick={copyPassword} aria-label="Скопировать пароль">
+              {copied ? <Check className="h-3.5 w-3.5 text-emerald-600" strokeWidth={2.25} /> : <Copy className="h-3.5 w-3.5" strokeWidth={2} />}
+            </button>
           </div>
         )}
       </div>
 
-      <h2 className="text-lg font-medium text-slate-700 mb-3">Список доступов</h2>
+      <h2 className="text-base font-semibold text-ink-800 mb-3">Список доступов</h2>
       <div className="card overflow-x-auto">
         {loading ? (
-          <p className="text-sm text-slate-500">Загрузка…</p>
+          <div className="space-y-2.5 p-1">
+            {[...Array(3)].map((_, i) => (
+              <div key={i} className="skeleton h-11 w-full" />
+            ))}
+          </div>
+        ) : list.length === 0 ? (
+          <div className="empty-state">
+            <div className="empty-state-icon">
+              <KeyRound className="h-5 w-5" strokeWidth={1.8} />
+            </div>
+            <p className="text-sm text-ink-500">Доступов пока не выдано.</p>
+          </div>
         ) : (
           <table className="table-base">
             <thead>
@@ -128,25 +175,36 @@ export default function AccessPage() {
             <tbody>
               {list.map((row) => (
                 <tr key={row._id}>
-                  <td>{row.identifier}</td>
+                  <td className="font-medium text-ink-800">{row.identifier}</td>
                   <td>{row.role === "owner" ? "Владелец" : "Доверенное лицо"}</td>
                   <td>
                     <span
                       className={`badge ${
                         row.status === "active"
                           ? "bg-emerald-100 text-emerald-700"
-                          : "bg-slate-200 text-slate-600"
+                          : "bg-ink-100 text-ink-500"
                       }`}
                     >
+                      <span className={`badge-dot ${row.status === "active" ? "bg-emerald-500" : "bg-ink-400"}`} />
                       {row.status === "active" ? "Активен" : "Отозван"}
                     </span>
                   </td>
-                  <td>{row.grantedBy}</td>
-                  <td>{new Date(row.createdAt).toLocaleDateString("ru-RU")}</td>
+                  <td className="text-ink-500">{row.grantedBy}</td>
+                  <td className="text-ink-500 whitespace-nowrap">{new Date(row.createdAt).toLocaleDateString("ru-RU")}</td>
                   <td>
-                    <button className="btn-secondary" onClick={() => toggleStatus(row)}>
-                      {row.status === "active" ? "Отозвать" : "Восстановить"}
-                    </button>
+                    <div className="flex justify-end">
+                      <button
+                        className={row.status === "active" ? "btn-danger-ghost btn-sm" : "btn-secondary btn-sm"}
+                        onClick={() => toggleStatus(row)}
+                      >
+                        {row.status === "active" ? (
+                          <ShieldOff className="h-3.5 w-3.5" strokeWidth={2.1} />
+                        ) : (
+                          <RotateCcw className="h-3.5 w-3.5" strokeWidth={2.1} />
+                        )}
+                        {row.status === "active" ? "Отозвать" : "Восстановить"}
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}

@@ -3,6 +3,17 @@
 import { useEffect, useState } from "react";
 import { miniAppFetch } from "./telegram";
 import { TARIFF_TYPES, TARIFF_LABELS, DEFAULT_TARIFF_RATES, isTariffCompatibleWithUnit, TariffType, formatTariffText } from "@/lib/tariff";
+import {
+  ArrowLeft,
+  CheckCircle2,
+  ChevronRight,
+  Boxes,
+  Package,
+  UserRound,
+  Building2,
+  Wallet,
+  ClipboardCheck,
+} from "lucide-react";
 
 interface Container {
   id: string;
@@ -37,6 +48,7 @@ const emptyForm = {
 };
 
 const STEP_LABELS = ["Контейнер", "Товар", "Владелец груза", "Тариф", "Проверка"];
+const STEP_ICONS = [Boxes, Package, UserRound, Wallet, ClipboardCheck];
 
 export default function NewRecordWizard({ onExit }: { onExit: () => void }) {
   const [containers, setContainers] = useState<Container[]>([]);
@@ -137,23 +149,25 @@ export default function NewRecordWizard({ onExit }: { onExit: () => void }) {
 
   if (savedScreen) {
     return (
-      <div className="pt-10 text-center">
-        <div className="text-5xl mb-4">✅</div>
-        <h1 className="text-lg font-semibold text-slate-800 mb-2">Запись сохранена</h1>
-        <p className="text-sm text-slate-500 mb-2">
+      <div className="pt-16 text-center">
+        <div className="mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-full bg-emerald-100 text-emerald-600">
+          <CheckCircle2 className="h-8 w-8" strokeWidth={1.8} />
+        </div>
+        <h1 className="text-lg font-semibold text-ink-900 mb-2">Запись сохранена</h1>
+        <p className="text-sm text-ink-400 mb-2 leading-relaxed px-2">
           {form.ownerType === "individual"
             ? "PDF договора отправлен вам в этот чат."
             : "Данные юридического лица сохранены. Договор для юрлиц не формируется."}
         </p>
-        <p className="text-sm text-slate-500 mb-6">Хотите добавить ещё одну позицию?</p>
+        <p className="text-sm text-ink-400 mb-6">Хотите добавить ещё одну позицию?</p>
         <div className="space-y-2">
-          <button className="btn-primary w-full" onClick={() => startAnother(true)}>
+          <button className="btn-primary w-full py-3 rounded-2xl" onClick={() => startAnother(true)}>
             Да, тот же контейнер
           </button>
-          <button className="btn-secondary w-full" onClick={() => startAnother(false)}>
+          <button className="btn-secondary w-full py-3 rounded-2xl" onClick={() => startAnother(false)}>
             Да, другой контейнер
           </button>
-          <button className="btn-secondary w-full" onClick={onExit}>
+          <button className="btn-ghost w-full py-3 rounded-2xl" onClick={onExit}>
             Нет, завершить
           </button>
         </div>
@@ -161,36 +175,72 @@ export default function NewRecordWizard({ onExit }: { onExit: () => void }) {
     );
   }
 
+  const StepIcon = STEP_ICONS[step];
+
   return (
     <div className="pt-4">
-      <div className="flex items-center justify-between mb-4">
-        <button className="text-sm text-slate-500" onClick={step === 0 ? onExit : back}>
-          ← Назад
+      <div className="flex items-center justify-between mb-3">
+        <button
+          className="btn-icon btn-ghost -ml-2"
+          onClick={step === 0 ? onExit : back}
+          aria-label="Назад"
+        >
+          <ArrowLeft className="h-4.5 w-4.5" strokeWidth={2.1} />
         </button>
-        <span className="text-xs text-slate-400">
-          Шаг {step + 1} из {STEP_LABELS.length} · {STEP_LABELS[step]}
+        <span className="text-xs font-medium text-ink-400">
+          Шаг {step + 1} из {STEP_LABELS.length}
         </span>
+      </div>
+
+      {/* Progress bar */}
+      <div className="flex items-center gap-1.5 mb-5">
+        {STEP_LABELS.map((_, i) => (
+          <div
+            key={i}
+            className={`h-1.5 flex-1 rounded-full transition-colors ${
+              i <= step ? "bg-brand-600" : "bg-ink-200"
+            }`}
+          />
+        ))}
+      </div>
+
+      <div className="flex items-center gap-2 mb-5">
+        <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-brand-50 text-brand-600 shrink-0">
+          <StepIcon className="h-4 w-4" strokeWidth={2.1} />
+        </div>
+        <h2 className="text-base font-semibold text-ink-900">{STEP_LABELS[step]}</h2>
       </div>
 
       {step === 0 && (
         <div className="space-y-3">
-          <label className="label">Выберите контейнер</label>
           {containers.length === 0 ? (
-            <p className="text-sm text-slate-500">Контейнеры ещё не созданы владельцем.</p>
+            <div className="empty-state">
+              <div className="empty-state-icon">
+                <Boxes className="h-5 w-5" strokeWidth={1.8} />
+              </div>
+              <p className="text-sm text-ink-500">Контейнеры ещё не созданы владельцем.</p>
+            </div>
           ) : (
             <div className="space-y-2">
               {containers.map((c) => (
                 <button
                   key={c.id}
                   onClick={() => setForm({ ...form, containerId: c.id })}
-                  className={`w-full text-left rounded-lg border px-3 py-3 ${
+                  className={`w-full text-left rounded-2xl border px-4 py-3.5 transition-colors ${
                     form.containerId === c.id
                       ? "border-brand-600 bg-brand-50"
-                      : "border-slate-200 bg-white"
+                      : "border-ink-200 bg-white hover:bg-ink-50"
                   }`}
                 >
-                  <div className="font-medium text-slate-800">{c.name}</div>
-                  {c.description && <div className="text-xs text-slate-500">{c.description}</div>}
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <div className="font-medium text-ink-900">{c.name}</div>
+                      {c.description && <div className="text-xs text-ink-400 mt-0.5">{c.description}</div>}
+                    </div>
+                    {form.containerId === c.id && (
+                      <CheckCircle2 className="h-5 w-5 text-brand-600 shrink-0" strokeWidth={2} />
+                    )}
+                  </div>
                 </button>
               ))}
             </div>
@@ -251,31 +301,33 @@ export default function NewRecordWizard({ onExit }: { onExit: () => void }) {
           <div className="flex gap-2">
             <button
               type="button"
-              className={`flex-1 rounded-lg border px-3 py-2 text-sm font-medium ${
+              className={`flex-1 flex items-center justify-center gap-1.5 rounded-xl border px-3 py-2.5 text-sm font-medium transition-colors ${
                 form.ownerType === "individual"
                   ? "border-brand-600 bg-brand-50 text-brand-700"
-                  : "border-slate-200 bg-white text-slate-600"
+                  : "border-ink-200 bg-white text-ink-500"
               }`}
               onClick={() => setForm({ ...form, ownerType: "individual" })}
             >
+              <UserRound className="h-4 w-4" strokeWidth={2} />
               Физическое лицо
             </button>
             <button
               type="button"
-              className={`flex-1 rounded-lg border px-3 py-2 text-sm font-medium ${
+              className={`flex-1 flex items-center justify-center gap-1.5 rounded-xl border px-3 py-2.5 text-sm font-medium transition-colors ${
                 form.ownerType === "company"
                   ? "border-brand-600 bg-brand-50 text-brand-700"
-                  : "border-slate-200 bg-white text-slate-600"
+                  : "border-ink-200 bg-white text-ink-500"
               }`}
               onClick={() => setForm({ ...form, ownerType: "company" })}
             >
+              <Building2 className="h-4 w-4" strokeWidth={2} />
               Юридическое лицо
             </button>
           </div>
 
           {form.ownerType === "individual" ? (
             <>
-              <p className="text-xs text-slate-400">
+              <p className="text-xs text-ink-400 leading-relaxed">
                 Для физлиц автоматически формируется договор — паспортные данные и ПИНФЛ
                 подставляются в его текст.
               </p>
@@ -333,7 +385,7 @@ export default function NewRecordWizard({ onExit }: { onExit: () => void }) {
             </>
           ) : (
             <>
-              <p className="text-xs text-slate-400">
+              <p className="text-xs text-ink-400 leading-relaxed">
                 Для юрлиц договор не формируется — данные только сохраняются.
               </p>
               <div>
@@ -367,7 +419,7 @@ export default function NewRecordWizard({ onExit }: { onExit: () => void }) {
 
       {step === 3 && (
         <div className="space-y-3">
-          <p className="text-xs text-slate-400">
+          <p className="text-xs text-ink-400 leading-relaxed">
             Это договорённые условия оплаты за хранение, а не сама оплата — фактические
             платежи вносятся позже на веб-панели (арендатор может заплатить не сразу).
           </p>
@@ -381,18 +433,19 @@ export default function NewRecordWizard({ onExit }: { onExit: () => void }) {
                   onClick={() =>
                     setForm({ ...form, tariffType: t, tariffRate: String(DEFAULT_TARIFF_RATES[t]) })
                   }
-                  className={`w-full text-left rounded-lg border px-3 py-2 text-sm ${
+                  className={`w-full flex items-center justify-between rounded-xl border px-3.5 py-2.5 text-sm transition-colors ${
                     form.tariffType === t
-                      ? "border-brand-600 bg-brand-50 text-brand-700"
-                      : "border-slate-200 bg-white text-slate-600"
+                      ? "border-brand-600 bg-brand-50 text-brand-700 font-medium"
+                      : "border-ink-200 bg-white text-ink-600"
                   }`}
                 >
                   {TARIFF_LABELS[t]}
+                  {form.tariffType === t && <CheckCircle2 className="h-4 w-4" strokeWidth={2} />}
                 </button>
               ))}
             </div>
             {(form.unit === "box" || form.unit === "piece") && (
-              <p className="text-xs text-slate-400 mt-1">
+              <p className="text-xs text-ink-400 mt-1.5">
                 Тарифы «за кг» недоступны для единицы «{form.unit === "box" ? "ящики" : "штуки"}» — вес неизвестен.
               </p>
             )}
@@ -436,20 +489,26 @@ export default function NewRecordWizard({ onExit }: { onExit: () => void }) {
             <Row
               label="Тариф"
               value={formatTariffText({ type: form.tariffType, rate: Number(form.tariffRate) || 0 })}
+              last
             />
           </div>
         </div>
       )}
 
-      {error && <p className="text-sm text-red-600 mt-3">{error}</p>}
+      {error && (
+        <div className="alert-danger mt-3">
+          <span>{error}</span>
+        </div>
+      )}
 
       <div className="mt-6">
         {step < STEP_LABELS.length - 1 ? (
-          <button className="btn-primary w-full" onClick={next}>
+          <button className="btn-primary w-full py-3 rounded-2xl" onClick={next}>
             Далее
+            <ChevronRight className="h-4 w-4" strokeWidth={2.25} />
           </button>
         ) : (
-          <button className="btn-primary w-full" onClick={handleSubmit} disabled={busy}>
+          <button className="btn-primary w-full py-3 rounded-2xl" onClick={handleSubmit} disabled={busy}>
             {busy ? "Сохранение…" : "Сохранить запись"}
           </button>
         )}
@@ -458,11 +517,11 @@ export default function NewRecordWizard({ onExit }: { onExit: () => void }) {
   );
 }
 
-function Row({ label, value }: { label: string; value?: string }) {
+function Row({ label, value, last }: { label: string; value?: string; last?: boolean }) {
   return (
-    <div className="flex justify-between py-1 border-b border-slate-100 last:border-0">
-      <span className="text-slate-500">{label}</span>
-      <span className="text-slate-800 font-medium text-right">{value || "—"}</span>
+    <div className={`flex justify-between gap-3 py-2 ${last ? "" : "border-b border-ink-100"}`}>
+      <span className="text-ink-400 shrink-0">{label}</span>
+      <span className="text-ink-900 font-medium text-right">{value || "—"}</span>
     </div>
   );
 }

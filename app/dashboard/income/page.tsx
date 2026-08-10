@@ -1,6 +1,16 @@
 "use client";
 
 import { Fragment, useEffect, useState, useCallback, useMemo } from "react";
+import {
+  Wallet,
+  CalendarClock,
+  ChevronDown,
+  Banknote,
+  CreditCard,
+  ArrowLeftRight,
+  AlertCircle,
+  Receipt,
+} from "lucide-react";
 
 type OwnerType = "individual" | "company";
 
@@ -42,6 +52,7 @@ interface IncomeEntry {
 }
 
 const methodLabels: Record<string, string> = { cash: "Наличные", terminal: "Терминал", transfer: "Перевод" };
+const methodIcons: Record<string, typeof Banknote> = { cash: Banknote, terminal: CreditCard, transfer: ArrowLeftRight };
 const money = (n: number) => Math.round(n).toLocaleString("ru-RU");
 const todayInput = () => new Date().toISOString().slice(0, 10);
 
@@ -81,36 +92,68 @@ export default function IncomePage() {
   }
 
   const totalBalance = useMemo(() => debts.reduce((s, d) => s + d.balance, 0), [debts]);
+  const totalAccrued = useMemo(() => debts.reduce((s, d) => s + d.accrued, 0), [debts]);
+  const totalPaid = useMemo(() => debts.reduce((s, d) => s + d.paid, 0), [debts]);
 
   return (
     <div>
-      <h1 className="text-2xl font-semibold text-slate-800 mb-1">Оплаты и задолженность</h1>
-      <p className="text-sm text-slate-500 mb-6">
-        Тариф фиксируется в записи при её создании (Mini App/веб-панель), а фактическая оплата
-        вносится здесь — арендатор может заплатить не сразу и не всей суммой. Задолженность
-        считается начислением по тарифу с даты создания записи по выбранную дату (или по
-        сегодняшний день, если дата не выбрана) минус сумма внесённых платежей.
-      </p>
+      <div className="mb-7">
+        <p className="section-eyebrow">Финансы</p>
+        <h1 className="section-title mt-1">Оплаты и задолженность</h1>
+        <p className="text-sm text-ink-400 mt-2 max-w-2xl leading-relaxed">
+          Тариф фиксируется в записи при её создании (Mini App/веб-панель), а фактическая оплата
+          вносится здесь — арендатор может заплатить не сразу и не всей суммой. Задолженность
+          считается начислением по тарифу с даты создания записи по выбранную дату (или по
+          сегодняшний день, если дата не выбрана) минус сумма внесённых платежей.
+        </p>
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
+        <div className="card">
+          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-brand-50 text-brand-600 mb-3">
+            <Receipt className="h-4.5 w-4.5" strokeWidth={2} />
+          </div>
+          <div className="text-2xl font-semibold text-ink-900 tabular-nums">{money(totalAccrued)}</div>
+          <div className="text-xs text-ink-400 mt-1">Начислено, сум</div>
+        </div>
+        <div className="card">
+          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600 mb-3">
+            <Banknote className="h-4.5 w-4.5" strokeWidth={2} />
+          </div>
+          <div className="text-2xl font-semibold text-ink-900 tabular-nums">{money(totalPaid)}</div>
+          <div className="text-xs text-ink-400 mt-1">Оплачено, сум</div>
+        </div>
+        <div className="card">
+          <div className={`flex h-9 w-9 items-center justify-center rounded-xl mb-3 ${totalBalance > 0 ? "bg-rose-50 text-rose-600" : "bg-emerald-50 text-emerald-600"}`}>
+            <Wallet className="h-4.5 w-4.5" strokeWidth={2} />
+          </div>
+          <div className={`text-2xl font-semibold tabular-nums ${totalBalance > 0 ? "text-rose-600" : "text-emerald-600"}`}>
+            {money(totalBalance)}
+          </div>
+          <div className="text-xs text-ink-400 mt-1">Итоговая задолженность, сум</div>
+        </div>
+      </div>
 
       <PaymentForm debts={debts} onSaved={refreshAll} />
 
       <div className="card mb-6 mt-6">
-        <div className="flex flex-wrap items-end justify-between gap-3 mb-3">
+        <div className="flex flex-wrap items-end justify-between gap-3 mb-4">
           <div>
-            <h2 className="text-lg font-medium text-slate-700">Задолженность по владельцам</h2>
-            <p className="text-xs text-slate-400 mt-1">
-              Начислено с даты создания каждой записи по выбранную дату включительно.
-            </p>
+            <h2 className="card-title">Задолженность по владельцам</h2>
+            <p className="card-subtitle">Начислено с даты создания каждой записи по выбранную дату включительно</p>
           </div>
-          <div className="flex items-end gap-3">
+          <div className="flex items-end gap-2">
             <div>
               <label className="label">По дату</label>
-              <input
-                type="date"
-                className="input"
-                value={toDate}
-                onChange={(e) => setToDate(e.target.value)}
-              />
+              <div className="input-icon-wrap">
+                <CalendarClock className="input-icon h-4 w-4" strokeWidth={2} />
+                <input
+                  type="date"
+                  className="input"
+                  value={toDate}
+                  onChange={(e) => setToDate(e.target.value)}
+                />
+              </div>
             </div>
             <button className="btn-secondary" onClick={() => setToDate(todayInput())}>
               Сегодня
@@ -119,9 +162,18 @@ export default function IncomePage() {
         </div>
 
         {loading ? (
-          <p className="text-sm text-slate-500">Загрузка…</p>
+          <div className="space-y-2.5 p-1">
+            {[...Array(3)].map((_, i) => (
+              <div key={i} className="skeleton h-11 w-full" />
+            ))}
+          </div>
         ) : debts.length === 0 ? (
-          <p className="text-sm text-slate-500">Записей ещё нет.</p>
+          <div className="empty-state">
+            <div className="empty-state-icon">
+              <Wallet className="h-5 w-5" strokeWidth={1.8} />
+            </div>
+            <p className="text-sm text-ink-500">Записей ещё нет.</p>
+          </div>
         ) : (
           <>
             <div className="overflow-x-auto">
@@ -141,16 +193,20 @@ export default function IncomePage() {
                 <tbody>
                   {debts.map((d) => {
                     const key = `${d.ownerKey}::${d.containerId}`;
+                    const isOpen = expanded === key;
                     return (
                       <Fragment key={key}>
-                        <tr>
-                          <td>{d.ownerLabel}</td>
+                        <tr
+                          className="cursor-pointer"
+                          onClick={() => setExpanded(isOpen ? null : key)}
+                        >
+                          <td className="font-medium text-ink-800">{d.ownerLabel}</td>
                           <td>
                             <span
                               className={`badge ${
                                 d.ownerType === "individual"
                                   ? "bg-brand-50 text-brand-700"
-                                  : "bg-slate-100 text-slate-600"
+                                  : "bg-ink-100 text-ink-600"
                               }`}
                             >
                               {d.ownerType === "individual" ? "физ. лицо" : "юр. лицо"}
@@ -160,37 +216,44 @@ export default function IncomePage() {
                           <td className="whitespace-nowrap">
                             {new Date(d.since).toLocaleDateString("ru-RU")}
                           </td>
-                          <td className="whitespace-nowrap">{money(d.accrued)} сум</td>
-                          <td className="whitespace-nowrap">{money(d.paid)} сум</td>
-                          <td className="whitespace-nowrap font-medium">
+                          <td className="whitespace-nowrap tabular-nums">{money(d.accrued)} сум</td>
+                          <td className="whitespace-nowrap tabular-nums">{money(d.paid)} сум</td>
+                          <td className="whitespace-nowrap font-semibold tabular-nums">
                             {d.balance > 0 ? (
-                              <span className="text-red-600">{money(d.balance)} сум</span>
+                              <span className="text-rose-600">{money(d.balance)} сум</span>
                             ) : d.balance < 0 ? (
                               <span className="text-emerald-600">−{money(-d.balance)} сум</span>
                             ) : (
-                              <span className="text-slate-500">0</span>
+                              <span className="text-ink-400">0</span>
                             )}
                           </td>
                           <td>
                             <button
-                              className="btn-secondary"
-                              onClick={() => setExpanded(expanded === key ? null : key)}
+                              className="btn-icon btn-ghost"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setExpanded(isOpen ? null : key);
+                              }}
+                              aria-label="Детали"
                             >
-                              {expanded === key ? "Скрыть" : "Детали"}
+                              <ChevronDown
+                                className={`h-4 w-4 transition-transform ${isOpen ? "rotate-180" : ""}`}
+                                strokeWidth={2}
+                              />
                             </button>
                           </td>
                         </tr>
-                        {expanded === key && (
+                        {isOpen && (
                           <tr>
-                            <td colSpan={8} className="bg-slate-50">
-                              <div className="text-xs text-slate-600 py-2 space-y-1">
+                            <td colSpan={8} className="bg-ink-50/70">
+                              <div className="text-xs text-ink-600 py-2.5 space-y-1.5">
                                 {d.records.map((r) => (
                                   <div key={r.recordId} className="flex justify-between gap-4">
                                     <span>
                                       {r.productName} · {r.quantity} {r.unit} · с{" "}
                                       {new Date(r.since).toLocaleDateString("ru-RU")}
                                     </span>
-                                    <span>{money(r.accrued)} сум начислено</span>
+                                    <span className="tabular-nums font-medium text-ink-700">{money(r.accrued)} сум начислено</span>
                                   </div>
                                 ))}
                               </div>
@@ -203,9 +266,9 @@ export default function IncomePage() {
                 </tbody>
               </table>
             </div>
-            <div className="mt-3 text-sm font-medium text-slate-700">
-              Итого задолженность:{" "}
-              <span className={totalBalance > 0 ? "text-red-600" : "text-emerald-600"}>
+            <div className="mt-4 pt-4 border-t border-ink-100 flex justify-between items-center text-sm font-medium text-ink-700">
+              <span>Итого задолженность</span>
+              <span className={`text-base ${totalBalance > 0 ? "text-rose-600" : "text-emerald-600"}`}>
                 {money(totalBalance)} сум
               </span>
             </div>
@@ -214,9 +277,14 @@ export default function IncomePage() {
       </div>
 
       <div className="card overflow-x-auto">
-        <h2 className="text-lg font-medium text-slate-700 mb-3">Последние платежи</h2>
+        <h2 className="card-title mb-3">Последние платежи</h2>
         {incomes.length === 0 ? (
-          <p className="text-sm text-slate-500">Платежей ещё не было.</p>
+          <div className="empty-state">
+            <div className="empty-state-icon">
+              <Receipt className="h-5 w-5" strokeWidth={1.8} />
+            </div>
+            <p className="text-sm text-ink-500">Платежей ещё не было.</p>
+          </div>
         ) : (
           <table className="table-base">
             <thead>
@@ -231,17 +299,25 @@ export default function IncomePage() {
               </tr>
             </thead>
             <tbody>
-              {incomes.map((inc) => (
-                <tr key={inc._id}>
-                  <td className="whitespace-nowrap">{new Date(inc.paidAt).toLocaleDateString("ru-RU")}</td>
-                  <td>{inc.ownerLabel}</td>
-                  <td>{typeof inc.containerId === "object" ? inc.containerId.name : inc.containerId}</td>
-                  <td className="whitespace-nowrap">{money(inc.amount)} сум</td>
-                  <td>{methodLabels[inc.method] || inc.method}</td>
-                  <td>{inc.recordedBy}</td>
-                  <td className="text-slate-500">{inc.note || "—"}</td>
-                </tr>
-              ))}
+              {incomes.map((inc) => {
+                const MethodIcon = methodIcons[inc.method] || Banknote;
+                return (
+                  <tr key={inc._id}>
+                    <td className="whitespace-nowrap">{new Date(inc.paidAt).toLocaleDateString("ru-RU")}</td>
+                    <td className="text-ink-800">{inc.ownerLabel}</td>
+                    <td>{typeof inc.containerId === "object" ? inc.containerId.name : inc.containerId}</td>
+                    <td className="whitespace-nowrap font-medium text-ink-800 tabular-nums">{money(inc.amount)} сум</td>
+                    <td>
+                      <span className="inline-flex items-center gap-1.5 text-ink-600">
+                        <MethodIcon className="h-3.5 w-3.5 text-ink-400" strokeWidth={2} />
+                        {methodLabels[inc.method] || inc.method}
+                      </span>
+                    </td>
+                    <td className="text-ink-500">{inc.recordedBy}</td>
+                    <td className="text-ink-400">{inc.note || "—"}</td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         )}
@@ -316,9 +392,18 @@ function PaymentForm({ debts, onSaved }: { debts: OwnerContainerDebt[]; onSaved:
 
   return (
     <div className="card max-w-2xl">
-      <h2 className="text-lg font-medium text-slate-700 mb-3">Записать оплату</h2>
+      <div className="card-header">
+        <div>
+          <h2 className="card-title flex items-center gap-2">
+            <Wallet className="h-4 w-4 text-brand-600" strokeWidth={2.1} />
+            Записать оплату
+          </h2>
+        </div>
+      </div>
       {owners.length === 0 ? (
-        <p className="text-sm text-slate-500">Ещё нет ни одной записи о размещении товара.</p>
+        <div className="empty-state py-8">
+          <p className="text-sm text-ink-500">Ещё нет ни одной записи о размещении товара.</p>
+        </div>
       ) : (
         <form onSubmit={handleSubmit} className="space-y-3">
           <div className="grid grid-cols-2 gap-3">
@@ -360,13 +445,13 @@ function PaymentForm({ debts, onSaved }: { debts: OwnerContainerDebt[]; onSaved:
           </div>
 
           {selectedDebt && (
-            <p className="text-xs text-slate-500">
+            <p className="text-xs text-ink-500 bg-ink-50 rounded-lg px-3 py-2">
               Текущий остаток по этой связке: начислено {money(selectedDebt.accrued)} сум, оплачено{" "}
               {money(selectedDebt.paid)} сум,{" "}
               {selectedDebt.balance > 0 ? (
-                <span className="text-red-600">долг {money(selectedDebt.balance)} сум</span>
+                <span className="text-rose-600 font-medium">долг {money(selectedDebt.balance)} сум</span>
               ) : (
-                <span className="text-emerald-600">задолженности нет</span>
+                <span className="text-emerald-600 font-medium">задолженности нет</span>
               )}
               .
             </p>
@@ -407,7 +492,12 @@ function PaymentForm({ debts, onSaved }: { debts: OwnerContainerDebt[]; onSaved:
             <input className="input" value={note} onChange={(e) => setNote(e.target.value)} />
           </div>
 
-          {error && <p className="text-sm text-red-600">{error}</p>}
+          {error && (
+            <div className="alert-danger">
+              <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" strokeWidth={2} />
+              <span>{error}</span>
+            </div>
+          )}
           <button className="btn-primary" disabled={busy}>
             {busy ? "Сохранение…" : "Записать оплату"}
           </button>
