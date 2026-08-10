@@ -23,13 +23,13 @@ export async function GET(req: NextRequest) {
   const containerId = sp.get("containerId");
   const product = sp.get("product");
   const employeeId = sp.get("employeeId");
-  const paymentMethod = sp.get("paymentMethod");
+  const tariffType = sp.get("tariffType");
   const from = sp.get("from");
   const to = sp.get("to");
 
   if (containerId && Types.ObjectId.isValid(containerId)) filter.containerId = containerId;
   if (employeeId && Types.ObjectId.isValid(employeeId)) filter.createdByEmployeeId = employeeId;
-  if (paymentMethod) filter["payment.method"] = paymentMethod;
+  if (tariffType) filter["tariff.type"] = tariffType;
   if (product) filter.productName = { $regex: product, $options: "i" };
   if (from || to) {
     const createdAt: Record<string, Date> = {};

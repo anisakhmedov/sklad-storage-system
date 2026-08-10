@@ -32,9 +32,17 @@ export interface IGoodsOwnerCompany {
 
 export type IGoodsOwner = IGoodsOwnerIndividual | IGoodsOwnerCompany;
 
-export interface IPayment {
-  amount: number;
-  method: PaymentMethod;
+export type TariffType = "per_day" | "per_month" | "per_kg_month" | "per_kg_6_months";
+
+/**
+ * Договорённые условия оплаты за хранение этой конкретной записи — НЕ факт оплаты.
+ * Арендатор платит не сразу и не обязательно всей суммой, поэтому фактические поступления
+ * денег фиксируются отдельно (models/Income.ts), а задолженность считается начислением по
+ * тарифу с даты создания записи (см. lib/tariff.ts, lib/debt.ts, README).
+ */
+export interface ITariff {
+  type: TariffType;
+  rate: number;
 }
 
 export interface IStorageRecord {
@@ -44,7 +52,7 @@ export interface IStorageRecord {
   quantity: number;
   unit: Unit;
   goodsOwner: IGoodsOwner;
-  payment: IPayment;
+  tariff: ITariff;
   createdByEmployeeId: Types.ObjectId;
   createdAt: Date;
   editedBy?: string;
@@ -96,10 +104,14 @@ GoodsOwnerSchema.pre("validate", function (next) {
   next();
 });
 
-const PaymentSchema = new Schema<IPayment>(
+const TariffSchema = new Schema<ITariff>(
   {
-    amount: { type: Number, required: true, min: 0 },
-    method: { type: String, enum: ["cash", "terminal", "transfer"], required: true },
+    type: {
+      type: String,
+      enum: ["per_day", "per_month", "per_kg_month", "per_kg_6_months"],
+      required: true,
+    },
+    rate: { type: Number, required: true, min: 0 },
   },
   { _id: false }
 );
@@ -110,7 +122,7 @@ const StorageRecordSchema = new Schema<IStorageRecord>({
   quantity: { type: Number, required: true, min: 0 },
   unit: { type: String, enum: ["tonne", "kg", "box", "piece"], required: true },
   goodsOwner: { type: GoodsOwnerSchema, required: true },
-  payment: { type: PaymentSchema, required: true },
+  tariff: { type: TariffSchema, required: true },
   createdByEmployeeId: { type: Schema.Types.ObjectId, ref: "Employee", required: true, index: true },
   createdAt: { type: Date, default: Date.now, index: true },
   editedBy: { type: String },
@@ -120,6 +132,19 @@ const StorageRecordSchema = new Schema<IStorageRecord>({
 // Договор формируется только для физлиц — индекс ускоряет поиск по телефону
 // (уведомления, сводка и запрос договора владельцем груза, см. lib/telegramBot.ts).
 StorageRecordSchema.index({ "goodsOwner.type": 1, "goodsOwner.phone": 1 });
+
+// Тариф "за кг" считается от веса в килограммах (см. lib/tariff.ts) — недоступен для
+// единиц "box"/"piece", у которых вес неизвестен. Дублирует проверку из lib/validation.ts
+// как второй рубеж защиты (см. комментарий у GoodsOwnerSchema.pre("validate") выше).
+StorageRecordSchema.pre("validate", function (next) {
+  const needsWeight = this.tariff?.type === "per_kg_month" || this.tariff?.type === "per_kg_6_months";
+  if (needsWeight && this.unit !== "kg" && this.unit !== "tonne") {
+    return next(
+      new Error('Тариф "за кг" применим только к записям с единицей измерения "kg" или "tonne"')
+    );
+  }
+  next();
+});
 
 export const StorageRecord: Model<IStorageRecord> =
   models.StorageRecord || model<IStorageRecord>("StorageRecord", StorageRecordSchema);

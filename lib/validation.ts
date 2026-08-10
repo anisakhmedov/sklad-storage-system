@@ -5,6 +5,7 @@ export const unitEnum = z.enum(["tonne", "kg", "box", "piece"]);
 export const paymentMethodEnum = z.enum(["cash", "terminal", "transfer"]);
 export const webRoleEnum = z.enum(["owner", "trusted"]);
 export const goodsOwnerTypeEnum = z.enum(["individual", "company"]);
+export const tariffTypeEnum = z.enum(["per_day", "per_month", "per_kg_month", "per_kg_6_months"]);
 
 export const loginSchema = z.object({
   identifier: z.string().min(3, "Слишком короткий идентификатор"),
@@ -56,21 +57,39 @@ export const goodsOwnerSchema = z.discriminatedUnion("type", [
   goodsOwnerCompanySchema,
 ]);
 
-export const paymentSchema = z.object({
-  amount: z.coerce.number().min(0, "Сумма не может быть отрицательной"),
-  method: paymentMethodEnum,
+// Раньше здесь вводилась разовая "сумма оплаты" сразу при создании записи. Заменено на
+// тариф (тип + ставка) — фактическая оплата теперь отдельная сущность (см. incomeCreateSchema
+// ниже и README → «Тарифы, оплата и задолженность»), потому что арендатор платит не сразу.
+export const tariffSchema = z.object({
+  type: tariffTypeEnum,
+  rate: z.coerce.number().min(0, "Ставка не может быть отрицательной"),
 });
 
-export const storageRecordCreateSchema = z.object({
+const storageRecordBaseSchema = z.object({
   containerId: z.string().min(1, "Выберите контейнер"),
   productName: z.string().min(1, "Укажите наименование товара").max(300),
   quantity: z.coerce.number().positive("Количество должно быть больше 0"),
   unit: unitEnum,
   goodsOwner: goodsOwnerSchema,
-  payment: paymentSchema,
+  tariff: tariffSchema,
 });
 
-export const storageRecordUpdateSchema = storageRecordCreateSchema.partial();
+// "За кг" тарифы требуют известного веса — доступны только для unit "kg"/"tonne".
+// Проверка на уровне создания (все поля точно присутствуют вместе); при частичном
+// обновлении (PATCH) эта же проверка дублируется на уровне Mongoose-модели поверх
+// уже смёрженного документа, см. models/StorageRecord.ts.
+export const storageRecordCreateSchema = storageRecordBaseSchema.superRefine((data, ctx) => {
+  const needsWeight = data.tariff.type === "per_kg_month" || data.tariff.type === "per_kg_6_months";
+  if (needsWeight && data.unit !== "kg" && data.unit !== "tonne") {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["tariff", "type"],
+      message: 'Тариф "за кг" применим только к записям с единицей измерения "kg" или "tonne"',
+    });
+  }
+});
+
+export const storageRecordUpdateSchema = storageRecordBaseSchema.partial();
 
 export const webAccessCreateSchema = z.object({
   identifier: z.string().min(3, "Укажите username или телефон"),
@@ -85,6 +104,22 @@ export const withdrawalCreateSchema = z.object({
   note: z.string().max(500).optional().default(""),
 });
 
+// Запись фактической оплаты (см. models/Income.ts). ownerKey/ownerLabel/ownerType приходят
+// с клиента из того же списка, что и таблица задолженности (GET /api/debts) — так выбор
+// "человек → его контейнер" в форме однозначно соответствует существующей связке
+// владелец+контейнер, найденной по реальным StorageRecord (сервер дополнительно проверяет
+// это в app/api/income/route.ts, чтобы нельзя было создать доход на несуществующую связку).
+export const incomeCreateSchema = z.object({
+  ownerType: goodsOwnerTypeEnum,
+  ownerKey: z.string().min(1, "Не выбран владелец груза"),
+  ownerLabel: z.string().min(1, "Не указано имя/наименование владельца").max(300),
+  containerId: z.string().min(1, "Выберите контейнер"),
+  amount: z.coerce.number().positive("Сумма должна быть больше 0"),
+  method: paymentMethodEnum,
+  paidAt: z.coerce.date().optional(),
+  note: z.string().max(500).optional().default(""),
+});
+
 export type LoginInput = z.infer<typeof loginSchema>;
 export type EmployeeRegisterInput = z.infer<typeof employeeRegisterSchema>;
 export type ContainerCreateInput = z.infer<typeof containerCreateSchema>;
@@ -92,3 +127,4 @@ export type GoodsOwnerInput = z.infer<typeof goodsOwnerSchema>;
 export type StorageRecordCreateInput = z.infer<typeof storageRecordCreateSchema>;
 export type WebAccessCreateInput = z.infer<typeof webAccessCreateSchema>;
 export type WithdrawalCreateInput = z.infer<typeof withdrawalCreateSchema>;
+export type IncomeCreateInput = z.infer<typeof incomeCreateSchema>;

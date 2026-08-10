@@ -9,6 +9,7 @@ const links = [
   { href: "/dashboard/access", label: "Доступ" },
   { href: "/dashboard/containers", label: "Контейнеры" },
   { href: "/dashboard/records", label: "Записи" },
+  { href: "/dashboard/income", label: "Оплаты" },
   { href: "/dashboard/reports", label: "Отчётность" },
 ];
 

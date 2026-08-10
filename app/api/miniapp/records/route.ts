@@ -29,7 +29,7 @@ export async function POST(req: NextRequest) {
     quantity: parsed.data.quantity,
     unit: parsed.data.unit,
     goodsOwner: parsed.data.goodsOwner,
-    payment: parsed.data.payment,
+    tariff: parsed.data.tariff,
     createdByEmployeeId: employee._id,
   });
 

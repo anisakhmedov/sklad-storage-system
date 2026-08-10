@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { miniAppFetch } from "./telegram";
+import { TARIFF_TYPES, TARIFF_LABELS, DEFAULT_TARIFF_RATES, isTariffCompatibleWithUnit, TariffType, formatTariffText } from "@/lib/tariff";
 
 interface Container {
   id: string;
@@ -10,7 +11,6 @@ interface Container {
 }
 
 type Unit = "tonne" | "kg" | "box" | "piece";
-type Method = "cash" | "terminal" | "transfer";
 type OwnerType = "individual" | "company";
 
 const emptyForm = {
@@ -30,11 +30,13 @@ const emptyForm = {
   companyName: "",
   companyInn: "",
   companyDirector: "",
-  amount: "",
-  method: "cash" as Method,
+  // тариф — договорённые условия оплаты; сама оплата вносится позже, отдельно
+  // (см. /dashboard/income), поэтому здесь только ставка, не сумма и не способ оплаты.
+  tariffType: "per_day" as TariffType,
+  tariffRate: String(DEFAULT_TARIFF_RATES.per_day),
 };
 
-const STEP_LABELS = ["Контейнер", "Товар", "Владелец груза", "Оплата", "Проверка"];
+const STEP_LABELS = ["Контейнер", "Товар", "Владелец груза", "Тариф", "Проверка"];
 
 export default function NewRecordWizard({ onExit }: { onExit: () => void }) {
   const [containers, setContainers] = useState<Container[]>([]);
@@ -74,7 +76,7 @@ export default function NewRecordWizard({ onExit }: { onExit: () => void }) {
         }
       }
     }
-    if (step === 3 && !form.amount) return setError("Укажите сумму оплаты");
+    if (step === 3 && !form.tariffRate) return setError("Укажите ставку тарифа");
     setStep((s) => s + 1);
   }
 
@@ -113,7 +115,7 @@ export default function NewRecordWizard({ onExit }: { onExit: () => void }) {
           quantity: form.quantity,
           unit: form.unit,
           goodsOwner,
-          payment: { amount: form.amount, method: form.method },
+          tariff: { type: form.tariffType, rate: form.tariffRate },
         }),
       });
       const data = await res.json();
@@ -223,7 +225,15 @@ export default function NewRecordWizard({ onExit }: { onExit: () => void }) {
               <select
                 className="input"
                 value={form.unit}
-                onChange={(e) => setForm({ ...form, unit: e.target.value as Unit })}
+                onChange={(e) => {
+                  const unit = e.target.value as Unit;
+                  const stillCompatible = isTariffCompatibleWithUnit(form.tariffType, unit);
+                  setForm({
+                    ...form,
+                    unit,
+                    ...(stillCompatible ? {} : { tariffType: "per_day", tariffRate: String(DEFAULT_TARIFF_RATES.per_day) }),
+                  });
+                }}
               >
                 <option value="tonne">тонны</option>
                 <option value="kg">кг</option>
@@ -357,27 +367,45 @@ export default function NewRecordWizard({ onExit }: { onExit: () => void }) {
 
       {step === 3 && (
         <div className="space-y-3">
+          <p className="text-xs text-slate-400">
+            Это договорённые условия оплаты за хранение, а не сама оплата — фактические
+            платежи вносятся позже на веб-панели (арендатор может заплатить не сразу).
+          </p>
           <div>
-            <label className="label">Сумма оплаты за хранение</label>
+            <label className="label">Тип тарифа</label>
+            <div className="space-y-2">
+              {TARIFF_TYPES.filter((t) => isTariffCompatibleWithUnit(t, form.unit)).map((t) => (
+                <button
+                  key={t}
+                  type="button"
+                  onClick={() =>
+                    setForm({ ...form, tariffType: t, tariffRate: String(DEFAULT_TARIFF_RATES[t]) })
+                  }
+                  className={`w-full text-left rounded-lg border px-3 py-2 text-sm ${
+                    form.tariffType === t
+                      ? "border-brand-600 bg-brand-50 text-brand-700"
+                      : "border-slate-200 bg-white text-slate-600"
+                  }`}
+                >
+                  {TARIFF_LABELS[t]}
+                </button>
+              ))}
+            </div>
+            {(form.unit === "box" || form.unit === "piece") && (
+              <p className="text-xs text-slate-400 mt-1">
+                Тарифы «за кг» недоступны для единицы «{form.unit === "box" ? "ящики" : "штуки"}» — вес неизвестен.
+              </p>
+            )}
+          </div>
+          <div>
+            <label className="label">Ставка, сум</label>
             <input
               type="number"
               inputMode="decimal"
               className="input"
-              value={form.amount}
-              onChange={(e) => setForm({ ...form, amount: e.target.value })}
+              value={form.tariffRate}
+              onChange={(e) => setForm({ ...form, tariffRate: e.target.value })}
             />
-          </div>
-          <div>
-            <label className="label">Способ оплаты</label>
-            <select
-              className="input"
-              value={form.method}
-              onChange={(e) => setForm({ ...form, method: e.target.value as Method })}
-            >
-              <option value="cash">Наличные</option>
-              <option value="terminal">Терминал</option>
-              <option value="transfer">Перевод</option>
-            </select>
           </div>
         </div>
       )}
@@ -405,7 +433,10 @@ export default function NewRecordWizard({ onExit }: { onExit: () => void }) {
                 <Row label="Директор" value={form.companyDirector} />
               </>
             )}
-            <Row label="Оплата" value={`${form.amount} (${form.method})`} />
+            <Row
+              label="Тариф"
+              value={formatTariffText({ type: form.tariffType, rate: Number(form.tariffRate) || 0 })}
+            />
           </div>
         </div>
       )}

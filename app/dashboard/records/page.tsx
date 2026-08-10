@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
+import { TARIFF_TYPES, TARIFF_LABELS, isTariffCompatibleWithUnit, formatTariffText, TariffType } from "@/lib/tariff";
 
 interface ContainerRef {
   _id: string;
@@ -36,7 +37,7 @@ interface Record_ {
   quantity: number;
   unit: string;
   goodsOwner: GoodsOwner;
-  payment: { amount: number; method: string };
+  tariff: { type: TariffType; rate: number };
   createdByEmployeeId?: EmployeeRef | string;
   createdAt: string;
   editedBy?: string;
@@ -44,7 +45,6 @@ interface Record_ {
 }
 
 const unitLabels: Record<string, string> = { tonne: "т", kg: "кг", box: "ящ.", piece: "шт." };
-const methodLabels: Record<string, string> = { cash: "Наличные", terminal: "Терминал", transfer: "Перевод" };
 
 const blankIndividual: GoodsOwnerIndividual = {
   type: "individual",
@@ -70,7 +70,7 @@ export default function RecordsPage() {
   const [filters, setFilters] = useState({
     containerId: "",
     product: "",
-    paymentMethod: "",
+    tariffType: "",
     from: "",
     to: "",
   });
@@ -85,7 +85,7 @@ export default function RecordsPage() {
     const params = new URLSearchParams();
     if (filters.containerId) params.set("containerId", filters.containerId);
     if (filters.product) params.set("product", filters.product);
-    if (filters.paymentMethod) params.set("paymentMethod", filters.paymentMethod);
+    if (filters.tariffType) params.set("tariffType", filters.tariffType);
     if (filters.from) params.set("from", filters.from);
     if (filters.to) params.set("to", filters.to);
     const res = await fetch(`/api/records?${params.toString()}`);
@@ -125,7 +125,7 @@ export default function RecordsPage() {
           quantity: editing.quantity,
           unit: editing.unit,
           goodsOwner: editing.goodsOwner,
-          payment: editing.payment,
+          tariff: editing.tariff,
         }),
       });
       if (!res.ok) {
@@ -178,16 +178,18 @@ export default function RecordsPage() {
             />
           </div>
           <div>
-            <label className="label">Способ оплаты</label>
+            <label className="label">Тип тарифа</label>
             <select
               className="input"
-              value={filters.paymentMethod}
-              onChange={(e) => setFilters({ ...filters, paymentMethod: e.target.value })}
+              value={filters.tariffType}
+              onChange={(e) => setFilters({ ...filters, tariffType: e.target.value })}
             >
               <option value="">Все</option>
-              <option value="cash">Наличные</option>
-              <option value="terminal">Терминал</option>
-              <option value="transfer">Перевод</option>
+              {TARIFF_TYPES.map((t) => (
+                <option key={t} value={t}>
+                  {TARIFF_LABELS[t]}
+                </option>
+              ))}
             </select>
           </div>
           <div>
@@ -225,7 +227,7 @@ export default function RecordsPage() {
                 <th>Товар</th>
                 <th>Кол-во</th>
                 <th>Владелец груза</th>
-                <th>Оплата</th>
+                <th>Тариф</th>
                 <th>Сотрудник</th>
                 <th></th>
               </tr>
@@ -270,9 +272,7 @@ export default function RecordsPage() {
                       {r.goodsOwner.type === "individual" ? "физ. лицо" : "юр. лицо"}
                     </span>
                   </td>
-                  <td className="whitespace-nowrap">
-                    {r.payment.amount.toLocaleString("ru-RU")} · {methodLabels[r.payment.method]}
-                  </td>
+                  <td className="whitespace-nowrap">{formatTariffText(r.tariff)}</td>
                   <td>
                     {typeof r.createdByEmployeeId === "object"
                       ? r.createdByEmployeeId?.name
@@ -343,7 +343,15 @@ export default function RecordsPage() {
                     <select
                       className="input"
                       value={editing.unit}
-                      onChange={(e) => setEditing({ ...editing, unit: e.target.value })}
+                      onChange={(e) => {
+                        const unit = e.target.value;
+                        const stillCompatible = isTariffCompatibleWithUnit(editing.tariff.type, unit as any);
+                        setEditing({
+                          ...editing,
+                          unit,
+                          tariff: stillCompatible ? editing.tariff : { ...editing.tariff, type: "per_day" },
+                        });
+                      }}
                     >
                       <option value="tonne">тонны</option>
                       <option value="kg">кг</option>
@@ -495,34 +503,36 @@ export default function RecordsPage() {
                 </div>
               )}
 
-              <p className="text-sm font-medium text-slate-600 pt-2">Оплата</p>
+              <p className="text-sm font-medium text-slate-600 pt-2">Тариф</p>
               <div className="grid grid-cols-2 gap-3">
-                <input
-                  type="number"
-                  className="input"
-                  placeholder="Сумма"
-                  value={editing.payment.amount}
-                  onChange={(e) =>
-                    setEditing({
-                      ...editing,
-                      payment: { ...editing.payment, amount: Number(e.target.value) },
-                    })
-                  }
-                />
                 <select
                   className="input"
-                  value={editing.payment.method}
+                  value={editing.tariff.type}
                   onChange={(e) =>
                     setEditing({
                       ...editing,
-                      payment: { ...editing.payment, method: e.target.value },
+                      tariff: { ...editing.tariff, type: e.target.value as TariffType },
                     })
                   }
                 >
-                  <option value="cash">Наличные</option>
-                  <option value="terminal">Терминал</option>
-                  <option value="transfer">Перевод</option>
+                  {TARIFF_TYPES.filter((t) => isTariffCompatibleWithUnit(t, editing.unit as any)).map((t) => (
+                    <option key={t} value={t}>
+                      {TARIFF_LABELS[t]}
+                    </option>
+                  ))}
                 </select>
+                <input
+                  type="number"
+                  className="input"
+                  placeholder="Ставка, сум"
+                  value={editing.tariff.rate}
+                  onChange={(e) =>
+                    setEditing({
+                      ...editing,
+                      tariff: { ...editing.tariff, rate: Number(e.target.value) },
+                    })
+                  }
+                />
               </div>
 
               {editError && <p className="text-sm text-red-600">{editError}</p>}

@@ -2,8 +2,11 @@ import { connectDB } from "./db";
 import { StorageRecord, Unit, PaymentMethod } from "@/models/StorageRecord";
 import { Withdrawal } from "@/models/Withdrawal";
 import { Container } from "@/models/Container";
+import { Income } from "@/models/Income";
 import { Types } from "mongoose";
 import { PAYMENT_METHOD_LABELS } from "./labels";
+import { ownerKeyForPhone } from "./ownerKey";
+import { getDebtsForOwner } from "./debt";
 
 export { PAYMENT_METHOD_LABELS };
 
@@ -79,15 +82,20 @@ export async function getContainerLoad(range: ReportRange) {
   return Array.from(byContainer.values());
 }
 
-/** Суммы оплат по способам оплаты. */
+/**
+ * Суммы фактических оплат по способам оплаты за период — источник теперь Income
+ * (models/Income.ts), а не StorageRecord: сумма оплаты больше не вводится при создании
+ * записи, она поступает отдельно и когда угодно (см. README → «Тарифы, оплата и
+ * задолженность»). Диапазон считается по дате фактического платежа (paidAt).
+ */
 export async function getPaymentsByMethod(range: ReportRange) {
   await connectDB();
-  const rows = await StorageRecord.aggregate([
-    { $match: { createdAt: { $gte: range.from, $lte: range.to } } },
+  const rows = await Income.aggregate([
+    { $match: { paidAt: { $gte: range.from, $lte: range.to } } },
     {
       $group: {
-        _id: "$payment.method",
-        total: { $sum: "$payment.amount" },
+        _id: "$method",
+        total: { $sum: "$amount" },
         count: { $sum: 1 },
       },
     },
@@ -153,61 +161,73 @@ export interface GoodsOwnerSummaryContainer {
   containerName: string;
   items: GoodsOwnerSummaryItem[];
   lastDate: Date;
-}
-
-export interface GoodsOwnerSummaryMethodTotal {
-  method: string;
-  amount: number;
+  since: Date;
+  accrued: number;
+  paid: number;
+  balance: number;
 }
 
 export interface GoodsOwnerSummary {
   recordCount: number;
   containers: GoodsOwnerSummaryContainer[];
-  totalAmount: number;
-  byMethod: GoodsOwnerSummaryMethodTotal[];
+  totalAccrued: number;
+  totalPaid: number;
+  totalBalance: number;
+  to: Date;
 }
 
-/** Агрегирует все StorageRecord физлица с данным (уже нормализованным) телефоном. */
+/**
+ * Агрегирует все StorageRecord физлица с данным (уже нормализованным) телефоном —
+ * список товаров по контейнерам плюс начисление/оплата/задолженность на сегодня
+ * (см. lib/debt.ts). Используется и для сводки в боте, и может быть источником для
+ * будущего личного кабинета на сайте.
+ */
 export async function getGoodsOwnerSummary(phone: string): Promise<GoodsOwnerSummary> {
   await connectDB();
 
-  const records = await StorageRecord.find({ "goodsOwner.type": "individual", "goodsOwner.phone": phone })
-    .sort({ createdAt: -1 })
-    .populate<{ containerId: { _id: Types.ObjectId; name: string } }>("containerId", "name")
-    .lean();
+  const to = new Date();
+  const [records, debts] = await Promise.all([
+    StorageRecord.find({ "goodsOwner.type": "individual", "goodsOwner.phone": phone })
+      .sort({ createdAt: -1 })
+      .populate<{ containerId: { _id: Types.ObjectId; name: string } }>("containerId", "name")
+      .lean(),
+    getDebtsForOwner(ownerKeyForPhone(phone), to),
+  ]);
+
+  const debtByContainer = new Map(debts.map((d) => [d.containerId, d]));
 
   const containerMap = new Map<string, GoodsOwnerSummaryContainer>();
-  let totalAmount = 0;
-  const methodTotals = new Map<PaymentMethod, number>();
-
   for (const r of records) {
     const containerRef = r.containerId as unknown as { _id: Types.ObjectId; name: string } | null;
     const cid = containerRef ? String(containerRef._id) : "unknown";
     if (!containerMap.has(cid)) {
+      const debt = debtByContainer.get(cid);
       containerMap.set(cid, {
         containerId: cid,
         containerName: containerRef?.name || "—",
         items: [],
         lastDate: r.createdAt,
+        since: debt?.since || r.createdAt,
+        accrued: debt?.accrued || 0,
+        paid: debt?.paid || 0,
+        balance: debt?.balance || 0,
       });
     }
     const entry = containerMap.get(cid)!;
     entry.items.push({ productName: r.productName, quantity: r.quantity, unit: r.unit });
     if (r.createdAt > entry.lastDate) entry.lastDate = r.createdAt;
-
-    totalAmount += r.payment.amount;
-    methodTotals.set(r.payment.method, (methodTotals.get(r.payment.method) || 0) + r.payment.amount);
   }
 
-  const byMethod = Array.from(methodTotals.entries()).map(([method, amount]) => ({
-    method: PAYMENT_METHOD_LABELS[method] || method,
-    amount,
-  }));
+  const containers = Array.from(containerMap.values());
+  const totalAccrued = containers.reduce((sum, c) => sum + c.accrued, 0);
+  const totalPaid = containers.reduce((sum, c) => sum + c.paid, 0);
 
   return {
     recordCount: records.length,
-    containers: Array.from(containerMap.values()),
-    totalAmount,
-    byMethod,
+    containers,
+    totalAccrued,
+    totalPaid,
+    totalBalance: totalAccrued - totalPaid,
+    to,
   };
 }

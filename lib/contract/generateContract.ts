@@ -3,6 +3,7 @@ import path from "path";
 import { CONTRACT_BLOCKS, ContractBlock } from "./contractTemplateBlocks";
 import { IStorageRecord } from "@/models/StorageRecord";
 import { UNIT_LABELS } from "@/lib/labels";
+import { formatTariffText } from "@/lib/tariff";
 
 /**
  * Сборка PDF договора хранения для физлиц-арендаторов.
@@ -55,7 +56,7 @@ function abbreviateFullName(fullName: string): string {
 
 /** Данные, сопоставленные с плейсхолдерами шаблона (см. таблицу в README, часть 3). */
 export function buildContractFillData(
-  record: Pick<IStorageRecord, "productName" | "quantity" | "unit" | "payment" | "goodsOwner">,
+  record: Pick<IStorageRecord, "productName" | "quantity" | "unit" | "tariff" | "goodsOwner">,
   containerName: string
 ): ContractFillData {
   const owner = record.goodsOwner;
@@ -72,7 +73,7 @@ export function buildContractFillData(
     passportIssuedBy: owner.passportIssuedBy,
     pinfl: owner.pinfl,
     rentalInfo: `${containerName}, ${record.productName} — ${numberFmt.format(record.quantity)} ${unitLabel}`,
-    tariffText: `${numberFmt.format(record.payment.amount)} сум`,
+    tariffText: formatTariffText(record.tariff),
   };
 }
 

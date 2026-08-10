@@ -13,7 +13,7 @@ import { generateContractBuffer, contractFilename } from "@/lib/contract/contrac
 
 type RecordForNotify = Pick<
   IStorageRecord,
-  "productName" | "quantity" | "unit" | "payment" | "createdAt" | "goodsOwner" | "_id"
+  "productName" | "quantity" | "unit" | "tariff" | "createdAt" | "goodsOwner" | "_id"
 >;
 
 /**

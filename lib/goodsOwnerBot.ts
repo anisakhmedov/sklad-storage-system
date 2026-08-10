@@ -2,7 +2,8 @@ import { connectDB } from "@/lib/db";
 import { StorageRecord, IStorageRecord } from "@/models/StorageRecord";
 import { GoodsOwnerLink, IGoodsOwnerLink } from "@/models/GoodsOwnerLink";
 import { normalizePhone } from "@/lib/phone";
-import { UNIT_LABELS, PAYMENT_METHOD_LABELS } from "@/lib/labels";
+import { UNIT_LABELS } from "@/lib/labels";
+import { formatTariffText } from "@/lib/tariff";
 import { GoodsOwnerSummary } from "@/lib/reports";
 
 /**
@@ -19,7 +20,7 @@ import { GoodsOwnerSummary } from "@/lib/reports";
 
 export function isReportRequest(text: string): boolean {
   const t = text.trim().toLowerCase();
-  return /отч[её]т|сводк|мои товар/.test(t);
+  return /отч[её]т|сводк|мои товар|долг|задолж/.test(t);
 }
 
 export function isContractRequest(text: string): boolean {
@@ -100,21 +101,23 @@ function formatMoney(n: number): string {
  * как сотрудник создал запись с его номером телефона (часть 2 ТЗ). Без паспортных данных/ПИНФЛ.
  */
 export function formatRegisteredMessage(
-  record: Pick<IStorageRecord, "productName" | "quantity" | "unit" | "payment" | "createdAt">,
+  record: Pick<IStorageRecord, "productName" | "quantity" | "unit" | "tariff" | "createdAt">,
   containerName: string
 ): string {
   const unitLabel = UNIT_LABELS[record.unit] || record.unit;
-  const methodLabel = PAYMENT_METHOD_LABELS[record.payment.method] || record.payment.method;
   return [
     "✅ Ваш товар успешно зарегистрирован.",
     `Контейнер: ${containerName}`,
     `Товар: ${record.productName}, ${record.quantity} ${unitLabel}`,
     `Дата: ${formatDate(record.createdAt)}`,
-    `Оплата за хранение: ${formatMoney(record.payment.amount)} сум (${methodLabel})`,
+    `Тариф за хранение: ${formatTariffText(record.tariff)}`,
   ].join("\n");
 }
 
-/** Сводка по товарам владельца груза — по запросу («отчёт»/«сводка»/`/report`). */
+/**
+ * Сводка по товарам и задолженности владельца груза — по запросу
+ * («отчёт»/«сводка»/«долг»/«задолженность»/`/report`).
+ */
 export function formatOwnerSummaryMessage(ownerName: string, summary: GoodsOwnerSummary): string {
   const lines: string[] = [];
   lines.push(`*Сводка по вашим товарам* — ${escapeMd(ownerName)}`);
@@ -130,13 +133,24 @@ export function formatOwnerSummaryMessage(ownerName: string, summary: GoodsOwner
       lines.push(`   ${formatMoney(qty)} ${UNIT_LABELS[unit as keyof typeof UNIT_LABELS] || unit}`);
     }
     lines.push(`   Последнее поступление: ${formatDate(c.lastDate)}`);
+    lines.push(`   Начислено: ${formatMoney(c.accrued)} сум · Оплачено: ${formatMoney(c.paid)} сум`);
+    lines.push(
+      c.balance > 0
+        ? `   ⚠️ Задолженность: ${formatMoney(c.balance)} сум`
+        : c.balance < 0
+        ? `   ✅ Переплата: ${formatMoney(-c.balance)} сум`
+        : `   ✅ Задолженности нет`
+    );
     lines.push("");
   }
 
-  lines.push(`💰 Итого оплачено за хранение: ${formatMoney(summary.totalAmount)} сум`);
-  for (const m of summary.byMethod) {
-    lines.push(`   • ${escapeMd(m.method)}: ${formatMoney(m.amount)} сум`);
-  }
+  lines.push(`💰 Всего начислено: ${formatMoney(summary.totalAccrued)} сум`);
+  lines.push(`💵 Всего оплачено: ${formatMoney(summary.totalPaid)} сум`);
+  lines.push(
+    summary.totalBalance > 0
+      ? `⚠️ *Итоговая задолженность: ${formatMoney(summary.totalBalance)} сум* (на ${formatDate(summary.to)})`
+      : `✅ *Задолженности нет* (на ${formatDate(summary.to)})`
+  );
 
   return lines.join("\n");
 }

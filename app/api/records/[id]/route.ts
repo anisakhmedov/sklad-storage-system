@@ -33,8 +33,8 @@ export async function PATCH(
     // при смене типа арендатора поля старого варианта не должны "просачиваться" в новый.
     record.goodsOwner = data.goodsOwner as any;
   }
-  if (data.payment !== undefined) {
-    record.payment = { ...record.payment, ...data.payment } as any;
+  if (data.tariff !== undefined) {
+    record.tariff = { ...record.tariff, ...data.tariff } as any;
   }
   record.editedBy = user.identifier;
   record.editedAt = new Date();
