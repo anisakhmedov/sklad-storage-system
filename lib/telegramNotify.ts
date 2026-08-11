@@ -3,6 +3,7 @@ import { getBot } from "@/lib/telegramBot";
 import { IStorageRecord } from "@/models/StorageRecord";
 import { getGoodsOwnerLinkByPhone, formatRegisteredMessage } from "@/lib/goodsOwnerBot";
 import { generateContractBuffer, contractFilename } from "@/lib/contract/contractService";
+import { generateActBuffer, actFilename } from "@/lib/contract/actService";
 
 /**
  * Исходящие уведомления/документы, инициируемые НЕ входящим апдейтом бота, а действием
@@ -13,7 +14,7 @@ import { generateContractBuffer, contractFilename } from "@/lib/contract/contrac
 
 type RecordForNotify = Pick<
   IStorageRecord,
-  "productName" | "quantity" | "unit" | "tariff" | "createdAt" | "goodsOwner" | "_id"
+  "productName" | "quantity" | "unit" | "tariff" | "createdAt" | "goodsOwner" | "_id" | "contractNumber"
 >;
 
 /**
@@ -48,12 +49,38 @@ export async function sendContractToEmployee(
 ): Promise<void> {
   try {
     if (record.goodsOwner.type !== "individual") return;
-    const buffer = await generateContractBuffer(record, containerName);
+    // На момент вызова номер уже присвоен при создании записи (см. app/api/miniapp/records/route.ts).
+    const buffer = await generateContractBuffer(record, containerName, record.contractNumber || "—");
     const bot = getBot();
     await bot.api.sendDocument(Number(employeeTelegramId), new InputFile(buffer, contractFilename(String(record._id))), {
       caption: "📄 Договор по новой записи (физ. лицо) сформирован автоматически.",
     });
   } catch (err) {
     console.error("sendContractToEmployee: не удалось отправить PDF договора сотруднику:", err);
+  }
+}
+
+/**
+ * Акт приёма-передачи доп. товара (см. lib/contract/actService.ts) — отправляется сотруднику
+ * автоматически при увеличении количества груза у существующего клиента (delta > 0), тем же
+ * способом, что и договор. В отличие от договора — для любого типа владельца груза.
+ */
+export async function sendActToEmployee(
+  employeeTelegramId: string,
+  record: RecordForNotify,
+  containerName: string,
+  delta: number,
+  totalAfter: number
+): Promise<void> {
+  try {
+    const buffer = await generateActBuffer(record, containerName, delta, totalAfter);
+    const bot = getBot();
+    await bot.api.sendDocument(
+      Number(employeeTelegramId),
+      new InputFile(buffer, actFilename(String(record._id))),
+      { caption: "📄 Акт приёма-передачи товара сформирован автоматически." }
+    );
+  } catch (err) {
+    console.error("sendActToEmployee: не удалось отправить PDF акта сотруднику:", err);
   }
 }

@@ -5,7 +5,7 @@ import { Container } from "@/models/Container";
 import { Income } from "@/models/Income";
 import { Types } from "mongoose";
 import { PAYMENT_METHOD_LABELS } from "./labels";
-import { ownerKeyForPhone } from "./ownerKey";
+import { ownerKeyForPhone, parseOwnerKey } from "./ownerKey";
 import { getDebtsForOwner } from "./debt";
 
 export { PAYMENT_METHOD_LABELS };
@@ -151,6 +151,7 @@ export async function getContainerBalances() {
 // ---------------------------------------------------------------------------
 
 export interface GoodsOwnerSummaryItem {
+  recordId: string;
   productName: string;
   quantity: number;
   unit: Unit;
@@ -179,19 +180,50 @@ export interface GoodsOwnerSummary {
 /**
  * Агрегирует все StorageRecord физлица с данным (уже нормализованным) телефоном —
  * список товаров по контейнерам плюс начисление/оплата/задолженность на сегодня
- * (см. lib/debt.ts). Используется и для сводки в боте, и может быть источником для
- * будущего личного кабинета на сайте.
+ * (см. lib/debt.ts). Используется для сводки в боте (см. lib/telegramBot.ts).
+ * Обёртка над getOwnerSummaryByKey — сохраняет исходную сигнатуру для существующего вызова.
  */
 export async function getGoodsOwnerSummary(phone: string): Promise<GoodsOwnerSummary> {
+  const summary = await getOwnerSummaryByKey(ownerKeyForPhone(phone));
+  return (
+    summary || {
+      recordCount: 0,
+      containers: [],
+      totalAccrued: 0,
+      totalPaid: 0,
+      totalBalance: 0,
+      to: new Date(),
+    }
+  );
+}
+
+/**
+ * Обобщённая версия getGoodsOwnerSummary — принимает ownerKey (физлицо ИЛИ юрлицо, см.
+ * lib/ownerKey.ts) и опционально сужает выборку до определённых контейнеров (для Mini App,
+ * где сотрудник видит только свои контейнеры, см. lib/miniAuth.ts::allowedContainerIds).
+ * Используется разделом «Клиенты» в Mini App и «Арендаторы» на веб-панели.
+ */
+export async function getOwnerSummaryByKey(
+  ownerKey: string,
+  opts: { containerIds?: string[] } = {}
+): Promise<GoodsOwnerSummary | null> {
+  const parsed = parseOwnerKey(ownerKey);
+  if (!parsed) return null;
   await connectDB();
+
+  const recordFilter: Record<string, unknown> =
+    parsed.type === "individual"
+      ? { "goodsOwner.type": "individual", "goodsOwner.phone": parsed.value }
+      : { "goodsOwner.type": "company", "goodsOwner.inn": parsed.value };
+  if (opts.containerIds) recordFilter.containerId = { $in: opts.containerIds };
 
   const to = new Date();
   const [records, debts] = await Promise.all([
-    StorageRecord.find({ "goodsOwner.type": "individual", "goodsOwner.phone": phone })
+    StorageRecord.find(recordFilter)
       .sort({ createdAt: -1 })
       .populate<{ containerId: { _id: Types.ObjectId; name: string } }>("containerId", "name")
       .lean(),
-    getDebtsForOwner(ownerKeyForPhone(phone), to),
+    getDebtsForOwner(ownerKey, to, opts.containerIds),
   ]);
 
   const debtByContainer = new Map(debts.map((d) => [d.containerId, d]));
@@ -214,7 +246,7 @@ export async function getGoodsOwnerSummary(phone: string): Promise<GoodsOwnerSum
       });
     }
     const entry = containerMap.get(cid)!;
-    entry.items.push({ productName: r.productName, quantity: r.quantity, unit: r.unit });
+    entry.items.push({ recordId: String(r._id), productName: r.productName, quantity: r.quantity, unit: r.unit });
     if (r.createdAt > entry.lastDate) entry.lastDate = r.createdAt;
   }
 

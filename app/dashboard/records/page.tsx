@@ -1,7 +1,9 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
+import Link from "next/link";
 import { TARIFF_TYPES, TARIFF_LABELS, isTariffCompatibleWithUnit, formatTariffText, TariffType } from "@/lib/tariff";
+import { ownerKeyOf } from "@/lib/ownerKey";
 import {
   ClipboardList,
   Search,
@@ -288,12 +290,22 @@ export default function RecordsPage() {
                   <td>
                     {r.goodsOwner.type === "individual" ? (
                       <>
-                        <div className="text-ink-800">{r.goodsOwner.fullName}</div>
+                        <Link
+                          href={`/dashboard/tenants/${encodeURIComponent(ownerKeyOf(r.goodsOwner))}`}
+                          className="text-ink-800 hover:text-brand-600 font-medium"
+                        >
+                          {r.goodsOwner.fullName}
+                        </Link>
                         <div className="text-xs text-ink-400">{r.goodsOwner.phone}</div>
                       </>
                     ) : (
                       <>
-                        <div className="text-ink-800">{r.goodsOwner.companyName}</div>
+                        <Link
+                          href={`/dashboard/tenants/${encodeURIComponent(ownerKeyOf(r.goodsOwner))}`}
+                          className="text-ink-800 hover:text-brand-600 font-medium"
+                        >
+                          {r.goodsOwner.companyName}
+                        </Link>
                         <div className="text-xs text-ink-400">
                           ИНН {r.goodsOwner.inn} · дир. {r.goodsOwner.directorName}
                         </div>

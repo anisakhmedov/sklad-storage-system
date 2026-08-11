@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { resolveEmployee } from "@/lib/miniAuth";
+import { resolveEmployee, allowedContainerIds } from "@/lib/miniAuth";
 import { jsonError } from "@/lib/apiHelpers";
 import { getAllOwnerContainerDebts } from "@/lib/debt";
 
@@ -16,6 +16,6 @@ export async function GET(req: NextRequest) {
     return jsonError("Доступ разрешён только подтверждённым сотрудникам", 403);
   }
 
-  const debts = await getAllOwnerContainerDebts({ to: new Date() });
+  const debts = await getAllOwnerContainerDebts({ to: new Date(), containerIds: allowedContainerIds(employee) });
   return NextResponse.json({ debts });
 }

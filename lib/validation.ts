@@ -21,6 +21,13 @@ export const employeeStatusSchema = z.object({
   status: z.enum(["approved", "rejected"]),
 });
 
+// Пустой массив = доступ ко всем контейнерам (см. models/Employee.ts). Оба поля необязательны
+// и независимы: PATCH может менять только статус, только доступ, или оба сразу.
+export const employeeUpdateSchema = z.object({
+  status: z.enum(["approved", "rejected"]).optional(),
+  containerAccess: z.array(z.string()).optional(),
+});
+
 export const containerCreateSchema = z.object({
   name: z.string().min(1, "Укажите номер/название контейнера").max(100),
   description: z.string().max(1000).optional().default(""),
@@ -94,6 +101,13 @@ export const storageRecordUpdateSchema = storageRecordBaseSchema.partial();
 export const webAccessCreateSchema = z.object({
   identifier: z.string().min(3, "Укажите username или телефон"),
   role: webRoleEnum,
+});
+
+// Добавление/убавление количества груза у уже существующей записи (Mini App, см.
+// app/api/miniapp/records/[id]/adjust/route.ts) — delta > 0 добавляет, delta < 0 убавляет.
+export const quantityAdjustSchema = z.object({
+  delta: z.coerce.number().refine((v) => v !== 0, "Изменение количества не может быть нулевым"),
+  note: z.string().max(500).optional().default(""),
 });
 
 export const withdrawalCreateSchema = z.object({

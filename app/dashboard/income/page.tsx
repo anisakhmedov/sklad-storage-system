@@ -1,6 +1,7 @@
 "use client";
 
 import { Fragment, useEffect, useState, useCallback, useMemo } from "react";
+import Link from "next/link";
 import {
   Wallet,
   CalendarClock,
@@ -215,7 +216,15 @@ export default function IncomePage() {
                           className="cursor-pointer"
                           onClick={() => setExpanded(isOpen ? null : key)}
                         >
-                          <td className="font-medium text-ink-800">{d.ownerLabel}</td>
+                          <td className="font-medium text-ink-800">
+                            <Link
+                              href={`/dashboard/tenants/${encodeURIComponent(d.ownerKey)}`}
+                              onClick={(e) => e.stopPropagation()}
+                              className="hover:text-brand-600"
+                            >
+                              {d.ownerLabel}
+                            </Link>
+                          </td>
                           <td>
                             <span
                               className={`badge ${
@@ -319,7 +328,14 @@ export default function IncomePage() {
                 return (
                   <tr key={inc._id}>
                     <td className="whitespace-nowrap">{new Date(inc.paidAt).toLocaleDateString("ru-RU")}</td>
-                    <td className="text-ink-800">{inc.ownerLabel}</td>
+                    <td className="text-ink-800">
+                      <Link
+                        href={`/dashboard/tenants/${encodeURIComponent(inc.ownerKey)}`}
+                        className="hover:text-brand-600"
+                      >
+                        {inc.ownerLabel}
+                      </Link>
+                    </td>
                     <td>{typeof inc.containerId === "object" ? inc.containerId.name : inc.containerId}</td>
                     <td className="whitespace-nowrap font-medium text-ink-800 tabular-nums">{money(inc.amount)} сум</td>
                     <td>

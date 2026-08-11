@@ -1,7 +1,7 @@
 import { NextRequest } from "next/server";
 import { verifyTelegramInitData, devBypassUser, ParsedInitData } from "./telegramAuth";
 import { connectDB } from "./db";
-import { Employee } from "@/models/Employee";
+import { Employee, IEmployee } from "@/models/Employee";
 
 /** Достаёт и проверяет пользователя Telegram из заголовков запроса Mini App. */
 export function resolveTelegramUser(req: NextRequest): ParsedInitData | null {
@@ -25,4 +25,23 @@ export async function resolveEmployee(req: NextRequest) {
   await connectDB();
   const employee = await Employee.findOne({ telegramId: String(tgUser.user.id) }).lean();
   return { tgUser, employee };
+}
+
+/**
+ * Пустой `containerAccess` = доступ ко всем контейнерам (см. models/Employee.ts), непустой —
+ * только к перечисленным. Используется во всех miniapp-роутах, отдающих/принимающих данные
+ * по конкретному контейнеру (см. README-план по доступу сотрудников к контейнерам).
+ */
+export function employeeCanAccessContainer(
+  employee: Pick<IEmployee, "containerAccess">,
+  containerId: string
+): boolean {
+  if (!employee.containerAccess || employee.containerAccess.length === 0) return true;
+  return employee.containerAccess.some((id) => String(id) === String(containerId));
+}
+
+/** Список разрешённых контейнеров для фильтров в БД, или undefined — если доступ не ограничен. */
+export function allowedContainerIds(employee: Pick<IEmployee, "containerAccess">): string[] | undefined {
+  if (!employee.containerAccess || employee.containerAccess.length === 0) return undefined;
+  return employee.containerAccess.map((id) => String(id));
 }

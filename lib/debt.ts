@@ -52,12 +52,17 @@ interface Group {
  * и веб-панелью, когда не нужна сводка по всем сразу.
  */
 export async function getAllOwnerContainerDebts(
-  opts: { to?: Date; ownerKey?: string } = {}
+  opts: { to?: Date; ownerKey?: string; containerIds?: string[] } = {}
 ): Promise<OwnerContainerDebt[]> {
   const to = opts.to || new Date();
   await connectDB();
 
   const recordFilter: Record<string, unknown> = {};
+  if (opts.containerIds) {
+    // Ограничение по доступным сотруднику контейнерам (см. lib/miniAuth.ts::allowedContainerIds).
+    // undefined в opts.containerIds означает "без ограничения" — сюда попадает только массив.
+    recordFilter.containerId = { $in: opts.containerIds };
+  }
   if (opts.ownerKey) {
     const parsed = parseOwnerKey(opts.ownerKey);
     if (parsed?.type === "individual") {
@@ -165,6 +170,10 @@ export async function getOwnerContainerDebt(
   return debts.find((d) => d.containerId === containerId) || null;
 }
 
-export async function getDebtsForOwner(ownerKey: string, to: Date = new Date()): Promise<OwnerContainerDebt[]> {
-  return getAllOwnerContainerDebts({ to, ownerKey });
+export async function getDebtsForOwner(
+  ownerKey: string,
+  to: Date = new Date(),
+  containerIds?: string[]
+): Promise<OwnerContainerDebt[]> {
+  return getAllOwnerContainerDebts({ to, ownerKey, containerIds });
 }

@@ -5,6 +5,7 @@ import { StorageRecord, IStorageRecord } from "@/models/StorageRecord";
 // поэтому нельзя полагаться на то, что модель уже была где-то импортирована раньше в процессе.
 import "@/models/Container";
 import { buildContractFillData, renderContractPdf } from "./generateContract";
+import { getNextSequence } from "@/lib/counter";
 
 export function contractFilename(recordId: string): string {
   return `dogovor-${recordId}.pdf`;
@@ -14,11 +15,26 @@ type LeanRecordWithContainer = IStorageRecord & { containerId: { _id: unknown; n
 
 /** Общий шаг: собрать PDF, когда запись и название контейнера уже под рукой. */
 export async function generateContractBuffer(
-  record: Pick<IStorageRecord, "productName" | "quantity" | "unit" | "tariff" | "goodsOwner">,
-  containerName: string
+  record: Pick<IStorageRecord, "tariff" | "goodsOwner">,
+  containerName: string,
+  contractNumber: string
 ) {
-  const data = buildContractFillData(record, containerName);
+  const data = buildContractFillData(record, containerName, contractNumber);
   return renderContractPdf(data);
+}
+
+/**
+ * Записи, созданные до появления поля `contractNumber` (см. models/StorageRecord.ts), номера
+ * не имеют — присваиваем его лениво при первом обращении к договору и сохраняем в БД, чтобы
+ * повторные запросы отдавали тот же номер. Год для последовательности берётся текущий (момент
+ * первой выдачи документа), а не год исходного создания записи.
+ */
+async function ensureContractNumber(record: LeanRecordWithContainer): Promise<string> {
+  if (record.contractNumber) return record.contractNumber;
+  const year = new Date().getFullYear();
+  const number = `${await getNextSequence(`contract:${year}`)}-${year}`;
+  await StorageRecord.updateOne({ _id: record._id }, { $set: { contractNumber: number } });
+  return number;
 }
 
 export type ContractLookupError = "not_found" | "not_individual";
@@ -35,7 +51,8 @@ export async function getContractForRecordId(
   if (record.goodsOwner.type !== "individual") return "not_individual";
 
   const containerName = record.containerId?.name || "—";
-  const buffer = await generateContractBuffer(record, containerName);
+  const contractNumber = await ensureContractNumber(record);
+  const buffer = await generateContractBuffer(record, containerName, contractNumber);
   return { buffer, filename: contractFilename(String(record._id)) };
 }
 
@@ -56,7 +73,8 @@ export async function findLatestIndividualContractByPhone(phone: string) {
 
   const latest = records[0];
   const containerName = latest.containerId?.name || "—";
-  const buffer = await generateContractBuffer(latest, containerName);
+  const contractNumber = await ensureContractNumber(latest);
+  const buffer = await generateContractBuffer(latest, containerName, contractNumber);
   return {
     buffer,
     filename: contractFilename(String(latest._id)),

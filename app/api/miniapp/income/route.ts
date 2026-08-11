@@ -3,7 +3,7 @@ import { connectDB } from "@/lib/db";
 import { Income } from "@/models/Income";
 import { Container } from "@/models/Container";
 import { StorageRecord } from "@/models/StorageRecord";
-import { resolveEmployee } from "@/lib/miniAuth";
+import { resolveEmployee, employeeCanAccessContainer } from "@/lib/miniAuth";
 import { jsonError, zodErrorResponse } from "@/lib/apiHelpers";
 import { incomeCreateSchema } from "@/lib/validation";
 import { logAudit } from "@/lib/audit";
@@ -25,6 +25,10 @@ export async function POST(req: NextRequest) {
   const body = await req.json().catch(() => null);
   const parsed = incomeCreateSchema.safeParse(body);
   if (!parsed.success) return zodErrorResponse(parsed.error);
+
+  if (!employeeCanAccessContainer(employee, parsed.data.containerId)) {
+    return jsonError("Нет доступа к этому контейнеру", 403);
+  }
 
   await connectDB();
 

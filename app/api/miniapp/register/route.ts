@@ -4,6 +4,7 @@ import { Employee } from "@/models/Employee";
 import { resolveTelegramUser } from "@/lib/miniAuth";
 import { employeeRegisterSchema } from "@/lib/validation";
 import { jsonError, zodErrorResponse } from "@/lib/apiHelpers";
+import { logAudit } from "@/lib/audit";
 
 export async function POST(req: NextRequest) {
   const tgUser = resolveTelegramUser(req);
@@ -33,6 +34,15 @@ export async function POST(req: NextRequest) {
     telegramId,
     telegramUsername: tgUser.user.username,
     status: "pending",
+  });
+
+  await logAudit({
+    entity: "Employee",
+    entityId: employee._id,
+    action: "create",
+    actorId: telegramId,
+    actorRole: "employee",
+    changes: { name: employee.name, phone: employee.phone },
   });
 
   return NextResponse.json({

@@ -1,4 +1,4 @@
-import { IGoodsOwner, GoodsOwnerType } from "@/models/StorageRecord";
+import type { IGoodsOwner, GoodsOwnerType } from "@/models/StorageRecord";
 
 /**
  * Устойчивый идентификатор арендатора для агрегации задолженности/платежей поверх
@@ -6,10 +6,15 @@ import { IGoodsOwner, GoodsOwnerType } from "@/models/StorageRecord";
  * (goodsOwner.phone уже нормализован на входе, см. lib/validation.ts), для юрлиц — ИНН
  * (у юрлиц нет телефона в схеме). Формат `${type}:${значение}`, чтобы совпадающие по
  * значению номер и ИНН никогда не схлопнулись в один ключ.
+ *
+ * Сигнатура намеренно упрощена (не Pick<IGoodsOwner,...>): некоторые клиентские компоненты
+ * (напр. app/dashboard/records/page.tsx) держат собственную локальную копию типа goodsOwner
+ * без индексной сигнатуры — структурно она достаточна, а Record<string, unknown> в типе
+ * параметра такие объекты отклоняет.
  */
-export function ownerKeyOf(owner: Pick<IGoodsOwner, "type"> & Record<string, unknown>): string {
-  if (owner.type === "individual") return `individual:${(owner as any).phone}`;
-  return `company:${String((owner as any).inn).trim()}`;
+export function ownerKeyOf(owner: { type: "individual"; phone: string } | { type: "company"; inn: string }): string {
+  if (owner.type === "individual") return `individual:${owner.phone}`;
+  return `company:${owner.inn.trim()}`;
 }
 
 export function ownerKeyForPhone(phone: string): string {

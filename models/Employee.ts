@@ -9,6 +9,13 @@ export interface IEmployee {
   telegramId: string;
   telegramUsername?: string;
   status: EmployeeStatus;
+  /**
+   * Список контейнеров, к которым у сотрудника есть доступ в Mini App. ПУСТОЙ МАССИВ (по
+   * умолчанию) означает доступ ко ВСЕМ контейнерам — так уже одобренные до этой доработки
+   * сотрудники не теряют доступ при деплое. Непустой массив сужает доступ только до
+   * перечисленных контейнеров (см. lib/miniAuth.ts::employeeCanAccessContainer).
+   */
+  containerAccess: Types.ObjectId[];
   createdAt: Date;
 }
 
@@ -22,6 +29,7 @@ const EmployeeSchema = new Schema<IEmployee>({
     enum: ["pending", "approved", "rejected"],
     default: "pending",
   },
+  containerAccess: { type: [Schema.Types.ObjectId], ref: "Container", default: [] },
   createdAt: { type: Date, default: Date.now },
 });
 

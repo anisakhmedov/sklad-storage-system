@@ -14,6 +14,8 @@ import {
   LogOut,
   Menu,
   X,
+  UserRound,
+  History,
 } from "lucide-react";
 
 const links = [
@@ -23,7 +25,9 @@ const links = [
   { href: "/dashboard/containers", label: "Контейнеры", icon: Boxes },
   { href: "/dashboard/records", label: "Записи", icon: ClipboardList },
   { href: "/dashboard/income", label: "Оплаты", icon: Wallet },
+  { href: "/dashboard/tenants", label: "Арендаторы", icon: UserRound },
   { href: "/dashboard/reports", label: "Отчётность", icon: BarChart3 },
+  { href: "/dashboard/audit", label: "Активность", icon: History },
 ];
 
 export default function Nav({ identifier, role }: { identifier: string; role: string }) {

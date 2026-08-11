@@ -2,11 +2,12 @@ import { NextRequest, NextResponse } from "next/server";
 import { connectDB } from "@/lib/db";
 import { StorageRecord } from "@/models/StorageRecord";
 import { Container } from "@/models/Container";
-import { resolveEmployee } from "@/lib/miniAuth";
+import { resolveEmployee, employeeCanAccessContainer } from "@/lib/miniAuth";
 import { storageRecordCreateSchema } from "@/lib/validation";
 import { jsonError, zodErrorResponse } from "@/lib/apiHelpers";
 import { logAudit } from "@/lib/audit";
 import { notifyGoodsOwnerRegistered, sendContractToEmployee } from "@/lib/telegramNotify";
+import { getNextSequence } from "@/lib/counter";
 
 export async function POST(req: NextRequest) {
   const { tgUser, employee } = await resolveEmployee(req);
@@ -19,9 +20,21 @@ export async function POST(req: NextRequest) {
   const parsed = storageRecordCreateSchema.safeParse(body);
   if (!parsed.success) return zodErrorResponse(parsed.error);
 
+  if (!employeeCanAccessContainer(employee, parsed.data.containerId)) {
+    return jsonError("Нет доступа к этому контейнеру", 403);
+  }
+
   await connectDB();
   const container = await Container.findById(parsed.data.containerId);
   if (!container) return jsonError("Контейнер не найден", 404);
+
+  // Номер договора присваивается один раз, только физлицам (только для них формируется
+  // договор, см. lib/contract/generateContract.ts) — последовательность по текущему году
+  // (см. lib/counter.ts, README → «Номер договора»).
+  const contractNumber =
+    parsed.data.goodsOwner.type === "individual"
+      ? `${await getNextSequence(`contract:${new Date().getFullYear()}`)}-${new Date().getFullYear()}`
+      : undefined;
 
   const record = await StorageRecord.create({
     containerId: parsed.data.containerId,
@@ -31,6 +44,7 @@ export async function POST(req: NextRequest) {
     goodsOwner: parsed.data.goodsOwner,
     tariff: parsed.data.tariff,
     createdByEmployeeId: employee._id,
+    contractNumber,
   });
 
   await logAudit({

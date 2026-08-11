@@ -57,6 +57,13 @@ export interface IStorageRecord {
   createdAt: Date;
   editedBy?: string;
   editedAt?: Date;
+  /**
+   * Номер договора вида "3-2026" — присваивается один раз при создании записи для физлица
+   * (см. lib/counter.ts, app/api/miniapp/records/route.ts) и больше не меняется, даже если
+   * запись позже отредактирована. У записей, созданных до этой доработки, поле отсутствует —
+   * им номер присваивается лениво при первой генерации PDF (см. lib/contract/contractService.ts).
+   */
+  contractNumber?: string;
 }
 
 // Единая гибкая Mongoose-схема на оба варианта goodsOwner (Mongoose не умеет нативно
@@ -127,6 +134,7 @@ const StorageRecordSchema = new Schema<IStorageRecord>({
   createdAt: { type: Date, default: Date.now, index: true },
   editedBy: { type: String },
   editedAt: { type: Date },
+  contractNumber: { type: String },
 });
 
 // Договор формируется только для физлиц — индекс ускоряет поиск по телефону

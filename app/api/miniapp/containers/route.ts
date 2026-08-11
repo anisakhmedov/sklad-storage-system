@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { connectDB } from "@/lib/db";
 import { Container } from "@/models/Container";
-import { resolveEmployee } from "@/lib/miniAuth";
+import { resolveEmployee, allowedContainerIds } from "@/lib/miniAuth";
 import { jsonError } from "@/lib/apiHelpers";
 
 export async function GET(req: NextRequest) {
@@ -12,7 +12,9 @@ export async function GET(req: NextRequest) {
   }
 
   await connectDB();
-  const containers = await Container.find().sort({ name: 1 }).select("name description").lean();
+  const allowed = allowedContainerIds(employee);
+  const filter = allowed ? { _id: { $in: allowed } } : {};
+  const containers = await Container.find(filter).sort({ name: 1 }).select("name description").lean();
   return NextResponse.json({
     containers: containers.map((c) => ({ id: String(c._id), name: c.name, description: c.description })),
   });

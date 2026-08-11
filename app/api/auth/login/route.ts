@@ -5,6 +5,7 @@ import { WebAccess } from "@/models/WebAccess";
 import { loginSchema } from "@/lib/validation";
 import { jsonError, zodErrorResponse } from "@/lib/apiHelpers";
 import { signSession, SESSION_COOKIE } from "@/lib/auth";
+import { logAudit } from "@/lib/audit";
 
 export async function POST(req: NextRequest) {
   const body = await req.json().catch(() => null);
@@ -18,6 +19,17 @@ export async function POST(req: NextRequest) {
 
   const ok = await bcrypt.compare(parsed.data.password, user.passwordHash);
   if (!ok) return jsonError("Неверный логин или пароль", 401);
+
+  // Событие входа тоже попадает в общий журнал действий (см. app/dashboard/audit/page.tsx) —
+  // формального action "login" в AuditLog нет, поэтому фиксируем как "update" с пометкой в changes.
+  await logAudit({
+    entity: "WebAccess",
+    entityId: user._id,
+    action: "update",
+    actorId: user.identifier,
+    actorRole: user.role,
+    changes: { event: "login" },
+  });
 
   const token = signSession({ identifier: user.identifier, role: user.role });
   const res = NextResponse.json({

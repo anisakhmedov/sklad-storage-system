@@ -2,7 +2,6 @@ import PDFDocument from "pdfkit";
 import path from "path";
 import { CONTRACT_BLOCKS, ContractBlock } from "./contractTemplateBlocks";
 import { IStorageRecord } from "@/models/StorageRecord";
-import { UNIT_LABELS } from "@/lib/labels";
 import { formatTariffText } from "@/lib/tariff";
 
 /**
@@ -27,8 +26,6 @@ import { formatTariffText } from "@/lib/tariff";
 const FONT_REGULAR = path.join(process.cwd(), "templates/fonts/DejaVuSans.ttf");
 const FONT_BOLD = path.join(process.cwd(), "templates/fonts/DejaVuSans-Bold.ttf");
 
-const numberFmt = new Intl.NumberFormat("ru-RU");
-
 export interface ContractFillData {
   fullName: string;
   abbreviatedName: string;
@@ -38,6 +35,7 @@ export interface ContractFillData {
   pinfl: string;
   rentalInfo: string;
   tariffText: string;
+  contractNumber: string;
 }
 
 /**
@@ -56,14 +54,14 @@ function abbreviateFullName(fullName: string): string {
 
 /** Данные, сопоставленные с плейсхолдерами шаблона (см. таблицу в README, часть 3). */
 export function buildContractFillData(
-  record: Pick<IStorageRecord, "productName" | "quantity" | "unit" | "tariff" | "goodsOwner">,
-  containerName: string
+  record: Pick<IStorageRecord, "tariff" | "goodsOwner">,
+  containerName: string,
+  contractNumber: string
 ): ContractFillData {
   const owner = record.goodsOwner;
   if (owner.type !== "individual") {
     throw new Error("Договор формируется только для физических лиц (goodsOwner.type === 'individual')");
   }
-  const unitLabel = UNIT_LABELS[record.unit] || record.unit;
 
   return {
     fullName: owner.fullName,
@@ -72,8 +70,12 @@ export function buildContractFillData(
     passportIssueDate: owner.passportIssueDate,
     passportIssuedBy: owner.passportIssuedBy,
     pinfl: owner.pinfl,
-    rentalInfo: `${containerName}, ${record.productName} — ${numberFmt.format(record.quantity)} ${unitLabel}`,
+    // Раньше здесь также указывались название товара и количество — убрано по просьбе
+    // пользователя: в ИЛОВА №1 рядом с тарифом должно быть только название контейнера,
+    // без состава груза (см. README).
+    rentalInfo: containerName,
     tariffText: formatTariffText(record.tariff),
+    contractNumber,
   };
 }
 
@@ -88,6 +90,7 @@ function placeholderMap(data: ContractFillData): Record<string, string> {
     "<Информация про всю аренду>": data.rentalInfo,
     "<Тариф>": data.tariffText,
     "<Имя сокрощенное. Фамилия>": data.abbreviatedName,
+    "<Номер договора>": data.contractNumber,
   };
 }
 
