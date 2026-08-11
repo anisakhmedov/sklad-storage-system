@@ -20,7 +20,11 @@ const nextConfig = {
     // (весь код схлопывается в один chunks/*.js) — получаем ENOENT в проде. Исключаем
     // pdfkit из webpack-бандла: тогда @vercel/nft просто трассирует и копирует его
     // node_modules-папку как есть, вместе с data/*.afm.
-    serverComponentsExternalPackages: ["pdfkit"],
+    // exceljs (генерация .xlsx для раздела «Арендаторы», см. lib/tenants.ts) страдает от той
+    // же проблемы, что и pdfkit выше: внутри пакета есть файлы, читаемые с диска в рантайме
+    // (напр. шаблоны/локали), которые обычный webpack-бандлинг serverless-функции теряет —
+    // исключаем из бандла, чтобы @vercel/nft скопировал node_modules/exceljs как есть.
+    serverComponentsExternalPackages: ["pdfkit", "exceljs"],
   },
 };
 

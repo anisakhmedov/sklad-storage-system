@@ -26,6 +26,9 @@ interface RecordRow {
   tariff: { type: string; rate: number };
   contractNumber?: string;
   createdAt: string;
+  createdByEmployeeId: { _id: string; name: string; phone: string } | null;
+  editedBy?: string;
+  editedAt?: string;
 }
 
 interface IncomeRow {
@@ -51,6 +54,7 @@ interface Detail {
   ownerKey: string;
   ownerType: OwnerType;
   profile: GoodsOwner;
+  telegram: { telegramId: string; linkedAt: string } | null;
   records: RecordRow[];
   incomes: IncomeRow[];
   debts: DebtRow[];
@@ -161,6 +165,12 @@ export default function TenantDetailPage({ params }: { params: { ownerKey: strin
             <Field label="Наименование" value={detail.profile.companyName} />
             <Field label="ИНН" value={detail.profile.inn} />
             <Field label="Директор" value={detail.profile.directorName} />
+          </dl>
+        )}
+        {detail.telegram && (
+          <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2.5 text-sm mt-3 pt-3 border-t border-ink-100">
+            <Field label="Telegram ID" value={detail.telegram.telegramId} />
+            <Field label="Привязан к боту с" value={new Date(detail.telegram.linkedAt).toLocaleString("ru-RU")} />
           </dl>
         )}
       </div>

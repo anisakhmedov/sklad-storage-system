@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { UserRound, Building2, Users, Boxes } from "lucide-react";
+import { UserRound, Building2, Users, Boxes, Download } from "lucide-react";
 
 interface TenantRow {
   ownerKey: string;
@@ -39,12 +39,18 @@ export default function TenantsPage() {
 
   return (
     <div>
-      <div className="mb-7">
-        <p className="section-eyebrow">Клиенты</p>
-        <h1 className="section-title mt-1">Арендаторы</h1>
-        <p className="text-sm text-ink-400 mt-1">
-          Полная аналитика по каждому арендатору — онлайн и в Excel.
-        </p>
+      <div className="mb-7 flex items-end justify-between flex-wrap gap-3">
+        <div>
+          <p className="section-eyebrow">Клиенты</p>
+          <h1 className="section-title mt-1">Арендаторы</h1>
+          <p className="text-sm text-ink-400 mt-1">
+            Полная аналитика по каждому арендатору — онлайн и в Excel.
+          </p>
+        </div>
+        <a href="/api/tenants/export" className="btn-primary">
+          <Download className="h-4 w-4" strokeWidth={2.1} />
+          Скачать всех (Excel)
+        </a>
       </div>
 
       <div className="card mb-6 max-w-md">

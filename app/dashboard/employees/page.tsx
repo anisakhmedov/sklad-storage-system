@@ -67,7 +67,13 @@ export default function EmployeesPage() {
     setLoading(true);
     const res = await fetch("/api/employees");
     const data = await res.json();
-    setEmployees(data.employees || []);
+    // Защита от старых данных без поля containerAccess (API уже нормализует, см.
+    // app/api/employees/route.ts, но дублируем на клиенте на случай кэша/прочих источников).
+    const list: Employee[] = (data.employees || []).map((e: Employee) => ({
+      ...e,
+      containerAccess: e.containerAccess || [],
+    }));
+    setEmployees(list);
     setLoading(false);
   }, []);
 

@@ -12,9 +12,14 @@ import type { IGoodsOwner, GoodsOwnerType } from "@/models/StorageRecord";
  * без индексной сигнатуры — структурно она достаточна, а Record<string, unknown> в типе
  * параметра такие объекты отклоняет.
  */
-export function ownerKeyOf(owner: { type: "individual"; phone: string } | { type: "company"; inn: string }): string {
-  if (owner.type === "individual") return `individual:${owner.phone}`;
-  return `company:${owner.inn.trim()}`;
+export function ownerKeyOf(
+  owner: { type: "individual"; phone?: string } | { type: "company"; inn?: string }
+): string {
+  // Толерантно к неполным/легаси-данным (напр. запись без телефона) — лучше вернуть
+  // нерабочую, но безопасную ссылку, чем уронить рендер всей таблицы записей (см.
+  // app/dashboard/records/page.tsx) на одной битой строке.
+  if (owner.type === "individual") return `individual:${owner.phone || ""}`;
+  return `company:${(owner.inn || "").trim()}`;
 }
 
 export function ownerKeyForPhone(phone: string): string {

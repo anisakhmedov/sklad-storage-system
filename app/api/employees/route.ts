@@ -12,5 +12,9 @@ export async function GET(req: NextRequest) {
   const status = req.nextUrl.searchParams.get("status");
   const filter = status ? { status } : {};
   const employees = await Employee.find(filter).sort({ createdAt: -1 }).lean();
-  return NextResponse.json({ employees });
+  // .lean() отдаёт документы как хранятся в БД, без применения схемных default — у
+  // сотрудников, созданных до появления поля containerAccess, его в самой БД ещё нет, и
+  // клиент, ожидающий массив (см. app/dashboard/employees/page.tsx), падает на .length.
+  const withDefaults = employees.map((e) => ({ ...e, containerAccess: e.containerAccess || [] }));
+  return NextResponse.json({ employees: withDefaults });
 }
