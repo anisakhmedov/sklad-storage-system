@@ -10,17 +10,22 @@ import { getOwnerSummaryByKey } from "@/lib/reports";
  * выглядит как "не найден", даже если у него есть записи в других контейнерах.
  */
 export async function GET(req: NextRequest, { params }: { params: { ownerKey: string } }) {
-  const { tgUser, employee } = await resolveEmployee(req);
-  if (!tgUser) return jsonError("Не удалось проверить данные Telegram", 401);
-  if (!employee || employee.status !== "approved") {
-    return jsonError("Доступ разрешён только подтверждённым сотрудникам", 403);
-  }
+  try {
+    const { tgUser, employee } = await resolveEmployee(req);
+    if (!tgUser) return jsonError("Не удалось проверить данные Telegram", 401);
+    if (!employee || employee.status !== "approved") {
+      return jsonError("Доступ разрешён только подтверждённым сотрудникам", 403);
+    }
 
-  const ownerKey = decodeURIComponent(params.ownerKey);
-  const summary = await getOwnerSummaryByKey(ownerKey, { containerIds: allowedContainerIds(employee) });
-  if (!summary || summary.recordCount === 0) {
-    return jsonError("Клиент не найден или недоступен", 404);
-  }
+    const ownerKey = decodeURIComponent(params.ownerKey);
+    const summary = await getOwnerSummaryByKey(ownerKey, { containerIds: allowedContainerIds(employee) });
+    if (!summary || summary.recordCount === 0) {
+      return jsonError("Клиент не найден или недоступен", 404);
+    }
 
-  return NextResponse.json({ ownerKey, summary });
+    return NextResponse.json({ ownerKey, summary });
+  } catch (err) {
+    console.error("GET /api/miniapp/clients/[ownerKey]:", err);
+    return jsonError("Внутренняя ошибка сервера", 500);
+  }
 }

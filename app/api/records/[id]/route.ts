@@ -36,6 +36,9 @@ export async function PATCH(
   if (data.tariff !== undefined) {
     record.tariff = { ...record.tariff, ...data.tariff } as any;
   }
+  // Дата договора — влияет на дату начала начисления по тарифу (см. lib/tariff.ts,
+  // lib/validation.ts::storageRecordUpdateSchema).
+  if (data.createdAt !== undefined) record.createdAt = data.createdAt;
   record.editedBy = user.identifier;
   record.editedAt = new Date();
 

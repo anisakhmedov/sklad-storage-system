@@ -7,6 +7,11 @@ export async function GET() {
   const user = await requireWebUser();
   if (!user) return jsonError("Не авторизован", 401);
 
-  const tenants = await getAllTenants();
-  return NextResponse.json({ tenants });
+  try {
+    const tenants = await getAllTenants();
+    return NextResponse.json({ tenants });
+  } catch (err) {
+    console.error("GET /api/tenants:", err);
+    return jsonError("Внутренняя ошибка сервера", 500);
+  }
 }

@@ -7,8 +7,17 @@ import "@/models/Container";
 import { buildContractFillData, renderContractPdf } from "./generateContract";
 import { getNextSequence } from "@/lib/counter";
 
-export function contractFilename(recordId: string): string {
-  return `dogovor-${recordId}.pdf`;
+/**
+ * Имя файла — ФИО арендатора + дата договора (см. `record.createdAt`, редактируется на
+ * веб-панели, см. app/dashboard/records/page.tsx). Кириллица в имени не проблема для
+ * Telegram (grammy InputFile передаёт его как часть multipart-запроса, не HTTP-заголовка);
+ * для HTTP-скачивания (app/api/records/[id]/contract/route.ts) используется
+ * lib/apiHelpers.ts::contentDispositionHeader поверх этого же базового имени.
+ */
+export function contractFilename(ownerLabel: string, date: Date): string {
+  const safeName = ownerLabel.trim().replace(/\s+/g, "_");
+  const dateText = date.toLocaleDateString("ru-RU").replace(/\./g, "-");
+  return `Dogovor_${safeName}_${dateText}.pdf`;
 }
 
 type LeanRecordWithContainer = IStorageRecord & { containerId: { _id: unknown; name: string } };
@@ -53,7 +62,7 @@ export async function getContractForRecordId(
   const containerName = record.containerId?.name || "—";
   const contractNumber = await ensureContractNumber(record);
   const buffer = await generateContractBuffer(record, containerName, contractNumber);
-  return { buffer, filename: contractFilename(String(record._id)) };
+  return { buffer, filename: contractFilename(record.goodsOwner.fullName, record.createdAt) };
 }
 
 /**
@@ -75,9 +84,10 @@ export async function findLatestIndividualContractByPhone(phone: string) {
   const containerName = latest.containerId?.name || "—";
   const contractNumber = await ensureContractNumber(latest);
   const buffer = await generateContractBuffer(latest, containerName, contractNumber);
+  const ownerLabel = latest.goodsOwner.type === "individual" ? latest.goodsOwner.fullName : "—";
   return {
     buffer,
-    filename: contractFilename(String(latest._id)),
+    filename: contractFilename(ownerLabel, latest.createdAt),
     total: records.length,
     createdAt: latest.createdAt,
   };

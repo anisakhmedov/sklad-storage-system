@@ -1,7 +1,9 @@
 import { Schema, model, models, Model, Types } from "mongoose";
 
 export type Unit = "tonne" | "kg" | "box" | "piece";
-export type PaymentMethod = "cash" | "terminal" | "transfer";
+// "cash" — единственный способ, учитываемый в кассе (см. lib/finance.ts::KASSA_METHODS);
+// "terminal"/"transfer"/"card" видны в общих отчётах и списке платежей, но не в кассе.
+export type PaymentMethod = "cash" | "terminal" | "transfer" | "card";
 export type GoodsOwnerType = "individual" | "company";
 
 /**

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireWebUser } from "@/lib/auth";
-import { jsonError } from "@/lib/apiHelpers";
+import { jsonError, contentDispositionHeader } from "@/lib/apiHelpers";
 import { getContractForRecordId } from "@/lib/contract/contractService";
 
 export const runtime = "nodejs";
@@ -19,11 +19,14 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
     return jsonError("Договор формируется только для физических лиц", 400);
   }
 
+  // result.filename кириллический (ФИО + дата, см. contractFilename) — заголовку нужна
+  // ASCII-safe кодировка (см. lib/apiHelpers.ts::contentDispositionHeader).
+  const baseName = result.filename.replace(/\.pdf$/i, "");
   return new NextResponse(new Uint8Array(result.buffer), {
     status: 200,
     headers: {
       "Content-Type": "application/pdf",
-      "Content-Disposition": `inline; filename="${result.filename}"`,
+      "Content-Disposition": contentDispositionHeader(baseName, "pdf", "inline"),
       "Cache-Control": "private, no-store",
     },
   });

@@ -13,12 +13,13 @@ import {
   Banknote,
   CreditCard,
   ArrowLeftRight,
+  Landmark,
   Wallet,
   ClipboardCheck,
 } from "lucide-react";
 
 type OwnerType = "individual" | "company";
-type Method = "cash" | "terminal" | "transfer";
+type Method = "cash" | "terminal" | "transfer" | "card";
 
 interface OwnerContainerDebt {
   ownerType: OwnerType;
@@ -38,6 +39,7 @@ const METHODS: Array<{ value: Method; icon: typeof Banknote }> = [
   { value: "cash", icon: Banknote },
   { value: "terminal", icon: CreditCard },
   { value: "transfer", icon: ArrowLeftRight },
+  { value: "card", icon: Landmark },
 ];
 
 const STEP_LABELS = ["Владелец", "Контейнер", "Оплата", "Проверка"];

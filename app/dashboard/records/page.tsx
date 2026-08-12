@@ -146,6 +146,7 @@ export default function RecordsPage() {
           unit: editing.unit,
           goodsOwner: editing.goodsOwner,
           tariff: editing.tariff,
+          createdAt: editing.createdAt,
         }),
       });
       if (!res.ok) {
@@ -321,7 +322,11 @@ export default function RecordsPage() {
                       {r.goodsOwner.type === "individual" ? "физ. лицо" : "юр. лицо"}
                     </span>
                   </td>
-                  <td className="whitespace-nowrap">{formatTariffText(r.tariff)}</td>
+                  <td className="whitespace-nowrap">
+                    {/* Записи, созданные до появления тарифов (см. git-историю lib/debt.ts),
+                        не имеют r.tariff — это не баг данных, а старые записи. */}
+                    {r.tariff ? formatTariffText(r.tariff) : "—"}
+                  </td>
                   <td className="text-ink-500">
                     {typeof r.createdByEmployeeId === "object"
                       ? r.createdByEmployeeId?.name
@@ -345,7 +350,10 @@ export default function RecordsPage() {
                         title="Изменить"
                         onClick={() => {
                           setEditError(null);
-                          setEditing(r);
+                          // Записи без тарифа (см. комментарий у ячейки "Тариф" выше) получают
+                          // тариф по умолчанию только в форме редактирования — иначе рендер
+                          // формы падает на editing.tariff.type/rate.
+                          setEditing({ ...r, tariff: r.tariff || { type: "per_day", rate: 0 } });
                         }}
                       >
                         <Pencil className="h-3.5 w-3.5" strokeWidth={2} />
@@ -418,6 +426,24 @@ export default function RecordsPage() {
                     </select>
                   </div>
                 </div>
+              </div>
+
+              <div>
+                <label className="label">Дата договора</label>
+                <input
+                  type="date"
+                  className="input"
+                  value={editing.createdAt ? editing.createdAt.slice(0, 10) : ""}
+                  onChange={(e) =>
+                    setEditing({
+                      ...editing,
+                      createdAt: e.target.value ? new Date(e.target.value).toISOString() : editing.createdAt,
+                    })
+                  }
+                />
+                <p className="text-xs text-ink-400 mt-1">
+                  От этой даты считается начисление по тарифу и указывается номер/дата в PDF договоре.
+                </p>
               </div>
 
               <div className="flex items-center justify-between pt-2">

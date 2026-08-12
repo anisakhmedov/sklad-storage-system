@@ -153,17 +153,6 @@ export async function getTenantDetail(ownerKey: string): Promise<TenantDetail | 
   };
 }
 
-/**
- * HTTP-заголовки обязаны быть ASCII — Node бросает исключение (ERR_INVALID_CHAR) при попытке
- * установить заголовок со значением вне Latin-1 (напр. кириллица в filename), из-за чего
- * скачивание падало с ошибкой сервера. Отдаём ASCII-запасной вариант в filename= и настоящее
- * имя — в filename*= (RFC 5987), как это принято для не-ASCII имён файлов.
- */
-export function contentDispositionHeader(baseName: string, ext: string): string {
-  const asciiBase = baseName.replace(/[^\x20-\x7E]/g, "_").replace(/["\\]/g, "_") || "file";
-  return `attachment; filename="${asciiBase}.${ext}"; filename*=UTF-8''${encodeURIComponent(baseName)}.${ext}`;
-}
-
 /** Сборка .xlsx со всеми данными арендатора — та же информация, что и на онлайн-странице. */
 export async function buildTenantWorkbook(detail: TenantDetail): Promise<ExcelJS.Buffer> {
   const wb = new ExcelJS.Workbook();

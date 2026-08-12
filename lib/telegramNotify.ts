@@ -3,7 +3,8 @@ import { getBot } from "@/lib/telegramBot";
 import { IStorageRecord } from "@/models/StorageRecord";
 import { getGoodsOwnerLinkByPhone, formatRegisteredMessage } from "@/lib/goodsOwnerBot";
 import { generateContractBuffer, contractFilename } from "@/lib/contract/contractService";
-import { generateActBuffer, actFilename } from "@/lib/contract/actService";
+import { generateActBuffer, actFilename, actDirectionOf } from "@/lib/contract/actService";
+import { ownerLabelOf } from "@/lib/ownerKey";
 
 /**
  * Исходящие уведомления/документы, инициируемые НЕ входящим апдейтом бота, а действием
@@ -52,7 +53,8 @@ export async function sendContractToEmployee(
     // На момент вызова номер уже присвоен при создании записи (см. app/api/miniapp/records/route.ts).
     const buffer = await generateContractBuffer(record, containerName, record.contractNumber || "—");
     const bot = getBot();
-    await bot.api.sendDocument(Number(employeeTelegramId), new InputFile(buffer, contractFilename(String(record._id))), {
+    const filename = contractFilename(record.goodsOwner.fullName, record.createdAt);
+    await bot.api.sendDocument(Number(employeeTelegramId), new InputFile(buffer, filename), {
       caption: "📄 Договор по новой записи (физ. лицо) сформирован автоматически.",
     });
   } catch (err) {
@@ -61,9 +63,10 @@ export async function sendContractToEmployee(
 }
 
 /**
- * Акт приёма-передачи доп. товара (см. lib/contract/actService.ts) — отправляется сотруднику
- * автоматически при увеличении количества груза у существующего клиента (delta > 0), тем же
- * способом, что и договор. В отличие от договора — для любого типа владельца груза.
+ * Акт приёма-передачи (delta > 0) или отдачи (delta < 0) товара (см. lib/contract/actService.ts) —
+ * отправляется сотруднику автоматически при любом изменении количества груза у существующего
+ * клиента (см. app/api/miniapp/records/[id]/adjust/route.ts), тем же способом, что и договор.
+ * В отличие от договора — для любого типа владельца груза.
  */
 export async function sendActToEmployee(
   employeeTelegramId: string,
@@ -74,11 +77,17 @@ export async function sendActToEmployee(
 ): Promise<void> {
   try {
     const buffer = await generateActBuffer(record, containerName, delta, totalAfter);
+    const direction = actDirectionOf(delta);
     const bot = getBot();
     await bot.api.sendDocument(
       Number(employeeTelegramId),
-      new InputFile(buffer, actFilename(String(record._id))),
-      { caption: "📄 Акт приёма-передачи товара сформирован автоматически." }
+      new InputFile(buffer, actFilename(direction, ownerLabelOf(record.goodsOwner))),
+      {
+        caption:
+          direction === "given"
+            ? "📄 Акт приёма-передачи товара сформирован автоматически."
+            : "📄 Акт отдачи товара сформирован автоматически.",
+      }
     );
   } catch (err) {
     console.error("sendActToEmployee: не удалось отправить PDF акта сотруднику:", err);

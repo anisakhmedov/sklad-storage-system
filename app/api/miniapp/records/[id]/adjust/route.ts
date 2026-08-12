@@ -10,10 +10,10 @@ import { sendActToEmployee } from "@/lib/telegramNotify";
 import { Types } from "mongoose";
 
 /**
- * Добавление/убавление количества груза у существующей записи (Mini App) — п.5 доработок.
- * При добавлении (delta > 0) сотруднику автоматически присылается акт приёма-передачи
- * доп. товара (см. lib/telegramNotify.ts::sendActToEmployee, п.6). При убавлении акт не
- * формируется — это просто корректировка остатка.
+ * Добавление/убавление количества груза у существующей записи (Mini App). При любом изменении
+ * (и добавлении, и убавлении) сотруднику автоматически присылается PDF-акт в Telegram —
+ * «приёма-передачи» при delta > 0, «отдачи» при delta < 0 (см. lib/telegramNotify.ts::sendActToEmployee,
+ * lib/contract/generateAct.ts) — один и тот же механизм для обоих направлений.
  *
  * Контейнер читается отдельным запросом (не через .populate() перед .save()) — сохранение
  * документа с populate-нутым ref-полем не всегда безопасно (риск CastError на containerId
@@ -63,12 +63,11 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       changes: { quantityDelta: delta, quantityBefore: before, quantityAfter: after, note },
     });
 
-    if (delta > 0) {
-      // Best-effort, не блокирует ответ (см. lib/telegramNotify.ts) — сбой отправки акта
-      // не должен откатывать уже сохранённое изменение количества.
-      const container = await Container.findById(record.containerId).select("name").lean();
-      await sendActToEmployee(employee.telegramId, record, container?.name || "—", delta, after);
-    }
+    // Best-effort, не блокирует ответ (см. lib/telegramNotify.ts) — сбой отправки акта
+    // не должен откатывать уже сохранённое изменение количества. Направление акта
+    // (приём/отдача) определяется знаком delta внутри sendActToEmployee.
+    const container = await Container.findById(record.containerId).select("name").lean();
+    await sendActToEmployee(employee.telegramId, record, container?.name || "—", delta, after);
 
     return NextResponse.json({ record: { id: String(record._id), quantity: record.quantity } });
   } catch (err) {

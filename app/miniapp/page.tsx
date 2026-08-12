@@ -7,10 +7,12 @@ import PendingScreen from "@/components/miniapp/PendingScreen";
 import NewRecordWizard from "@/components/miniapp/NewRecordWizard";
 import AddIncomeWizard from "@/components/miniapp/AddIncomeWizard";
 import ClientsList from "@/components/miniapp/ClientsList";
-import { Boxes, Plus, TriangleAlert, Wallet, ChevronRight, Users } from "lucide-react";
+import ExpensesScreen from "@/components/miniapp/ExpensesScreen";
+import PatrolScreen from "@/components/miniapp/PatrolScreen";
+import { Boxes, Plus, TriangleAlert, Wallet, ChevronRight, Users, MinusCircle, Thermometer } from "lucide-react";
 
 type EmployeeStatus = "pending" | "approved" | "rejected";
-type Mode = "menu" | "record" | "income" | "clients";
+type Mode = "menu" | "record" | "income" | "clients" | "expenses" | "patrol";
 
 interface MeResponse {
   telegram: { id: number; firstName?: string; lastName?: string; username?: string };
@@ -88,6 +90,14 @@ export default function MiniAppPage() {
     return <ClientsList onExit={() => setMode("menu")} />;
   }
 
+  if (mode === "expenses") {
+    return <ExpensesScreen onExit={() => setMode("menu")} />;
+  }
+
+  if (mode === "patrol") {
+    return <PatrolScreen onExit={() => setMode("menu")} />;
+  }
+
   return (
     <div className="pt-8">
       <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-brand-gradient text-white shadow-sm shadow-brand-600/25 mb-5">
@@ -137,6 +147,34 @@ export default function MiniAppPage() {
           <div className="flex-1 min-w-0">
             <div className="font-medium text-ink-900">Клиенты</div>
             <div className="text-xs text-ink-400 mt-0.5">Товары клиента, задолженность, +/- груз</div>
+          </div>
+          <ChevronRight className="h-4.5 w-4.5 text-ink-300 shrink-0" strokeWidth={2} />
+        </button>
+
+        <button
+          className="w-full flex items-center gap-3.5 rounded-2xl border border-ink-200 bg-white px-4 py-4 text-left transition-colors hover:border-brand-300 hover:bg-brand-50/40 active:scale-[0.99]"
+          onClick={() => setMode("expenses")}
+        >
+          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-rose-50 text-rose-600">
+            <MinusCircle className="h-5 w-5" strokeWidth={2.1} />
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="font-medium text-ink-900">Расходы</div>
+            <div className="text-xs text-ink-400 mt-0.5">Заявка на расход — уйдёт владельцу на одобрение</div>
+          </div>
+          <ChevronRight className="h-4.5 w-4.5 text-ink-300 shrink-0" strokeWidth={2} />
+        </button>
+
+        <button
+          className="w-full flex items-center gap-3.5 rounded-2xl border border-ink-200 bg-white px-4 py-4 text-left transition-colors hover:border-brand-300 hover:bg-brand-50/40 active:scale-[0.99]"
+          onClick={() => setMode("patrol")}
+        >
+          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-sky-50 text-sky-600">
+            <Thermometer className="h-5 w-5" strokeWidth={2.1} />
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="font-medium text-ink-900">Обход</div>
+            <div className="text-xs text-ink-400 mt-0.5">Температура холодильных камер, 2 раза в день</div>
           </div>
           <ChevronRight className="h-4.5 w-4.5 text-ink-300 shrink-0" strokeWidth={2} />
         </button>

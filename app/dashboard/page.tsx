@@ -2,10 +2,13 @@ import { connectDB } from "@/lib/db";
 import { Employee } from "@/models/Employee";
 import { Container } from "@/models/Container";
 import { StorageRecord } from "@/models/StorageRecord";
+import { requireWebUser } from "@/lib/auth";
 import Link from "next/link";
-import { UserCheck, Boxes, CalendarDays, ClipboardList, ArrowRight, AlertTriangle } from "lucide-react";
+import InventoryPanel from "@/components/dashboard/InventoryPanel";
+import { UserCheck, Boxes, CalendarDays, ClipboardList, ArrowRight, AlertTriangle, Wallet } from "lucide-react";
 
 export default async function DashboardHome() {
+  const user = await requireWebUser();
   await connectDB();
 
   const startOfMonth = new Date();
@@ -45,9 +48,15 @@ export default async function DashboardHome() {
 
   return (
     <div>
-      <div className="mb-7">
-        <p className="section-eyebrow">Панель управления</p>
-        <h1 className="section-title mt-1">Обзор</h1>
+      <div className="mb-7 flex items-end justify-between flex-wrap gap-3">
+        <div>
+          <p className="section-eyebrow">Панель управления</p>
+          <h1 className="section-title mt-1">Обзор</h1>
+        </div>
+        <Link href="/dashboard/income" className="btn-primary">
+          <Wallet className="h-4 w-4" strokeWidth={2.1} />
+          Приход от клиентов
+        </Link>
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -78,6 +87,8 @@ export default async function DashboardHome() {
           </span>
         </Link>
       )}
+
+      {user?.role === "owner" && <InventoryPanel />}
     </div>
   );
 }

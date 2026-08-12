@@ -24,7 +24,8 @@ export const UNIT_LABELS: Record<string, string> = {
 export const METHOD_COLORS: Record<string, string> = {
   "Наличные": CATEGORICAL.blue,
   "Терминал": CATEGORICAL.orange,
-  "Перевод": CATEGORICAL.aqua,
+  "Перечисление (счёт-банк)": CATEGORICAL.aqua,
+  "Карта (счёт-карта)": CATEGORICAL.yellow,
 };
 
 export const CHART_CHROME = {

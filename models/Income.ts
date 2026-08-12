@@ -31,7 +31,7 @@ const IncomeSchema = new Schema<IIncome>({
   ownerLabel: { type: String, required: true, trim: true },
   containerId: { type: Schema.Types.ObjectId, ref: "Container", required: true, index: true },
   amount: { type: Number, required: true, min: 0 },
-  method: { type: String, enum: ["cash", "terminal", "transfer"], required: true },
+  method: { type: String, enum: ["cash", "terminal", "transfer", "card"], required: true },
   paidAt: { type: Date, required: true, default: Date.now },
   note: { type: String, trim: true },
   recordedBy: { type: String, required: true },

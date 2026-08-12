@@ -16,5 +16,6 @@ export const UNIT_LABELS: Record<Unit, string> = {
 export const PAYMENT_METHOD_LABELS: Record<PaymentMethod, string> = {
   cash: "Наличные",
   terminal: "Терминал",
-  transfer: "Перевод",
+  transfer: "Перечисление (счёт-банк)",
+  card: "Карта (счёт-карта)",
 };

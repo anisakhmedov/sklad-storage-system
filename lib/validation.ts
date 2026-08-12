@@ -2,7 +2,7 @@ import { z } from "zod";
 import { normalizePhone } from "./phone";
 
 export const unitEnum = z.enum(["tonne", "kg", "box", "piece"]);
-export const paymentMethodEnum = z.enum(["cash", "terminal", "transfer"]);
+export const paymentMethodEnum = z.enum(["cash", "terminal", "transfer", "card"]);
 export const webRoleEnum = z.enum(["owner", "trusted"]);
 export const goodsOwnerTypeEnum = z.enum(["individual", "company"]);
 export const tariffTypeEnum = z.enum(["per_day", "per_month", "per_kg_month", "per_kg_6_months"]);
@@ -96,7 +96,13 @@ export const storageRecordCreateSchema = storageRecordBaseSchema.superRefine((da
   }
 });
 
-export const storageRecordUpdateSchema = storageRecordBaseSchema.partial();
+// createdAt отдельно от storageRecordBaseSchema: это дата договора, а не поле, вводимое при
+// создании записи (при создании она всегда "сейчас") — редактируется только владельцем/доверенным
+// лицом на веб-панели (см. app/dashboard/records/page.tsx), и напрямую влияет на дату начала
+// начисления по тарифу (accrueTariff берёт `from: record.createdAt`, см. lib/tariff.ts).
+export const storageRecordUpdateSchema = storageRecordBaseSchema.partial().extend({
+  createdAt: z.coerce.date().optional(),
+});
 
 export const webAccessCreateSchema = z.object({
   identifier: z.string().min(3, "Укажите username или телефон"),
@@ -108,6 +114,62 @@ export const webAccessCreateSchema = z.object({
 export const quantityAdjustSchema = z.object({
   delta: z.coerce.number().refine((v) => v !== 0, "Изменение количества не может быть нулевым"),
   note: z.string().max(500).optional().default(""),
+});
+
+// Учёт ящиков, выданных/возвращённых клиентом (см. models/BoxLedgerEntry.ts, lib/boxes.ts).
+export const boxEntryCreateSchema = z.object({
+  ownerKey: z.string().min(1, "Не выбран владелец груза"),
+  ownerType: goodsOwnerTypeEnum,
+  ownerLabel: z.string().min(1, "Не указано имя/наименование владельца").max(300),
+  containerId: z.string().min(1, "Выберите контейнер"),
+  direction: z.enum(["given", "returned"]),
+  quantity: z.coerce.number().positive("Количество должно быть больше 0"),
+  ratePerBox: z.coerce.number().min(0, "Ставка не может быть отрицательной"),
+});
+
+// Расход (снятие владельцем/зарплата/прочее, см. models/Expense.ts). status выставляется
+// сервером в зависимости от того, кто создаёт (owner → approved сразу, employee → pending) —
+// не принимается от клиента.
+export const expenseCreateSchema = z.object({
+  type: z.enum(["owner_withdrawal", "salary", "other"]),
+  amount: z.coerce.number().positive("Сумма должна быть больше 0"),
+  method: paymentMethodEnum,
+  note: z.string().max(500).optional().default(""),
+  employeeName: z.string().max(200).optional(),
+});
+
+export const expenseStatusSchema = z.object({
+  status: z.enum(["approved", "rejected"]),
+});
+
+// «Приход на холодильник» — общий приход не по конкретному клиенту (см. models/GeneralIncome.ts).
+export const generalIncomeCreateSchema = z.object({
+  amount: z.coerce.number().positive("Сумма должна быть больше 0"),
+  method: paymentMethodEnum,
+  note: z.string().max(500).optional().default(""),
+  paidAt: z.coerce.date().optional(),
+});
+
+// Складской инвентарь (см. models/InventoryItem.ts) — только владелец.
+export const inventoryItemCreateSchema = z.object({
+  name: z.string().min(1, "Укажите название").max(200),
+  quantity: z.coerce.number().min(0, "Количество не может быть отрицательным").default(0),
+  unit: z.string().max(20).optional().default("шт."),
+  note: z.string().max(500).optional().default(""),
+});
+
+export const inventoryItemUpdateSchema = z.object({
+  name: z.string().min(1).max(200).optional(),
+  quantity: z.coerce.number().min(0, "Количество не может быть отрицательным").optional(),
+  unit: z.string().max(20).optional(),
+  note: z.string().max(500).optional(),
+});
+
+// Обход холодильной камеры — только температура (см. models/PatrolLog.ts, lib/patrols.ts).
+export const patrolLogCreateSchema = z.object({
+  containerId: z.string().min(1, "Выберите контейнер"),
+  period: z.enum(["morning", "evening"]),
+  temperature: z.coerce.number().min(-100).max(100, "Некорректная температура"),
 });
 
 export const withdrawalCreateSchema = z.object({

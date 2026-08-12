@@ -218,6 +218,8 @@ export default function TenantDetailPage({ params }: { params: { ownerKey: strin
               <th>Количество</th>
               <th>Тариф</th>
               <th>№ договора</th>
+              <th>Сотрудник</th>
+              <th>Изменено</th>
             </tr>
           </thead>
           <tbody>
@@ -231,6 +233,10 @@ export default function TenantDetailPage({ params }: { params: { ownerKey: strin
                 </td>
                 <td className="text-ink-500">{r.tariff.rate} / {r.tariff.type}</td>
                 <td className="text-ink-500">{r.contractNumber || "—"}</td>
+                <td className="text-ink-500">{r.createdByEmployeeId?.name || "—"}</td>
+                <td className="text-ink-500 whitespace-nowrap">
+                  {r.editedAt ? `${r.editedBy || "?"} · ${new Date(r.editedAt).toLocaleDateString("ru-RU")}` : "—"}
+                </td>
               </tr>
             ))}
           </tbody>

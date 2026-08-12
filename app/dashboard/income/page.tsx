@@ -9,8 +9,17 @@ import {
   Banknote,
   CreditCard,
   ArrowLeftRight,
+  Landmark,
   AlertCircle,
   Receipt,
+  TrendingUp,
+  TrendingDown,
+  PiggyBank,
+  Snowflake,
+  MinusCircle,
+  Check,
+  X,
+  Clock,
 } from "lucide-react";
 
 type OwnerType = "individual" | "company";
@@ -52,8 +61,46 @@ interface IncomeEntry {
   recordedBy: string;
 }
 
-const methodLabels: Record<string, string> = { cash: "Наличные", terminal: "Терминал", transfer: "Перевод" };
-const methodIcons: Record<string, typeof Banknote> = { cash: Banknote, terminal: CreditCard, transfer: ArrowLeftRight };
+interface FinanceSummary {
+  totalIncome: number;
+  kassa: number;
+  totalExpenses: number;
+  salaryTotal: number;
+  balance: number;
+  pendingExpensesCount: number;
+}
+
+interface ExpenseEntry {
+  _id: string;
+  type: "owner_withdrawal" | "salary" | "other";
+  amount: number;
+  method: string;
+  note?: string;
+  employeeName?: string;
+  createdBy: string;
+  createdByRole: "owner" | "employee";
+  status: "pending" | "approved" | "rejected";
+  createdAt: string;
+}
+
+const expenseTypeLabels: Record<string, string> = {
+  owner_withdrawal: "Снятие владельцем",
+  salary: "Зарплата",
+  other: "Прочее",
+};
+
+const methodLabels: Record<string, string> = {
+  cash: "Наличные",
+  terminal: "Терминал",
+  transfer: "Перечисление (счёт-банк)",
+  card: "Карта (счёт-карта)",
+};
+const methodIcons: Record<string, typeof Banknote> = {
+  cash: Banknote,
+  terminal: CreditCard,
+  transfer: ArrowLeftRight,
+  card: Landmark,
+};
 const money = (n: number) => Math.round(n).toLocaleString("ru-RU");
 const todayInput = () => new Date().toISOString().slice(0, 10);
 
@@ -64,6 +111,31 @@ export default function IncomePage() {
   const [loading, setLoading] = useState(true);
   const [debtsError, setDebtsError] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<string | null>(null);
+  const [finance, setFinance] = useState<FinanceSummary | null>(null);
+  const [expenses, setExpenses] = useState<ExpenseEntry[]>([]);
+  const [isOwner, setIsOwner] = useState(false);
+  const [showExpenseModal, setShowExpenseModal] = useState(false);
+  const [showGeneralIncomeModal, setShowGeneralIncomeModal] = useState(false);
+
+  const loadFinance = useCallback(async () => {
+    const res = await fetch("/api/finance/summary");
+    const data = await res.json().catch(() => ({}));
+    if (res.ok) setFinance(data.summary);
+  }, []);
+
+  const loadExpenses = useCallback(async () => {
+    const res = await fetch("/api/expenses");
+    const data = await res.json().catch(() => ({}));
+    if (res.ok) setExpenses(data.expenses || []);
+  }, []);
+
+  useEffect(() => {
+    fetch("/api/auth/me")
+      .then((r) => r.json())
+      .then((d) => setIsOwner(d.user?.role === "owner"));
+    loadFinance();
+    loadExpenses();
+  }, [loadFinance, loadExpenses]);
 
   const loadDebts = useCallback(async () => {
     setLoading(true);
@@ -99,7 +171,16 @@ export default function IncomePage() {
   }, [loadIncomes]);
 
   async function refreshAll() {
-    await Promise.all([loadDebts(), loadIncomes()]);
+    await Promise.all([loadDebts(), loadIncomes(), loadFinance(), loadExpenses()]);
+  }
+
+  async function handleExpenseStatus(id: string, status: "approved" | "rejected") {
+    await fetch(`/api/expenses/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status }),
+    });
+    await Promise.all([loadExpenses(), loadFinance()]);
   }
 
   const totalBalance = useMemo(() => debts.reduce((s, d) => s + d.balance, 0), [debts]);
@@ -119,6 +200,154 @@ export default function IncomePage() {
         </p>
       </div>
 
+      <div className="mb-3 flex items-center justify-between flex-wrap gap-2">
+        <h2 className="text-base font-semibold text-ink-800">Касса и расходы</h2>
+        <div className="flex gap-2">
+          {isOwner && (
+            <button className="btn-secondary" onClick={() => setShowGeneralIncomeModal(true)}>
+              <Snowflake className="h-4 w-4" strokeWidth={2.1} />
+              Приход на холодильник
+            </button>
+          )}
+          <button className="btn-secondary" onClick={() => setShowExpenseModal(true)}>
+            <MinusCircle className="h-4 w-4" strokeWidth={2.1} />
+            Расход
+          </button>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 mb-8">
+        <div className="card">
+          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-brand-50 text-brand-600 mb-3">
+            <TrendingUp className="h-4.5 w-4.5" strokeWidth={2} />
+          </div>
+          <div className="text-2xl font-semibold text-ink-900 tabular-nums">{money(finance?.totalIncome || 0)}</div>
+          <div className="text-xs text-ink-400 mt-1">Общий приход, сум</div>
+        </div>
+        <div className="card">
+          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-rose-50 text-rose-600 mb-3">
+            <TrendingDown className="h-4.5 w-4.5" strokeWidth={2} />
+          </div>
+          <div className="text-2xl font-semibold text-ink-900 tabular-nums">{money(finance?.totalExpenses || 0)}</div>
+          <div className="text-xs text-ink-400 mt-1">Расходы, сум</div>
+        </div>
+        <div className="card">
+          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-amber-100 text-amber-700 mb-3">
+            <Landmark className="h-4.5 w-4.5" strokeWidth={2} />
+          </div>
+          <div className="text-2xl font-semibold text-ink-900 tabular-nums">{money(finance?.salaryTotal || 0)}</div>
+          <div className="text-xs text-ink-400 mt-1">Зарплата сотрудникам, сум</div>
+        </div>
+        <div className="card">
+          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600 mb-3">
+            <PiggyBank className="h-4.5 w-4.5" strokeWidth={2} />
+          </div>
+          <div className="text-2xl font-semibold text-ink-900 tabular-nums">{money(finance?.balance || 0)}</div>
+          <div className="text-xs text-ink-400 mt-1">Остаток, сум</div>
+        </div>
+        <div className="card">
+          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-brand-50 text-brand-600 mb-3">
+            <Banknote className="h-4.5 w-4.5" strokeWidth={2} />
+          </div>
+          <div className="text-2xl font-semibold text-ink-900 tabular-nums">{money(finance?.kassa || 0)}</div>
+          <div className="text-xs text-ink-400 mt-1">Касса (наличные), сум</div>
+        </div>
+      </div>
+
+      {finance && finance.pendingExpensesCount > 0 && (
+        <div className="alert-warning mb-6">
+          <Clock className="h-4 w-4 mt-0.5 shrink-0" strokeWidth={2} />
+          <span>
+            {isOwner
+              ? `Есть ${finance.pendingExpensesCount} заявок на расход, ожидающих вашего подтверждения (см. таблицу ниже).`
+              : `Есть ${finance.pendingExpensesCount} заявок на расход, ожидающих подтверждения владельцем.`}
+          </span>
+        </div>
+      )}
+
+      <div className="card mb-8 overflow-x-auto">
+        <h2 className="card-title mb-3">Расходы</h2>
+        {expenses.length === 0 ? (
+          <div className="empty-state">
+            <div className="empty-state-icon">
+              <MinusCircle className="h-5 w-5" strokeWidth={1.8} />
+            </div>
+            <p className="text-sm text-ink-500">Расходов ещё не было.</p>
+          </div>
+        ) : (
+          <table className="table-base">
+            <thead>
+              <tr>
+                <th>Дата</th>
+                <th>Тип</th>
+                <th>Сумма</th>
+                <th>Способ</th>
+                <th>Кому/примечание</th>
+                <th>Кто внёс</th>
+                <th>Статус</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {expenses.map((exp) => {
+                const MethodIcon = methodIcons[exp.method] || Banknote;
+                return (
+                  <tr key={exp._id}>
+                    <td className="whitespace-nowrap text-ink-500">
+                      {new Date(exp.createdAt).toLocaleDateString("ru-RU")}
+                    </td>
+                    <td className="text-ink-800">{expenseTypeLabels[exp.type] || exp.type}</td>
+                    <td className="whitespace-nowrap font-medium text-ink-800 tabular-nums">{money(exp.amount)} сум</td>
+                    <td>
+                      <span className="inline-flex items-center gap-1.5 text-ink-600">
+                        <MethodIcon className="h-3.5 w-3.5 text-ink-400" strokeWidth={2} />
+                        {methodLabels[exp.method] || exp.method}
+                      </span>
+                    </td>
+                    <td className="text-ink-500">{exp.employeeName || exp.note || "—"}</td>
+                    <td className="text-ink-500">{exp.createdBy}</td>
+                    <td>
+                      <span
+                        className={`badge ${
+                          exp.status === "approved"
+                            ? "bg-emerald-100 text-emerald-700"
+                            : exp.status === "rejected"
+                              ? "bg-rose-100 text-rose-700"
+                              : "bg-amber-100 text-amber-700"
+                        }`}
+                      >
+                        {exp.status === "approved" ? "Одобрено" : exp.status === "rejected" ? "Отклонено" : "На одобрении"}
+                      </span>
+                    </td>
+                    <td className="whitespace-nowrap">
+                      {exp.status === "pending" && isOwner && (
+                        <div className="flex justify-end gap-1.5">
+                          <button
+                            className="btn-icon btn-secondary"
+                            title="Подтвердить"
+                            onClick={() => handleExpenseStatus(exp._id, "approved")}
+                          >
+                            <Check className="h-3.5 w-3.5" strokeWidth={2.25} />
+                          </button>
+                          <button
+                            className="btn-icon btn-danger-ghost"
+                            title="Отклонить"
+                            onClick={() => handleExpenseStatus(exp._id, "rejected")}
+                          >
+                            <X className="h-3.5 w-3.5" strokeWidth={2.25} />
+                          </button>
+                        </div>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        )}
+      </div>
+
+      <h2 className="text-base font-semibold text-ink-800 mb-3">Задолженность арендаторов</h2>
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
         <div className="card">
           <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-brand-50 text-brand-600 mb-3">
@@ -353,6 +582,25 @@ export default function IncomePage() {
           </table>
         )}
       </div>
+
+      {showExpenseModal && (
+        <ExpenseModal
+          onClose={() => setShowExpenseModal(false)}
+          onSaved={async () => {
+            setShowExpenseModal(false);
+            await refreshAll();
+          }}
+        />
+      )}
+      {showGeneralIncomeModal && (
+        <GeneralIncomeModal
+          onClose={() => setShowGeneralIncomeModal(false)}
+          onSaved={async () => {
+            setShowGeneralIncomeModal(false);
+            await refreshAll();
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -505,7 +753,8 @@ function PaymentForm({ debts, onSaved }: { debts: OwnerContainerDebt[]; onSaved:
               <select className="input" value={method} onChange={(e) => setMethod(e.target.value)}>
                 <option value="cash">Наличные</option>
                 <option value="terminal">Терминал</option>
-                <option value="transfer">Перевод</option>
+                <option value="transfer">Перечисление (счёт-банк)</option>
+                <option value="card">Карта (счёт-карта)</option>
               </select>
             </div>
             <div>
@@ -534,6 +783,201 @@ function PaymentForm({ debts, onSaved }: { debts: OwnerContainerDebt[]; onSaved:
           </button>
         </form>
       )}
+    </div>
+  );
+}
+
+/**
+ * Расход — если создаёт владелец на сайте, сразу учитывается в остатке (см. app/api/expenses/route.ts).
+ * Тип "salary" дополнительно просит имя сотрудника, кому заплатили.
+ */
+function ExpenseModal({ onClose, onSaved }: { onClose: () => void; onSaved: () => void }) {
+  const [type, setType] = useState<"owner_withdrawal" | "salary" | "other">("owner_withdrawal");
+  const [amount, setAmount] = useState("");
+  const [method, setMethod] = useState("cash");
+  const [employeeName, setEmployeeName] = useState("");
+  const [note, setNote] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setError(null);
+    setBusy(true);
+    try {
+      const res = await fetch("/api/expenses", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ type, amount, method, employeeName, note }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setError(data.error || "Ошибка сохранения");
+        return;
+      }
+      onSaved();
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="modal-backdrop" onClick={onClose}>
+      <div className="modal-panel max-w-md" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="card-title flex items-center gap-2">
+            <MinusCircle className="h-4 w-4 text-brand-600" strokeWidth={2.1} />
+            Новый расход
+          </h3>
+          <button className="btn-icon btn-ghost" onClick={onClose} aria-label="Закрыть">
+            <X className="h-4 w-4" strokeWidth={2} />
+          </button>
+        </div>
+        <form onSubmit={handleSubmit} className="space-y-3">
+          <div>
+            <label className="label">Тип</label>
+            <select className="input" value={type} onChange={(e) => setType(e.target.value as typeof type)}>
+              <option value="owner_withdrawal">Снятие владельцем</option>
+              <option value="salary">Зарплата сотруднику</option>
+              <option value="other">Прочее</option>
+            </select>
+          </div>
+          {type === "salary" && (
+            <div>
+              <label className="label">Кому (имя сотрудника)</label>
+              <input className="input" value={employeeName} onChange={(e) => setEmployeeName(e.target.value)} />
+            </div>
+          )}
+          <div className="flex gap-3">
+            <div className="flex-1">
+              <label className="label">Сумма, сум</label>
+              <input
+                type="number"
+                inputMode="decimal"
+                className="input"
+                value={amount}
+                onChange={(e) => setAmount(e.target.value)}
+                required
+              />
+            </div>
+            <div className="flex-1">
+              <label className="label">Способ</label>
+              <select className="input" value={method} onChange={(e) => setMethod(e.target.value)}>
+                <option value="cash">Наличные</option>
+                <option value="terminal">Терминал</option>
+                <option value="transfer">Перечисление (счёт-банк)</option>
+                <option value="card">Карта (счёт-карта)</option>
+              </select>
+            </div>
+          </div>
+          <div>
+            <label className="label">Примечание</label>
+            <input className="input" value={note} onChange={(e) => setNote(e.target.value)} />
+          </div>
+          {error && (
+            <div className="alert-danger">
+              <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" strokeWidth={2} />
+              <span>{error}</span>
+            </div>
+          )}
+          <div className="flex gap-2 pt-1">
+            <button className="btn-primary" disabled={busy}>
+              {busy ? "Сохранение…" : "Записать расход"}
+            </button>
+            <button type="button" className="btn-secondary" onClick={onClose}>
+              Отмена
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+/** «Приход на холодильник» — общий приход не по конкретному клиенту, только владелец. */
+function GeneralIncomeModal({ onClose, onSaved }: { onClose: () => void; onSaved: () => void }) {
+  const [amount, setAmount] = useState("");
+  const [method, setMethod] = useState("cash");
+  const [note, setNote] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setError(null);
+    setBusy(true);
+    try {
+      const res = await fetch("/api/general-income", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ amount, method, note }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setError(data.error || "Ошибка сохранения");
+        return;
+      }
+      onSaved();
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="modal-backdrop" onClick={onClose}>
+      <div className="modal-panel max-w-md" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="card-title flex items-center gap-2">
+            <Snowflake className="h-4 w-4 text-brand-600" strokeWidth={2.1} />
+            Приход на холодильник
+          </h3>
+          <button className="btn-icon btn-ghost" onClick={onClose} aria-label="Закрыть">
+            <X className="h-4 w-4" strokeWidth={2} />
+          </button>
+        </div>
+        <form onSubmit={handleSubmit} className="space-y-3">
+          <div className="flex gap-3">
+            <div className="flex-1">
+              <label className="label">Сумма, сум</label>
+              <input
+                type="number"
+                inputMode="decimal"
+                className="input"
+                value={amount}
+                onChange={(e) => setAmount(e.target.value)}
+                required
+              />
+            </div>
+            <div className="flex-1">
+              <label className="label">Способ</label>
+              <select className="input" value={method} onChange={(e) => setMethod(e.target.value)}>
+                <option value="cash">Наличные</option>
+                <option value="terminal">Терминал</option>
+                <option value="transfer">Перечисление (счёт-банк)</option>
+                <option value="card">Карта (счёт-карта)</option>
+              </select>
+            </div>
+          </div>
+          <div>
+            <label className="label">Примечание</label>
+            <input className="input" value={note} onChange={(e) => setNote(e.target.value)} />
+          </div>
+          {error && (
+            <div className="alert-danger">
+              <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" strokeWidth={2} />
+              <span>{error}</span>
+            </div>
+          )}
+          <div className="flex gap-2 pt-1">
+            <button className="btn-primary" disabled={busy}>
+              {busy ? "Сохранение…" : "Записать приход"}
+            </button>
+            <button type="button" className="btn-secondary" onClick={onClose}>
+              Отмена
+            </button>
+          </div>
+        </form>
+      </div>
     </div>
   );
 }

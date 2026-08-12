@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { miniAppFetch } from "./telegram";
+import BoxSection from "./BoxSection";
 import {
   ArrowLeft,
   UserRound,
@@ -41,6 +42,13 @@ interface Summary {
   totalBalance: number;
 }
 
+interface BoxBalance {
+  containerId: string;
+  outstanding: number;
+  ratePerBox: number;
+  owedAmount: number;
+}
+
 export default function ClientDetail({
   owner,
   onBack,
@@ -49,6 +57,7 @@ export default function ClientDetail({
   onBack: () => void;
 }) {
   const [summary, setSummary] = useState<Summary | null>(null);
+  const [boxBalances, setBoxBalances] = useState<BoxBalance[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -56,13 +65,18 @@ export default function ClientDetail({
     setLoading(true);
     setError(null);
     try {
-      const res = await miniAppFetch(`/api/miniapp/clients/${encodeURIComponent(owner.ownerKey)}`);
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
+      const [summaryRes, boxesRes] = await Promise.all([
+        miniAppFetch(`/api/miniapp/clients/${encodeURIComponent(owner.ownerKey)}`),
+        miniAppFetch(`/api/miniapp/boxes/${encodeURIComponent(owner.ownerKey)}`),
+      ]);
+      const data = await summaryRes.json().catch(() => ({}));
+      if (!summaryRes.ok) {
         setError(data.error || "Не удалось загрузить данные клиента");
         return;
       }
       setSummary(data.summary);
+      const boxData = await boxesRes.json().catch(() => ({}));
+      setBoxBalances(boxesRes.ok ? boxData.balances || [] : []);
     } catch {
       setError("Не удалось связаться с сервером");
     } finally {
@@ -120,7 +134,13 @@ export default function ClientDetail({
       ) : (
         <div className="space-y-4">
           {summary.containers.map((c) => (
-            <ContainerCard key={c.containerId} container={c} onChanged={load} />
+            <ContainerCard
+              key={c.containerId}
+              container={c}
+              owner={owner}
+              boxBalance={boxBalances.find((b) => b.containerId === c.containerId)}
+              onChanged={load}
+            />
           ))}
 
           <div className="rounded-2xl bg-ink-50 px-4 py-3.5 flex items-center justify-between">
@@ -135,7 +155,17 @@ export default function ClientDetail({
   );
 }
 
-function ContainerCard({ container, onChanged }: { container: SummaryContainer; onChanged: () => void }) {
+function ContainerCard({
+  container,
+  owner,
+  boxBalance,
+  onChanged,
+}: {
+  container: SummaryContainer;
+  owner: { ownerKey: string; ownerLabel: string; ownerType: OwnerType };
+  boxBalance: BoxBalance | undefined;
+  onChanged: () => void;
+}) {
   return (
     <div className="rounded-2xl border border-ink-200 bg-white p-4">
       <div className="flex items-center gap-2 mb-3">
@@ -155,6 +185,8 @@ function ContainerCard({ container, onChanged }: { container: SummaryContainer; 
           {money(container.balance)} сум
         </span>
       </div>
+
+      <BoxSection owner={owner} containerId={container.containerId} balance={boxBalance} onChanged={onChanged} />
     </div>
   );
 }

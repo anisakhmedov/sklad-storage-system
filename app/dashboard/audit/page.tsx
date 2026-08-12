@@ -15,7 +15,19 @@ interface AuditLogRow {
   timestamp: string;
 }
 
-const ENTITIES = ["StorageRecord", "Employee", "WebAccess", "Container", "Income", "Withdrawal"];
+const ENTITIES = [
+  "StorageRecord",
+  "Employee",
+  "WebAccess",
+  "Container",
+  "Income",
+  "Withdrawal",
+  "BoxLedgerEntry",
+  "Expense",
+  "GeneralIncome",
+  "InventoryItem",
+  "PatrolLog",
+];
 const ACTIONS = ["create", "update", "delete"] as const;
 
 const actionLabels: Record<string, string> = { create: "Создание", update: "Изменение", delete: "Удаление" };

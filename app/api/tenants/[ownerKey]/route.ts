@@ -7,8 +7,13 @@ export async function GET(_req: NextRequest, { params }: { params: { ownerKey: s
   const user = await requireWebUser();
   if (!user) return jsonError("Не авторизован", 401);
 
-  const detail = await getTenantDetail(decodeURIComponent(params.ownerKey));
-  if (!detail) return jsonError("Арендатор не найден", 404);
+  try {
+    const detail = await getTenantDetail(decodeURIComponent(params.ownerKey));
+    if (!detail) return jsonError("Арендатор не найден", 404);
 
-  return NextResponse.json({ detail });
+    return NextResponse.json({ detail });
+  } catch (err) {
+    console.error("GET /api/tenants/[ownerKey]:", err);
+    return jsonError("Внутренняя ошибка сервера", 500);
+  }
 }

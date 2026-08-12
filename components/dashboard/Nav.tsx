@@ -16,6 +16,8 @@ import {
   X,
   UserRound,
   History,
+  PackageSearch,
+  Thermometer,
 } from "lucide-react";
 
 const links = [
@@ -24,8 +26,10 @@ const links = [
   { href: "/dashboard/access", label: "Доступ", icon: KeyRound },
   { href: "/dashboard/containers", label: "Контейнеры", icon: Boxes },
   { href: "/dashboard/records", label: "Записи", icon: ClipboardList },
+  { href: "/dashboard/boxes", label: "Ящики", icon: PackageSearch },
   { href: "/dashboard/income", label: "Оплаты", icon: Wallet },
   { href: "/dashboard/tenants", label: "Арендаторы", icon: UserRound },
+  { href: "/dashboard/patrols", label: "Обходы", icon: Thermometer },
   { href: "/dashboard/reports", label: "Отчётность", icon: BarChart3 },
   { href: "/dashboard/audit", label: "Активность", icon: History },
 ];

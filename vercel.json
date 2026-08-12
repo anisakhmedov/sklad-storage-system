@@ -1,0 +1,6 @@
+{
+  "crons": [
+    { "path": "/api/cron/patrol-reminder?period=morning", "schedule": "0 3 * * *" },
+    { "path": "/api/cron/patrol-reminder?period=evening", "schedule": "0 13 * * *" }
+  ]
+}
