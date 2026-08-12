@@ -19,6 +19,7 @@ export interface IBoxLedgerEntry {
   direction: BoxDirection;
   quantity: number;
   ratePerBox: number;
+  actId?: Types.ObjectId; // ссылка на сгенерированный PDF-акт, см. models/Act.ts
   createdBy: string; // identifier веб-пользователя либо имя сотрудника (Mini App)
   createdByRole: "employee" | "web";
   createdAt: Date;
@@ -32,6 +33,7 @@ const BoxLedgerEntrySchema = new Schema<IBoxLedgerEntry>({
   direction: { type: String, enum: ["given", "returned"], required: true },
   quantity: { type: Number, required: true, min: 0 },
   ratePerBox: { type: Number, required: true, min: 0 },
+  actId: { type: Schema.Types.ObjectId, ref: "Act" },
   createdBy: { type: String, required: true },
   createdByRole: { type: String, enum: ["employee", "web"], required: true },
   createdAt: { type: Date, default: Date.now },

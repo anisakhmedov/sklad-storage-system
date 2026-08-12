@@ -1,5 +1,6 @@
 import { connectDB } from "./db";
 import { PatrolLog, PatrolPeriod } from "@/models/PatrolLog";
+import { CELL_NUMBERS } from "./cells";
 
 /**
  * Обход холодильных камер 2 раза в день — вся логика времени завязана на Ташкент (UTC+5,
@@ -34,14 +35,29 @@ export function isPatrolWindowPassed(period: PatrolPeriod, date: Date = new Date
   return tashkentParts(date).hour >= PATROL_WINDOWS[period].endHour;
 }
 
-export interface PatrolStatusRow {
-  containerId: string;
-  containerName: string;
+export interface PatrolCellStatus {
+  number: number;
   morningDone: boolean;
   eveningDone: boolean;
 }
 
-/** Статус обходов на сегодня (по Ташкенту) для списка контейнеров. */
+export interface PatrolStatusRow {
+  containerId: string;
+  containerName: string;
+  cells: PatrolCellStatus[];
+  // Контейнер целиком считается "сделан" за период только когда сделаны ВСЕ 8 камер —
+  // используется мини-аппом для сводного статуса (components/miniapp/PatrolScreen.tsx).
+  morningDone: boolean;
+  eveningDone: boolean;
+}
+
+/**
+ * Статус обходов на сегодня (по Ташкенту) для списка контейнеров — по каждой из 8 камер
+ * отдельно (см. models/PatrolLog.ts). Легаси-записи без cellNumber (созданные до перехода на
+ * по-камерный учёт) не попадают ни в одну камеру и не отмечают контейнер как пройденный —
+ * это ожидаемо: старые обходы были на уровне контейнера и с новой (по-камерной) моделью
+ * несопоставимы напрямую.
+ */
 export async function getTodayPatrolStatus(
   containers: Array<{ id: string; name: string }>
 ): Promise<PatrolStatusRow[]> {
@@ -50,13 +66,22 @@ export async function getTodayPatrolStatus(
   const logs = await PatrolLog.find({
     date: today,
     containerId: { $in: containers.map((c) => c.id) },
+    cellNumber: { $ne: null },
   }).lean();
 
-  const doneSet = new Set(logs.map((l) => `${String(l.containerId)}::${l.period}`));
-  return containers.map((c) => ({
-    containerId: c.id,
-    containerName: c.name,
-    morningDone: doneSet.has(`${c.id}::morning`),
-    eveningDone: doneSet.has(`${c.id}::evening`),
-  }));
+  const doneSet = new Set(logs.map((l) => `${String(l.containerId)}::${l.cellNumber}::${l.period}`));
+  return containers.map((c) => {
+    const cells: PatrolCellStatus[] = CELL_NUMBERS.map((n) => ({
+      number: n,
+      morningDone: doneSet.has(`${c.id}::${n}::morning`),
+      eveningDone: doneSet.has(`${c.id}::${n}::evening`),
+    }));
+    return {
+      containerId: c.id,
+      containerName: c.name,
+      cells,
+      morningDone: cells.every((cell) => cell.morningDone),
+      eveningDone: cells.every((cell) => cell.eveningDone),
+    };
+  });
 }

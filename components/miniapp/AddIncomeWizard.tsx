@@ -52,6 +52,7 @@ export default function AddIncomeWizard({ onExit }: { onExit: () => void }) {
   const [step, setStep] = useState(0);
   const [ownerKey, setOwnerKey] = useState("");
   const [containerId, setContainerId] = useState("");
+  const [cellNumber, setCellNumber] = useState("");
   const [amount, setAmount] = useState("");
   const [method, setMethod] = useState<Method>("cash");
   const [paidAt, setPaidAt] = useState(todayInput());
@@ -120,6 +121,7 @@ export default function AddIncomeWizard({ onExit }: { onExit: () => void }) {
           ownerKey: selectedOwner.ownerKey,
           ownerLabel: selectedOwner.ownerLabel,
           containerId,
+          cellNumber: cellNumber || undefined,
           amount,
           method,
           paidAt,
@@ -140,6 +142,7 @@ export default function AddIncomeWizard({ onExit }: { onExit: () => void }) {
   function startAnother() {
     setOwnerKey("");
     setContainerId("");
+    setCellNumber("");
     setAmount("");
     setMethod("cash");
     setPaidAt(todayInput());
@@ -299,6 +302,17 @@ export default function AddIncomeWizard({ onExit }: { onExit: () => void }) {
               onChange={(e) => setAmount(e.target.value)}
               autoFocus
             />
+          </div>
+          <div>
+            <label className="label">Камера (необязательно)</label>
+            <select className="input" value={cellNumber} onChange={(e) => setCellNumber(e.target.value)}>
+              <option value="">За контейнер в целом</option>
+              {[1, 2, 3, 4, 5, 6, 7, 8].map((n) => (
+                <option key={n} value={n}>
+                  Камера {n}
+                </option>
+              ))}
+            </select>
           </div>
           <div>
             <label className="label">Способ оплаты</label>

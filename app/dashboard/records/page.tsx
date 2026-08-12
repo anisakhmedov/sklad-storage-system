@@ -4,10 +4,12 @@ import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
 import { TARIFF_TYPES, TARIFF_LABELS, isTariffCompatibleWithUnit, formatTariffText, TariffType } from "@/lib/tariff";
 import { ownerKeyOf } from "@/lib/ownerKey";
+import ActsModal from "@/components/dashboard/ActsModal";
 import {
   ClipboardList,
   Search,
   FileText,
+  FileStack,
   Pencil,
   History,
   Trash2,
@@ -99,6 +101,7 @@ export default function RecordsPage() {
   const [editBusy, setEditBusy] = useState(false);
   const [historyFor, setHistoryFor] = useState<Record_ | null>(null);
   const [history, setHistory] = useState<any[]>([]);
+  const [actsFor, setActsFor] = useState<Record_ | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -345,6 +348,13 @@ export default function RecordsPage() {
                           <FileText className="h-3.5 w-3.5" strokeWidth={2} />
                         </a>
                       )}
+                      <button
+                        className="btn-icon btn-secondary"
+                        title="Акты"
+                        onClick={() => setActsFor(r)}
+                      >
+                        <FileStack className="h-3.5 w-3.5" strokeWidth={2} />
+                      </button>
                       <button
                         className="btn-icon btn-secondary"
                         title="Изменить"
@@ -693,6 +703,15 @@ export default function RecordsPage() {
             )}
           </div>
         </div>
+      )}
+
+      {actsFor && (
+        <ActsModal
+          recordId={actsFor._id}
+          ownerKey={ownerKeyOf(actsFor.goodsOwner)}
+          containerId={typeof actsFor.containerId === "object" ? actsFor.containerId._id : actsFor.containerId}
+          onClose={() => setActsFor(null)}
+        />
       )}
     </div>
   );

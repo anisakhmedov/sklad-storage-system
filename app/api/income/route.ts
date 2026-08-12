@@ -67,6 +67,7 @@ export async function POST(req: NextRequest) {
     ownerKey: parsed.data.ownerKey,
     ownerLabel: parsed.data.ownerLabel,
     containerId: parsed.data.containerId,
+    cellNumber: parsed.data.cellNumber,
     amount: parsed.data.amount,
     method: parsed.data.method,
     paidAt: parsed.data.paidAt || new Date(),

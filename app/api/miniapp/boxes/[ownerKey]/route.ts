@@ -7,6 +7,8 @@ import { jsonError, zodErrorResponse } from "@/lib/apiHelpers";
 import { boxEntryCreateSchema } from "@/lib/validation";
 import { logAudit } from "@/lib/audit";
 import { getBoxBalanceForOwner } from "@/lib/boxes";
+import { createAndSaveAct } from "@/lib/contract/actPersistence";
+import { sendActToEmployee } from "@/lib/telegramNotify";
 
 /** Баланс ящиков клиента (сколько должен) — в разделе «Клиенты» Mini App. */
 export async function GET(req: NextRequest, { params }: { params: { ownerKey: string } }) {
@@ -76,6 +78,24 @@ export async function POST(req: NextRequest, { params }: { params: { ownerKey: s
         ratePerBox: entry.ratePerBox,
       },
     });
+
+    // Раньше выдача/приём ящиков не сопровождались актом вообще — теперь, как и для товара
+    // и инвентаря, акт сохраняется целиком и уходит сотруднику в Telegram (best-effort).
+    const act = await createAndSaveAct({
+      kind: entry.direction === "given" ? "box_given" : "box_returned",
+      ownerKey: entry.ownerKey,
+      ownerLabel: entry.ownerLabel,
+      ownerType: entry.ownerType,
+      containerId: String(entry.containerId),
+      containerName: container.name,
+      itemLabel: "Ящики",
+      changedQuantityText: `${entry.quantity} шт.`,
+      createdBy: employee.name,
+      createdByRole: "employee",
+    });
+    entry.actId = act._id;
+    await entry.save();
+    await sendActToEmployee(employee.telegramId, act);
 
     return NextResponse.json({ entry: { id: String(entry._id) } });
   } catch (err) {

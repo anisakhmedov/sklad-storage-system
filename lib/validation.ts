@@ -3,6 +3,9 @@ import { normalizePhone } from "./phone";
 
 export const unitEnum = z.enum(["tonne", "kg", "box", "piece"]);
 export const paymentMethodEnum = z.enum(["cash", "terminal", "transfer", "card"]);
+// Расходы больше не принимают "Терминал" (по решению владельца) — только наличные,
+// перечисление и карта. Income/GeneralIncome по-прежнему используют широкий paymentMethodEnum.
+export const expensePaymentMethodEnum = z.enum(["cash", "transfer", "card"]);
 export const webRoleEnum = z.enum(["owner", "trusted"]);
 export const goodsOwnerTypeEnum = z.enum(["individual", "company"]);
 export const tariffTypeEnum = z.enum(["per_day", "per_month", "per_kg_month", "per_kg_6_months"]);
@@ -127,6 +130,15 @@ export const storageRecordUpdateSchema = storageRecordBaseSchema.partial().exten
   createdAt: z.coerce.date().optional(),
 });
 
+// Контейнер для перевозки — временный, без камер/актов (см. models/TransportContainer.ts).
+export const transportContainerCreateSchema = z.object({
+  label: z.string().min(1, "Укажите номер/название контейнера").max(100),
+});
+
+export const transportContainerGiveSchema = z.object({
+  currentOwnerLabel: z.string().min(1, "Укажите клиента").max(300),
+});
+
 export const webAccessCreateSchema = z.object({
   identifier: z.string().min(3, "Укажите username или телефон"),
   role: webRoleEnum,
@@ -156,7 +168,7 @@ export const boxEntryCreateSchema = z.object({
 export const expenseCreateSchema = z.object({
   type: z.enum(["owner_withdrawal", "salary", "other"]),
   amount: z.coerce.number().positive("Сумма должна быть больше 0"),
-  method: paymentMethodEnum,
+  method: expensePaymentMethodEnum,
   note: z.string().max(500).optional().default(""),
   employeeName: z.string().max(200).optional(),
 });
@@ -188,11 +200,27 @@ export const inventoryItemUpdateSchema = z.object({
   note: z.string().max(500).optional(),
 });
 
-// Обход холодильной камеры — только температура (см. models/PatrolLog.ts, lib/patrols.ts).
+// Выдать/принять инвентарь клиенту (см. models/InventoryLedgerEntry.ts, lib/inventoryLedger.ts) —
+// параллельный учёт от ящиков (boxEntryCreateSchema выше), без ставки/стоимости.
+export const inventoryLedgerEntryCreateSchema = z.object({
+  itemId: z.string().min(1, "Выберите позицию инвентаря"),
+  ownerKey: z.string().min(1, "Не выбран владелец груза"),
+  ownerType: goodsOwnerTypeEnum,
+  ownerLabel: z.string().min(1, "Не указано имя/наименование владельца").max(300),
+  containerId: z.string().min(1, "Выберите контейнер"),
+  cellNumber: z.coerce.number().int().min(1).max(8).optional(),
+  direction: z.enum(["given", "returned"]),
+  quantity: z.coerce.number().positive("Количество должно быть больше 0"),
+});
+
+// Обход холодильной камеры — температура и сила тока (ампер) для каждой камеры контейнера
+// отдельно (см. models/PatrolLog.ts, lib/patrols.ts).
 export const patrolLogCreateSchema = z.object({
   containerId: z.string().min(1, "Выберите контейнер"),
+  cellNumber: z.coerce.number().int().min(1, "Некорректный номер камеры").max(8, "Некорректный номер камеры"),
   period: z.enum(["morning", "evening"]),
   temperature: z.coerce.number().min(-100).max(100, "Некорректная температура"),
+  amperage: z.coerce.number().min(0, "Некорректное значение ампер").max(1000, "Некорректное значение ампер"),
 });
 
 export const withdrawalCreateSchema = z.object({
@@ -213,6 +241,8 @@ export const incomeCreateSchema = z.object({
   ownerKey: z.string().min(1, "Не выбран владелец груза"),
   ownerLabel: z.string().min(1, "Не указано имя/наименование владельца").max(300),
   containerId: z.string().min(1, "Выберите контейнер"),
+  // Необязательно — платёж может быть "за контейнер в целом" (см. models/Income.ts).
+  cellNumber: z.coerce.number().int().min(1).max(8).optional(),
   amount: z.coerce.number().positive("Сумма должна быть больше 0"),
   method: paymentMethodEnum,
   paidAt: z.coerce.date().optional(),

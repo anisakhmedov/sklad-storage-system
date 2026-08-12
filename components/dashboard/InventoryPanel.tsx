@@ -6,9 +6,11 @@ import { Package, Plus, Minus, Trash2, PackagePlus } from "lucide-react";
 interface InventoryRow {
   _id: string;
   name: string;
-  quantity: number;
+  quantity: number; // общее количество
   unit: string;
   note?: string;
+  outstanding?: number; // на руках у клиентов (см. models/InventoryLedgerEntry.ts)
+  available?: number; // свободный остаток на складе = quantity − outstanding
 }
 
 // Подсказки для быстрого добавления типовых позиций — не ограничивает список, просто
@@ -109,7 +111,14 @@ export default function InventoryPanel() {
                   key={item._id}
                   className="flex items-center justify-between rounded-xl border border-ink-200 px-3 py-2.5"
                 >
-                  <span className="font-medium text-ink-800 truncate">{item.name}</span>
+                  <div className="min-w-0">
+                    <span className="font-medium text-ink-800 truncate block">{item.name}</span>
+                    {!!item.outstanding && (
+                      <span className="text-[11px] text-ink-400">
+                        Остаток: {item.available} / Всего: {item.quantity} (у клиентов: {item.outstanding})
+                      </span>
+                    )}
+                  </div>
                   <div className="flex items-center gap-2 shrink-0">
                     <button
                       className="btn-icon btn-secondary h-7 w-7"

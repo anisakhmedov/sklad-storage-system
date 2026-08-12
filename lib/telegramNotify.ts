@@ -1,10 +1,9 @@
 import { InputFile } from "grammy";
 import { getBot } from "@/lib/telegramBot";
 import { IStorageRecord } from "@/models/StorageRecord";
+import { IAct, ActKind } from "@/models/Act";
 import { getGoodsOwnerLinkByPhone, formatRegisteredMessage } from "@/lib/goodsOwnerBot";
 import { generateContractBuffer, contractFilename } from "@/lib/contract/contractService";
-import { generateActBuffer, actFilename, actDirectionOf } from "@/lib/contract/actService";
-import { ownerLabelOf } from "@/lib/ownerKey";
 
 /**
  * Исходящие уведомления/документы, инициируемые НЕ входящим апдейтом бота, а действием
@@ -70,33 +69,28 @@ export async function sendContractToEmployee(
   }
 }
 
+const ACT_CAPTIONS: Record<ActKind, string> = {
+  goods_given: "📄 Акт приёма-передачи товара сформирован автоматически.",
+  goods_returned: "📄 Акт отдачи товара сформирован автоматически.",
+  inventory_given: "📄 Акт передачи инвентаря сформирован автоматически.",
+  inventory_returned: "📄 Акт возврата инвентаря сформирован автоматически.",
+  box_given: "📄 Акт передачи ящиков сформирован автоматически.",
+  box_returned: "📄 Акт возврата ящиков сформирован автоматически.",
+};
+
 /**
- * Акт приёма-передачи (delta > 0) или отдачи (delta < 0) товара (см. lib/contract/actService.ts) —
- * отправляется сотруднику автоматически при любом изменении количества груза у существующего
- * клиента (см. app/api/miniapp/records/[id]/adjust/route.ts), тем же способом, что и договор.
- * В отличие от договора — для любого типа владельца груза.
+ * Отправляет сотруднику уже сохранённый акт (см. lib/contract/actPersistence.ts::createAndSaveAct —
+ * акт всегда сначала сохраняется целиком в БД, отправка в Telegram — best-effort уведомление
+ * поверх уже готового буфера, а не отдельная генерация). Используется для всех видов акта:
+ * товар (app/api/miniapp/records/[id]/adjust/route.ts), инвентарь (app/api/miniapp/inventory/route.ts),
+ * ящики (app/api/miniapp/boxes/[ownerKey]/route.ts).
  */
-export async function sendActToEmployee(
-  employeeTelegramId: string,
-  record: RecordForNotify,
-  containerName: string,
-  delta: number,
-  totalAfter: number
-): Promise<void> {
+export async function sendActToEmployee(employeeTelegramId: string, act: Pick<IAct, "kind" | "pdfBuffer" | "filename">): Promise<void> {
   try {
-    const buffer = await generateActBuffer(record, containerName, delta, totalAfter);
-    const direction = actDirectionOf(delta);
     const bot = getBot();
-    await bot.api.sendDocument(
-      Number(employeeTelegramId),
-      new InputFile(buffer, actFilename(direction, ownerLabelOf(record.goodsOwner))),
-      {
-        caption:
-          direction === "given"
-            ? "📄 Акт приёма-передачи товара сформирован автоматически."
-            : "📄 Акт отдачи товара сформирован автоматически.",
-      }
-    );
+    await bot.api.sendDocument(Number(employeeTelegramId), new InputFile(act.pdfBuffer, act.filename), {
+      caption: ACT_CAPTIONS[act.kind],
+    });
   } catch (err) {
     console.error("sendActToEmployee: не удалось отправить PDF акта сотруднику:", err);
   }

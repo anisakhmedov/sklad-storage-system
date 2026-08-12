@@ -5,16 +5,30 @@ import { requireWebUser } from "@/lib/auth";
 import { jsonError, zodErrorResponse } from "@/lib/apiHelpers";
 import { inventoryItemCreateSchema } from "@/lib/validation";
 import { logAudit } from "@/lib/audit";
+import { getOutstandingByAllItems, itemAvailability } from "@/lib/inventoryLedger";
 
-/** Складской инвентарь (поддоны/ящики/рохля/кара) — строго владелец, см. models/InventoryItem.ts. */
+/**
+ * Складской инвентарь (поддоны/ящики/рохля/кара) — строго владелец, см. models/InventoryItem.ts.
+ * `quantity` на позиции — это ОБЩЕЕ количество, которым владеет склад; `outstanding` — сколько
+ * сейчас на руках у клиентов (см. models/InventoryLedgerEntry.ts); `available` — свободный
+ * остаток на складе (quantity − outstanding), показывается рядом с общим количеством в
+ * components/dashboard/InventoryPanel.tsx.
+ */
 export async function GET() {
   const user = await requireWebUser();
   if (!user) return jsonError("Не авторизован", 401);
   if (user.role !== "owner") return jsonError("Доступно только владельцу", 403);
 
   await connectDB();
-  const items = await InventoryItem.find().sort({ name: 1 }).lean();
-  return NextResponse.json({ items });
+  const [items, outstandingByItem] = await Promise.all([
+    InventoryItem.find().sort({ name: 1 }).lean(),
+    getOutstandingByAllItems(),
+  ]);
+  const withAvailability = items.map((item) => ({
+    ...item,
+    ...itemAvailability(item.quantity, outstandingByItem.get(String(item._id)) || 0),
+  }));
+  return NextResponse.json({ items: withAvailability });
 }
 
 export async function POST(req: NextRequest) {

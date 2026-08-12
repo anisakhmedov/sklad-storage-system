@@ -68,6 +68,14 @@ interface FinanceSummary {
   salaryTotal: number;
   balance: number;
   pendingExpensesCount: number;
+  ownerCashWithdrawn: number;
+}
+
+interface IncomeBreakdownRow {
+  containerId: string;
+  containerName: string;
+  cellNumber: number | null;
+  total: number;
 }
 
 interface ExpenseEntry {
@@ -112,6 +120,7 @@ export default function IncomePage() {
   const [debtsError, setDebtsError] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<string | null>(null);
   const [finance, setFinance] = useState<FinanceSummary | null>(null);
+  const [breakdown, setBreakdown] = useState<IncomeBreakdownRow[]>([]);
   const [expenses, setExpenses] = useState<ExpenseEntry[]>([]);
   const [isOwner, setIsOwner] = useState(false);
   const [showExpenseModal, setShowExpenseModal] = useState(false);
@@ -129,13 +138,20 @@ export default function IncomePage() {
     if (res.ok) setExpenses(data.expenses || []);
   }, []);
 
+  const loadBreakdown = useCallback(async () => {
+    const res = await fetch("/api/finance/breakdown");
+    const data = await res.json().catch(() => ({}));
+    if (res.ok) setBreakdown(data.breakdown || []);
+  }, []);
+
   useEffect(() => {
     fetch("/api/auth/me")
       .then((r) => r.json())
       .then((d) => setIsOwner(d.user?.role === "owner"));
     loadFinance();
     loadExpenses();
-  }, [loadFinance, loadExpenses]);
+    loadBreakdown();
+  }, [loadFinance, loadExpenses, loadBreakdown]);
 
   const loadDebts = useCallback(async () => {
     setLoading(true);
@@ -171,7 +187,7 @@ export default function IncomePage() {
   }, [loadIncomes]);
 
   async function refreshAll() {
-    await Promise.all([loadDebts(), loadIncomes(), loadFinance(), loadExpenses()]);
+    await Promise.all([loadDebts(), loadIncomes(), loadFinance(), loadExpenses(), loadBreakdown()]);
   }
 
   async function handleExpenseStatus(id: string, status: "approved" | "rejected") {
@@ -216,7 +232,7 @@ export default function IncomePage() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 mb-8">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-4 mb-8">
         <div className="card">
           <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-brand-50 text-brand-600 mb-3">
             <TrendingUp className="h-4.5 w-4.5" strokeWidth={2} />
@@ -251,6 +267,13 @@ export default function IncomePage() {
           </div>
           <div className="text-2xl font-semibold text-ink-900 tabular-nums">{money(finance?.kassa || 0)}</div>
           <div className="text-xs text-ink-400 mt-1">Касса (наличные), сум</div>
+        </div>
+        <div className="card">
+          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-rose-50 text-rose-600 mb-3">
+            <Banknote className="h-4.5 w-4.5" strokeWidth={2} />
+          </div>
+          <div className="text-2xl font-semibold text-ink-900 tabular-nums">{money(finance?.ownerCashWithdrawn || 0)}</div>
+          <div className="text-xs text-ink-400 mt-1">Владелец забрал наличными, сум</div>
         </div>
       </div>
 
@@ -583,6 +606,37 @@ export default function IncomePage() {
         )}
       </div>
 
+      <div className="card overflow-x-auto mt-8">
+        <h2 className="card-title mb-1">По холодильникам и камерам</h2>
+        <p className="card-subtitle mb-3">
+          Сумма фактически полученных платежей (Income), сгруппированная по контейнеру и камере.
+        </p>
+        {breakdown.length === 0 ? (
+          <div className="empty-state">
+            <p className="text-sm text-ink-500">Платежей ещё не было.</p>
+          </div>
+        ) : (
+          <table className="table-base">
+            <thead>
+              <tr>
+                <th>Контейнер</th>
+                <th>Камера</th>
+                <th>Сумма получено</th>
+              </tr>
+            </thead>
+            <tbody>
+              {breakdown.map((b) => (
+                <tr key={`${b.containerId}::${b.cellNumber ?? "none"}`}>
+                  <td className="text-ink-800">{b.containerName}</td>
+                  <td className="text-ink-600">{b.cellNumber ?? "За контейнер в целом"}</td>
+                  <td className="whitespace-nowrap font-medium text-ink-800 tabular-nums">{money(b.total)} сум</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+
       {showExpenseModal && (
         <ExpenseModal
           onClose={() => setShowExpenseModal(false)}
@@ -618,6 +672,7 @@ function PaymentForm({ debts, onSaved }: { debts: OwnerContainerDebt[]; onSaved:
 
   const [ownerKey, setOwnerKey] = useState("");
   const [containerId, setContainerId] = useState("");
+  const [cellNumber, setCellNumber] = useState("");
   const [amount, setAmount] = useState("");
   const [method, setMethod] = useState("cash");
   const [paidAt, setPaidAt] = useState(todayInput());
@@ -650,6 +705,7 @@ function PaymentForm({ debts, onSaved }: { debts: OwnerContainerDebt[]; onSaved:
           ownerKey: owner.ownerKey,
           ownerLabel: owner.ownerLabel,
           containerId,
+          cellNumber: cellNumber || undefined,
           amount,
           method,
           paidAt,
@@ -736,7 +792,7 @@ function PaymentForm({ debts, onSaved }: { debts: OwnerContainerDebt[]; onSaved:
             </p>
           )}
 
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="label">Сумма, сум</label>
               <input
@@ -748,6 +804,19 @@ function PaymentForm({ debts, onSaved }: { debts: OwnerContainerDebt[]; onSaved:
                 required
               />
             </div>
+            <div>
+              <label className="label">Камера (необязательно)</label>
+              <select className="input" value={cellNumber} onChange={(e) => setCellNumber(e.target.value)}>
+                <option value="">За контейнер в целом</option>
+                {[1, 2, 3, 4, 5, 6, 7, 8].map((n) => (
+                  <option key={n} value={n}>
+                    Камера {n}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="label">Способ оплаты</label>
               <select className="input" value={method} onChange={(e) => setMethod(e.target.value)}>
@@ -862,9 +931,10 @@ function ExpenseModal({ onClose, onSaved }: { onClose: () => void; onSaved: () =
             </div>
             <div className="flex-1">
               <label className="label">Способ</label>
+              {/* "Терминал" не принимается для расходов — только наличные/перечисление/карта
+                  (см. lib/validation.ts::expensePaymentMethodEnum). */}
               <select className="input" value={method} onChange={(e) => setMethod(e.target.value)}>
                 <option value="cash">Наличные</option>
-                <option value="terminal">Терминал</option>
                 <option value="transfer">Перечисление (счёт-банк)</option>
                 <option value="card">Карта (счёт-карта)</option>
               </select>

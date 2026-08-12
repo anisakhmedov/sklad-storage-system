@@ -5,6 +5,7 @@ import { requireWebUser } from "@/lib/auth";
 import { jsonError, zodErrorResponse } from "@/lib/apiHelpers";
 import { expenseCreateSchema } from "@/lib/validation";
 import { logAudit } from "@/lib/audit";
+import { getCashBalance } from "@/lib/finance";
 
 /** Список расходов (owner + trusted видят всё, включая pending-заявки от сотрудников). */
 export async function GET(req: NextRequest) {
@@ -32,6 +33,16 @@ export async function POST(req: NextRequest) {
   if (!parsed.success) return zodErrorResponse(parsed.error);
 
   await connectDB();
+
+  // Расход наличными сразу становится "approved" (см. ниже), поэтому проверяем остаток
+  // кассы уже здесь — иначе она уйдёт в минус в тот же момент, что и создание.
+  if (parsed.data.method === "cash") {
+    const cashBalance = await getCashBalance();
+    if (parsed.data.amount > cashBalance) {
+      return jsonError(`Недостаточно наличных в кассе (доступно: ${cashBalance})`, 400);
+    }
+  }
+
   const expense = await Expense.create({
     ...parsed.data,
     createdBy: user.identifier,

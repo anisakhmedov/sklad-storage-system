@@ -17,6 +17,11 @@ export interface IIncome {
   ownerKey: string;
   ownerLabel: string; // ФИО/наименование на момент платежа — для отображения без join по записям
   containerId: Types.ObjectId;
+  /** Камера контейнера, за которую платит арендатор (1–8) — необязательно, для платежей "за
+   * контейнер в целом" (напр. когда груз занимает несколько камер) поле не указывается. Нужно
+   * для разбивки оплат по холодильникам и камерам на странице "Оплаты", см. lib/finance.ts::
+   * getIncomeBreakdown. */
+  cellNumber?: number;
   amount: number;
   method: PaymentMethod;
   paidAt: Date;
@@ -30,6 +35,7 @@ const IncomeSchema = new Schema<IIncome>({
   ownerKey: { type: String, required: true, index: true },
   ownerLabel: { type: String, required: true, trim: true },
   containerId: { type: Schema.Types.ObjectId, ref: "Container", required: true, index: true },
+  cellNumber: { type: Number, min: 1, max: 8 },
   amount: { type: Number, required: true, min: 0 },
   method: { type: String, enum: ["cash", "terminal", "transfer", "card"], required: true },
   paidAt: { type: Date, required: true, default: Date.now },

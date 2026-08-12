@@ -5,6 +5,7 @@ import { requireWebUser } from "@/lib/auth";
 import { jsonError, zodErrorResponse } from "@/lib/apiHelpers";
 import { expenseStatusSchema } from "@/lib/validation";
 import { logAudit } from "@/lib/audit";
+import { getCashBalance } from "@/lib/finance";
 
 /**
  * Подтверждение/отклонение заявки сотрудника на расход — только владелец (не доверенное лицо):
@@ -24,6 +25,16 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   const expense = await Expense.findById(params.id);
   if (!expense) return jsonError("Расход не найден", 404);
   if (expense.status !== "pending") return jsonError("Эта заявка уже обработана", 409);
+
+  // Повторная проверка кассы прямо перед одобрением: заявка уже могла пройти проверку в
+  // момент подачи (см. app/api/miniapp/expenses/route.ts), но с тех пор кассу могла исчерпать
+  // другая одобренная заявка — не даём кассе уйти в минус.
+  if (parsed.data.status === "approved" && expense.method === "cash") {
+    const cashBalance = await getCashBalance();
+    if (expense.amount > cashBalance) {
+      return jsonError(`Недостаточно наличных в кассе для одобрения (доступно: ${cashBalance})`, 409);
+    }
+  }
 
   const before = expense.status;
   expense.status = parsed.data.status;

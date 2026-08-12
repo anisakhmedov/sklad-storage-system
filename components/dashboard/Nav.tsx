@@ -18,6 +18,8 @@ import {
   History,
   PackageSearch,
   Thermometer,
+  Package,
+  Truck,
 } from "lucide-react";
 
 const links = [
@@ -25,8 +27,10 @@ const links = [
   { href: "/dashboard/employees", label: "Сотрудники", icon: Users },
   { href: "/dashboard/access", label: "Доступ", icon: KeyRound },
   { href: "/dashboard/containers", label: "Контейнеры", icon: Boxes },
+  { href: "/dashboard/transport-containers", label: "Перевозка", icon: Truck },
   { href: "/dashboard/records", label: "Записи", icon: ClipboardList },
   { href: "/dashboard/boxes", label: "Ящики", icon: PackageSearch },
+  { href: "/dashboard/inventory", label: "Инвентарь", icon: Package },
   { href: "/dashboard/income", label: "Оплаты", icon: Wallet },
   { href: "/dashboard/tenants", label: "Арендаторы", icon: UserRound },
   { href: "/dashboard/patrols", label: "Обходы", icon: Thermometer },

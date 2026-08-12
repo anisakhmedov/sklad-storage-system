@@ -29,6 +29,13 @@ export interface IExpense {
 const ExpenseSchema = new Schema<IExpense>({
   type: { type: String, enum: ["owner_withdrawal", "salary", "other"], required: true },
   amount: { type: Number, required: true, min: 0 },
+  // Схема сознательно НЕ сужена до ["cash","transfer","card"] здесь: PATCH .../[id]/route.ts
+  // делает expense.save() (полная валидация) при одобрении уже существующей заявки — если бы
+  // "terminal" убрали из enum, легаси-заявки с этим способом (созданные до отказа от
+  // терминала) невозможно было бы одобрить. "Терминал" запрещён на входе новых расходов через
+  // lib/validation.ts::expensePaymentMethodEnum (см. app/api/expenses/route.ts,
+  // app/api/miniapp/expenses/route.ts) — enum модели остаётся широким как second line of
+  // defense/чтение легаси-данных, а не как способ навязать бизнес-правило.
   method: { type: String, enum: ["cash", "terminal", "transfer", "card"], required: true },
   note: { type: String, trim: true },
   employeeName: { type: String, trim: true },

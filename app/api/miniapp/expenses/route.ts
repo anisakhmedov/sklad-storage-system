@@ -5,6 +5,7 @@ import { resolveEmployee } from "@/lib/miniAuth";
 import { jsonError, zodErrorResponse } from "@/lib/apiHelpers";
 import { expenseCreateSchema } from "@/lib/validation";
 import { logAudit } from "@/lib/audit";
+import { getCashBalance } from "@/lib/finance";
 
 /**
  * Заявка сотрудника на расход (снятие/зарплата/прочее) — всегда создаётся со статусом
@@ -24,6 +25,17 @@ export async function POST(req: NextRequest) {
     if (!parsed.success) return zodErrorResponse(parsed.error);
 
     await connectDB();
+
+    // Заявка сотрудника остаётся "pending" и сама по себе не трогает остаток (см.
+    // lib/finance.ts), но владелец попросил блокировать уже на этапе подачи заявки, а не
+    // ждать одобрения — чтобы сотрудник сразу видел, что наличных не хватает.
+    if (parsed.data.method === "cash") {
+      const cashBalance = await getCashBalance();
+      if (parsed.data.amount > cashBalance) {
+        return jsonError(`Недостаточно наличных в кассе (доступно: ${cashBalance})`, 400);
+      }
+    }
+
     const expense = await Expense.create({
       ...parsed.data,
       createdBy: employee.name,

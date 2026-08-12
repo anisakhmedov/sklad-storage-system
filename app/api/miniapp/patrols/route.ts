@@ -54,10 +54,16 @@ export async function POST(req: NextRequest) {
 
     const date = tashkentDateString();
     const log = await PatrolLog.findOneAndUpdate(
-      { containerId: parsed.data.containerId, period: parsed.data.period, date },
+      {
+        containerId: parsed.data.containerId,
+        cellNumber: parsed.data.cellNumber,
+        period: parsed.data.period,
+        date,
+      },
       {
         $set: {
           temperature: parsed.data.temperature,
+          amperage: parsed.data.amperage,
           employeeId: employee._id,
         },
       },
@@ -72,8 +78,10 @@ export async function POST(req: NextRequest) {
       actorRole: "employee",
       changes: {
         containerId: parsed.data.containerId,
+        cellNumber: parsed.data.cellNumber,
         period: parsed.data.period,
         temperature: parsed.data.temperature,
+        amperage: parsed.data.amperage,
       },
     });
 

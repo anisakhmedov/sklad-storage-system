@@ -7,6 +7,9 @@ import { quantityAdjustSchema } from "@/lib/validation";
 import { jsonError, zodErrorResponse } from "@/lib/apiHelpers";
 import { logAudit } from "@/lib/audit";
 import { sendActToEmployee } from "@/lib/telegramNotify";
+import { buildActFillData } from "@/lib/contract/generateAct";
+import { createAndSaveAct } from "@/lib/contract/actPersistence";
+import { ownerKeyOf } from "@/lib/ownerKey";
 import { Types } from "mongoose";
 
 /**
@@ -63,11 +66,30 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       changes: { quantityDelta: delta, quantityBefore: before, quantityAfter: after, note },
     });
 
-    // Best-effort, не блокирует ответ (см. lib/telegramNotify.ts) — сбой отправки акта
-    // не должен откатывать уже сохранённое изменение количества. Направление акта
-    // (приём/отдача) определяется знаком delta внутри sendActToEmployee.
+    // Акт сохраняется целиком сразу (см. lib/contract/actPersistence.ts) — так кнопка "Акты" на
+    // веб-панели (app/dashboard/records/page.tsx) может открыть его позже без пересборки.
+    // Отправка в Telegram — best-effort и не блокирует ответ: сбой отправки акта не должен
+    // откатывать уже сохранённое изменение количества.
     const container = await Container.findById(record.containerId).select("name").lean();
-    await sendActToEmployee(employee.telegramId, record, container?.name || "—", delta, after);
+    const containerName = container?.name || "—";
+    const fillData = buildActFillData(record, containerName, delta, after);
+    const act = await createAndSaveAct({
+      kind: delta > 0 ? "goods_given" : "goods_returned",
+      recordId: String(record._id),
+      ownerKey: ownerKeyOf(record.goodsOwner),
+      ownerLabel: fillData.ownerLabel,
+      ownerType: record.goodsOwner.type,
+      containerId: String(record.containerId),
+      containerName,
+      cellNumber: record.cellNumber,
+      itemLabel: fillData.itemLabel,
+      changedQuantityText: fillData.changedQuantityText,
+      totalQuantityText: fillData.totalQuantityText,
+      contractNumber: record.contractNumber,
+      createdBy: employee.name,
+      createdByRole: "employee",
+    });
+    await sendActToEmployee(employee.telegramId, act);
 
     return NextResponse.json({ record: { id: String(record._id), quantity: record.quantity } });
   } catch (err) {

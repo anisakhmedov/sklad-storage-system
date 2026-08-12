@@ -5,7 +5,9 @@ import { miniAppFetch } from "./telegram";
 import { ArrowLeft, MinusCircle, CheckCircle2 } from "lucide-react";
 
 type ExpenseType = "owner_withdrawal" | "salary" | "other";
-type Method = "cash" | "terminal" | "transfer" | "card";
+// "terminal" убран по решению владельца — расходы принимают только эти три способа
+// (см. lib/validation.ts::expensePaymentMethodEnum).
+type Method = "cash" | "transfer" | "card";
 
 const TYPE_LABELS: Record<ExpenseType, string> = {
   owner_withdrawal: "Снятие для владельца",
@@ -14,7 +16,6 @@ const TYPE_LABELS: Record<ExpenseType, string> = {
 };
 const METHOD_LABELS: Record<Method, string> = {
   cash: "Наличные",
-  terminal: "Терминал",
   transfer: "Перечисление (счёт-банк)",
   card: "Карта (счёт-карта)",
 };

@@ -5,16 +5,16 @@ import { UNIT_LABELS } from "@/lib/labels";
 import { ownerLabelOf } from "@/lib/ownerKey";
 
 /**
- * PDF "Акт приёма-передачи товара" (direction: "given") или "Акт отдачи товара"
- * (direction: "returned") — оформляется автоматически при изменении количества груза у
- * уже существующего клиента (см. lib/contract/actService.ts,
- * app/api/miniapp/records/[id]/adjust/route.ts: delta > 0 → "given", delta < 0 → "returned").
+ * PDF-рендерер актов — общий для трёх видов операций (см. models/Act.ts::ActKind):
+ * "goods" (товар клиента, партия per-запись), "inventory" (складской инвентарь, выданный
+ * клиенту, см. models/InventoryLedgerEntry.ts) и "boxes" (ящики под товар, см.
+ * models/BoxLedgerEntry.ts). Вёрстка одна и та же (шапка/таблица/подписи), меняются только
+ * заголовок и подписи строк — под конкретный предмет акта (subject).
+ *
  * Самостоятельный генератор (не переиспользует внутренности lib/contract/generateContract.ts),
  * чтобы не трогать уже отлаженный рендер договора — шрифты и общий стиль оформления те же.
- *
  * В отличие от договора, акт формируется и для физлиц, и для юрлиц (договор — только для
- * физлиц, см. generateContract.ts), поскольку акт приёма-передачи не содержит паспортных
- * данных, только факт изменения количества товара.
+ * физлиц, см. generateContract.ts), поскольку акт приёма-передачи не содержит паспортных данных.
  */
 
 const FONT_REGULAR = path.join(process.cwd(), "templates/fonts/DejaVuSans.ttf");
@@ -23,15 +23,55 @@ const PAGE_MARGIN = 54;
 const numberFmt = new Intl.NumberFormat("ru-RU");
 
 export type ActDirection = "given" | "returned";
+export type ActSubject = "goods" | "inventory" | "boxes";
+
+interface SubjectLabels {
+  titleUz: (isGiven: boolean) => string;
+  titleRu: (isGiven: boolean) => string;
+  subjectWordUz: string; // "товар" на узбекском для вводного текста
+  subjectWordRu: string; // "товар/инвентарь/ящики" для вводного текста
+  itemRowLabel: string; // подпись строки с наименованием предмета
+  quantityRowLabel: (isGiven: boolean) => string;
+}
+
+const SUBJECT_LABELS: Record<ActSubject, SubjectLabels> = {
+  goods: {
+    titleUz: (g) => (g ? "ТОВАРНИ ҚАБУЛ ҚИЛИШ-ТОПШИРИШ ДАЛОЛАТНОМАСИ" : "ТОВАРНИ ҚАЙТАРИБ БЕРИШ ДАЛОЛАТНОМАСИ"),
+    titleRu: (g) => (g ? "Акт приёма-передачи товара" : "Акт отдачи (возврата) товара"),
+    subjectWordUz: "товар",
+    subjectWordRu: "товар",
+    itemRowLabel: "Товар / Наименование товара",
+    quantityRowLabel: (g) => (g ? "Қўшилган миқдор / Добавлено" : "Берилган миқдор / Выдано (возвращено)"),
+  },
+  inventory: {
+    titleUz: (g) =>
+      g ? "ИНВЕНТАРНИ ТОПШИРИШ ДАЛОЛАТНОМАСИ" : "ИНВЕНТАРНИ ҚАЙТАРИБ ОЛИШ ДАЛОЛАТНОМАСИ",
+    titleRu: (g) => (g ? "Акт передачи инвентаря" : "Акт возврата инвентаря"),
+    subjectWordUz: "инвентар",
+    subjectWordRu: "инвентарь",
+    itemRowLabel: "Инвентарь / Позиция",
+    quantityRowLabel: (g) => (g ? "Берилган миқдор / Выдано" : "Қайтарилган миқдор / Возвращено"),
+  },
+  boxes: {
+    titleUz: (g) => (g ? "ЯЩИКЛАРНИ ТОПШИРИШ ДАЛОЛАТНОМАСИ" : "ЯЩИКЛАРНИ ҚАЙТАРИБ ОЛИШ ДАЛОЛАТНОМАСИ"),
+    titleRu: (g) => (g ? "Акт передачи ящиков" : "Акт возврата ящиков"),
+    subjectWordUz: "ящик",
+    subjectWordRu: "ящики",
+    itemRowLabel: "Ящики / Позиция",
+    quantityRowLabel: (g) => (g ? "Берилган миқдор / Выдано" : "Қайтарилган миқдор / Возвращено"),
+  },
+};
 
 export interface ActFillData {
+  subject: ActSubject;
   direction: ActDirection;
   ownerLabel: string;
   containerName: string;
-  productName: string;
+  itemLabel: string; // наименование товара / позиции инвентаря / "Ящики"
   changedQuantityText: string;
-  totalQuantityText: string;
+  totalQuantityText?: string;
   contractNumber?: string;
+  actNumber?: string;
   dateText: string;
 }
 
@@ -43,10 +83,11 @@ export function buildActFillData(
 ): ActFillData {
   const unitLabel = UNIT_LABELS[record.unit] || record.unit;
   return {
+    subject: "goods",
     direction: delta > 0 ? "given" : "returned",
     ownerLabel: ownerLabelOf(record.goodsOwner),
     containerName,
-    productName: record.productName,
+    itemLabel: record.productName,
     changedQuantityText: `${numberFmt.format(Math.abs(delta))} ${unitLabel}`,
     totalQuantityText: `${numberFmt.format(totalAfter)} ${unitLabel}`,
     contractNumber: record.contractNumber,
@@ -56,16 +97,15 @@ export function buildActFillData(
 
 export function renderActPdf(data: ActFillData): Promise<Buffer> {
   const isGiven = data.direction === "given";
-  const titleUz = isGiven
-    ? "ТОВАРНИ ҚАБУЛ ҚИЛИШ-ТОПШИРИШ ДАЛОЛАТНОМАСИ"
-    : "ТОВАРНИ ҚАЙТАРИБ БЕРИШ ДАЛОЛАТНОМАСИ";
-  const titleRu = isGiven ? "Акт приёма-передачи товара" : "Акт отдачи (возврата) товара";
+  const labels = SUBJECT_LABELS[data.subject];
+  const titleUz = labels.titleUz(isGiven);
+  const titleRu = labels.titleRu(isGiven);
   const introText = isGiven
-    ? `«INTURIST MAROQAND» МЧЖ (Сақловчи) томонидан «${data.ownerLabel}» (Мижоз) га тегишли қуйидаги товар қабул қилиб олинди / ` +
-      `ООО «INTURIST MAROQAND» (Хранитель) приняло на хранение от «${data.ownerLabel}» (Клиент) следующий товар:`
-    : `«INTURIST MAROQAND» МЧЖ (Сақловчи) томонидан «${data.ownerLabel}» (Мижоз)га қуйидаги товар қайтариб берилди / ` +
-      `ООО «INTURIST MAROQAND» (Хранитель) выдало (вернуло) со склада «${data.ownerLabel}» (Клиент) следующий товар:`;
-  const quantityRowLabel = isGiven ? "Қўшилган миқдор / Добавлено" : "Берилган миқдор / Выдано (возвращено)";
+    ? `«INTURIST MAROQAND» МЧЖ (Сақловчи) томонидан «${data.ownerLabel}» (Мижоз) га тегишли қуйидаги ${labels.subjectWordUz} қабул қилиб олинди / ` +
+      `ООО «INTURIST MAROQAND» (Хранитель) приняло от «${data.ownerLabel}» (Клиент) следующий ${labels.subjectWordRu}:`
+    : `«INTURIST MAROQAND» МЧЖ (Сақловчи) томонидан «${data.ownerLabel}» (Мижоз)га қуйидаги ${labels.subjectWordUz} қайтариб берилди / ` +
+      `ООО «INTURIST MAROQAND» (Хранитель) выдало (вернуло) «${data.ownerLabel}» (Клиент) следующий ${labels.subjectWordRu}:`;
+  const quantityRowLabel = labels.quantityRowLabel(isGiven);
 
   return new Promise((resolve, reject) => {
     try {
@@ -92,6 +132,9 @@ export function renderActPdf(data: ActFillData): Promise<Buffer> {
 
       doc.fontSize(9.5);
       doc.text(`Сана / Дата: ${data.dateText}`, doc.page.margins.left, doc.y, { width: contentWidth });
+      if (data.actNumber) {
+        doc.text(`Далолатнома № / Акт № ${data.actNumber}`, doc.page.margins.left, doc.y, { width: contentWidth });
+      }
       if (data.contractNumber) {
         doc.text(`Шартнома № / Договор № ${data.contractNumber}`, doc.page.margins.left, doc.y, {
           width: contentWidth,
@@ -107,10 +150,12 @@ export function renderActPdf(data: ActFillData): Promise<Buffer> {
       const rowH = 22;
       const rows: Array<[string, string]> = [
         ["Контейнер / Container", data.containerName],
-        ["Товар / Наименование товара", data.productName],
+        [labels.itemRowLabel, data.itemLabel],
         [quantityRowLabel, data.changedQuantityText],
-        ["Жами миқдор / Итого на хранении", data.totalQuantityText],
       ];
+      if (data.totalQuantityText) {
+        rows.push(["Жами миқдор / Итого", data.totalQuantityText]);
+      }
 
       let y = doc.y;
       doc.lineWidth(0.75).strokeColor("#333333");
