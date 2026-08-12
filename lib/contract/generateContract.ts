@@ -149,10 +149,32 @@ function renderBlock(
       doc.moveDown(0.3);
       break;
 
-    case "closingLine":
-      doc.font("body").fontSize(10).text(fill(block.text, map));
+    case "closingLine": {
+      doc.font("body").fontSize(10);
+      const text = fill(block.text, map);
+      // Помимо блока "РЕКВИЗИТЫ И ПОДПИСИ СТОРОН" (renderSignatureBlock выше) подпись
+      // клиента печатается ещё раз здесь — в финальном блоке "Подписи сторон:", прямо у
+      // строки "КЛИЕНТ", по просьбе пользователя. Строку "ХРАНИТЕЛЬ" не трогаем.
+      const clientLabel = text.trim().startsWith("КЛИЕНТ") ? text.replace(/_+\s*$/, "").trim() : null;
+      if (clientLabel && data.signatureImage) {
+        const startX = doc.page.margins.left;
+        const startY = doc.y;
+        const imgWidth = 90;
+        const imgHeight = imgWidth * 0.4;
+        doc.text(clientLabel, startX, startY);
+        const labelWidth = doc.widthOfString(clientLabel);
+        doc.image(data.signatureImage, startX + labelWidth + 12, startY - imgHeight / 2 + 5, {
+          width: imgWidth,
+          height: imgHeight,
+        });
+        doc.x = startX;
+        doc.y = startY + Math.max(doc.currentLineHeight(), imgHeight);
+      } else {
+        doc.text(text);
+      }
       doc.moveDown(0.2);
       break;
+    }
 
     case "signatureBlock":
       renderSignatureBlock(doc, map, data, contentWidth);
