@@ -12,14 +12,16 @@ import {
   Boxes,
   Banknote,
   CreditCard,
-  ArrowLeftRight,
   Landmark,
   Wallet,
   ClipboardCheck,
 } from "lucide-react";
 
 type OwnerType = "individual" | "company";
-type Method = "cash" | "terminal" | "transfer" | "card";
+// Перечисление намеренно исключено — сотрудник принимает оплату лично только этими
+// тремя способами, перевод на счёт вносит сам владелец на веб-панели (см.
+// lib/validation.ts::incomeCreateSchemaEmployee, app/api/miniapp/income/route.ts).
+type Method = "cash" | "terminal" | "card";
 
 interface OwnerContainerDebt {
   ownerType: OwnerType;
@@ -38,7 +40,6 @@ const todayInput = () => new Date().toISOString().slice(0, 10);
 const METHODS: Array<{ value: Method; icon: typeof Banknote }> = [
   { value: "cash", icon: Banknote },
   { value: "terminal", icon: CreditCard },
-  { value: "transfer", icon: ArrowLeftRight },
   { value: "card", icon: Landmark },
 ];
 

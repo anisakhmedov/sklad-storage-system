@@ -5,7 +5,7 @@ import { Container } from "@/models/Container";
 import { StorageRecord } from "@/models/StorageRecord";
 import { resolveEmployee, employeeCanAccessContainer } from "@/lib/miniAuth";
 import { jsonError, zodErrorResponse } from "@/lib/apiHelpers";
-import { incomeCreateSchema } from "@/lib/validation";
+import { incomeCreateSchemaEmployee } from "@/lib/validation";
 import { logAudit } from "@/lib/audit";
 import { parseOwnerKey } from "@/lib/ownerKey";
 
@@ -23,7 +23,10 @@ export async function POST(req: NextRequest) {
   }
 
   const body = await req.json().catch(() => null);
-  const parsed = incomeCreateSchema.safeParse(body);
+  // employee-схема сужает "method" — перечисление сотрудник записать не может (см.
+  // lib/validation.ts::incomeCreateSchemaEmployee), это не только UI-ограничение, чтобы
+  // прямой запрос к API в обход кнопок в components/miniapp/AddIncomeWizard.tsx тоже отсекался.
+  const parsed = incomeCreateSchemaEmployee.safeParse(body);
   if (!parsed.success) return zodErrorResponse(parsed.error);
 
   if (!employeeCanAccessContainer(employee, parsed.data.containerId)) {

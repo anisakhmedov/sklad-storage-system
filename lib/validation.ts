@@ -205,6 +205,15 @@ export const incomeCreateSchema = z.object({
   note: z.string().max(500).optional().default(""),
 });
 
+// Перечисление (банковский перевод) поступает сразу на счёт владельца, минуя сотрудника на
+// складе, — сотрудник физически не может подтвердить такой платёж, поэтому в Mini App
+// (app/api/miniapp/income/route.ts, components/miniapp/AddIncomeWizard.tsx) доступны только
+// способы, которые сотрудник принимает лично: наличные, терминал, карта. Перечисление
+// по-прежнему вносит сам владелец на веб-панели (app/api/income/route.ts, incomeCreateSchema
+// без сужения).
+export const employeePaymentMethodEnum = z.enum(["cash", "terminal", "card"]);
+export const incomeCreateSchemaEmployee = incomeCreateSchema.extend({ method: employeePaymentMethodEnum });
+
 export type LoginInput = z.infer<typeof loginSchema>;
 export type EmployeeRegisterInput = z.infer<typeof employeeRegisterSchema>;
 export type ContainerCreateInput = z.infer<typeof containerCreateSchema>;
