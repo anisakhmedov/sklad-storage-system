@@ -36,6 +36,25 @@ export interface ContractFillData {
   rentalInfo: string;
   tariffText: string;
   contractNumber: string;
+  formattedDate: string;
+}
+
+const MONTH_ABBR = ["Янв", "Фев", "Мар", "Апр", "Май", "Июн", "Июл", "Авг", "Сен", "Окт", "Ноя", "Дек"];
+
+/**
+ * Дата оформления в формате исходного .docx-шаблона: «20» Июл 2026й. — день в кавычках-
+ * «ёлочках», сокращённое русское название месяца (3 буквы, без точки) и год с суффиксом
+ * «й.» (сокращение узб. «йил» — «год»). В самом шаблоне эта дата была захардкожена как
+ * тестовое значение (см. lib/contract/contractTemplateBlocks.ts, блок "meta") — здесь она
+ * вычисляется из даты договора (`record.createdAt`, редактируется на веб-панели, см.
+ * app/dashboard/records/page.tsx), той же даты, что используется в имени файла договора
+ * (см. lib/contract/contractService.ts::contractFilename).
+ */
+function formatContractDate(date: Date): string {
+  const day = date.getDate();
+  const month = MONTH_ABBR[date.getMonth()];
+  const year = date.getFullYear();
+  return `«${day}» ${month} ${year}й.`;
 }
 
 /**
@@ -54,7 +73,7 @@ function abbreviateFullName(fullName: string): string {
 
 /** Данные, сопоставленные с плейсхолдерами шаблона (см. таблицу в README, часть 3). */
 export function buildContractFillData(
-  record: Pick<IStorageRecord, "tariff" | "goodsOwner">,
+  record: Pick<IStorageRecord, "tariff" | "goodsOwner" | "createdAt">,
   containerName: string,
   contractNumber: string
 ): ContractFillData {
@@ -76,6 +95,7 @@ export function buildContractFillData(
     rentalInfo: containerName,
     tariffText: formatTariffText(record.tariff),
     contractNumber,
+    formattedDate: formatContractDate(record.createdAt),
   };
 }
 
@@ -91,6 +111,7 @@ function placeholderMap(data: ContractFillData): Record<string, string> {
     "<Тариф>": data.tariffText,
     "<Имя сокрощенное. Фамилия>": data.abbreviatedName,
     "<Номер договора>": data.contractNumber,
+    "<Дата оформления>": data.formattedDate,
   };
 }
 
