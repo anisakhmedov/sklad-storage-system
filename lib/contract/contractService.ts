@@ -24,7 +24,7 @@ type LeanRecordWithContainer = IStorageRecord & { containerId: { _id: unknown; n
 
 /** Общий шаг: собрать PDF, когда запись и название контейнера уже под рукой. */
 export async function generateContractBuffer(
-  record: Pick<IStorageRecord, "tariff" | "goodsOwner" | "createdAt">,
+  record: Pick<IStorageRecord, "tariff" | "goodsOwner" | "createdAt" | "clientSignaturePng">,
   containerName: string,
   contractNumber: string
 ) {

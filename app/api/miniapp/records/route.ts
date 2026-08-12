@@ -8,6 +8,9 @@ import { jsonError, zodErrorResponse } from "@/lib/apiHelpers";
 import { logAudit } from "@/lib/audit";
 import { notifyGoodsOwnerRegistered, sendContractToEmployee } from "@/lib/telegramNotify";
 import { getNextSequence } from "@/lib/counter";
+import { decodePngDataUrl } from "@/lib/signature";
+
+const MAX_SIGNATURE_BYTES = 2 * 1024 * 1024;
 
 export async function POST(req: NextRequest) {
   const { tgUser, employee } = await resolveEmployee(req);
@@ -35,6 +38,17 @@ export async function POST(req: NextRequest) {
     return jsonError("Камера отмечена как заполненная — выберите другую", 409);
   }
 
+  // Подпись клиента (см. components/miniapp/SignaturePad.tsx) обязательна для физлиц —
+  // storageRecordCreateSchema уже это проверила (superRefine, lib/validation.ts), здесь
+  // только декодируем PNG data URL в Buffer для сохранения на записи.
+  let clientSignatureBuffer: Buffer | undefined;
+  if (parsed.data.goodsOwner.type === "individual") {
+    const decoded = decodePngDataUrl(parsed.data.clientSignaturePng!);
+    if (!decoded) return jsonError("Некорректный формат подписи клиента", 400);
+    if (decoded.length > MAX_SIGNATURE_BYTES) return jsonError("Файл подписи слишком большой", 400);
+    clientSignatureBuffer = decoded;
+  }
+
   // Номер договора присваивается один раз, только физлицам (только для них формируется
   // договор, см. lib/contract/generateContract.ts) — последовательность по текущему году
   // (см. lib/counter.ts, README → «Номер договора»).
@@ -53,6 +67,8 @@ export async function POST(req: NextRequest) {
     tariff: parsed.data.tariff,
     createdByEmployeeId: employee._id,
     contractNumber,
+    clientSignaturePng: clientSignatureBuffer,
+    signedAt: clientSignatureBuffer ? new Date() : undefined,
   });
 
   await logAudit({

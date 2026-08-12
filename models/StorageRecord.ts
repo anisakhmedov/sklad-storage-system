@@ -64,6 +64,17 @@ export interface IStorageRecord {
   editedBy?: string;
   editedAt?: Date;
   /**
+   * PNG-подпись клиента (физлицо), сделанная им лично на экране сотрудника при оформлении
+   * договора в Mini App (см. components/miniapp/SignaturePad.tsx, шаг "Подпись" в
+   * components/miniapp/NewRecordWizard.tsx). Печатается в PDF на месте строки
+   * "КЛИЕНТ ____________________" вместо пустой линии (см.
+   * lib/contract/generateContract.ts::renderSignatureBlock) — во ВСЕХ путях перегенерации
+   * PDF (веб, /contract в чате, авто-отправка сотруднику), т.к. это часть данных записи.
+   * Только для физлиц — юрлицам договор не формируется.
+   */
+  clientSignaturePng?: Buffer;
+  signedAt?: Date;
+  /**
    * Номер договора вида "3-2026" — присваивается один раз при создании записи для физлица
    * (см. lib/counter.ts, app/api/miniapp/records/route.ts) и больше не меняется, даже если
    * запись позже отредактирована. У записей, созданных до этой доработки, поле отсутствует —
@@ -142,6 +153,8 @@ const StorageRecordSchema = new Schema<IStorageRecord>({
   editedBy: { type: String },
   editedAt: { type: Date },
   contractNumber: { type: String },
+  clientSignaturePng: { type: Buffer },
+  signedAt: { type: Date },
 });
 
 // Договор формируется только для физлиц — индекс ускоряет поиск по телефону

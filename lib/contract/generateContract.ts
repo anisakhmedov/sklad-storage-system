@@ -1,8 +1,14 @@
 import PDFDocument from "pdfkit";
 import path from "path";
 import { CONTRACT_BLOCKS, ContractBlock } from "./contractTemplateBlocks";
-import { IStorageRecord } from "@/models/StorageRecord";
-import { formatTariffText } from "@/lib/tariff";
+import { ContractFillData, buildContractFillData, placeholderMap, fill } from "./placeholders";
+
+// Реэкспорт для обратной совместимости — lib/contract/contractService.ts и другие
+// потребители продолжают импортировать это отсюда, а сама логика теперь в ./placeholders
+// (env-agnostic, без pdfkit/path, чтобы её же мог использовать браузерный компонент
+// components/miniapp/ContractPreview.tsx — см. комментарий в ./placeholders.ts).
+export type { ContractFillData };
+export { buildContractFillData };
 
 /**
  * Сборка PDF договора хранения для физлиц-арендаторов.
@@ -25,103 +31,6 @@ import { formatTariffText } from "@/lib/tariff";
 
 const FONT_REGULAR = path.join(process.cwd(), "templates/fonts/DejaVuSans.ttf");
 const FONT_BOLD = path.join(process.cwd(), "templates/fonts/DejaVuSans-Bold.ttf");
-
-export interface ContractFillData {
-  fullName: string;
-  abbreviatedName: string;
-  passportData: string;
-  passportIssueDate: string;
-  passportIssuedBy: string;
-  pinfl: string;
-  rentalInfo: string;
-  tariffText: string;
-  contractNumber: string;
-  formattedDate: string;
-}
-
-const MONTH_ABBR = ["Янв", "Фев", "Мар", "Апр", "Май", "Июн", "Июл", "Авг", "Сен", "Окт", "Ноя", "Дек"];
-
-/**
- * Дата оформления в формате исходного .docx-шаблона: «20» Июл 2026й. — день в кавычках-
- * «ёлочках», сокращённое русское название месяца (3 буквы, без точки) и год с суффиксом
- * «й.» (сокращение узб. «йил» — «год»). В самом шаблоне эта дата была захардкожена как
- * тестовое значение (см. lib/contract/contractTemplateBlocks.ts, блок "meta") — здесь она
- * вычисляется из даты договора (`record.createdAt`, редактируется на веб-панели, см.
- * app/dashboard/records/page.tsx), той же даты, что используется в имени файла договора
- * (см. lib/contract/contractService.ts::contractFilename).
- */
-function formatContractDate(date: Date): string {
-  const day = date.getDate();
-  const month = MONTH_ABBR[date.getMonth()];
-  const year = date.getFullYear();
-  return `«${day}» ${month} ${year}й.`;
-}
-
-/**
- * "Фамилия Имя Отчество" → "И. Фамилия" (напр. "Ахмедов Анисхон Равшанович" → "А. Ахмедов") —
- * формат для плейсхолдера `<Имя сокрощенное. Фамилия>` в колонке "КЛИЕНТ" блока подписи,
- * уточнено пользователем после первой версии (изначально плейсхолдер был непонятен и
- * оставался как есть — см. историю README).
- */
-function abbreviateFullName(fullName: string): string {
-  const parts = fullName.trim().split(/\s+/).filter(Boolean);
-  if (parts.length === 0) return "";
-  const [surname, givenName] = parts;
-  if (!givenName) return surname;
-  return `${givenName[0].toUpperCase()}. ${surname}`;
-}
-
-/** Данные, сопоставленные с плейсхолдерами шаблона (см. таблицу в README, часть 3). */
-export function buildContractFillData(
-  record: Pick<IStorageRecord, "tariff" | "goodsOwner" | "createdAt">,
-  containerName: string,
-  contractNumber: string
-): ContractFillData {
-  const owner = record.goodsOwner;
-  if (owner.type !== "individual") {
-    throw new Error("Договор формируется только для физических лиц (goodsOwner.type === 'individual')");
-  }
-
-  return {
-    fullName: owner.fullName,
-    abbreviatedName: abbreviateFullName(owner.fullName),
-    passportData: owner.passportData,
-    passportIssueDate: owner.passportIssueDate,
-    passportIssuedBy: owner.passportIssuedBy,
-    pinfl: owner.pinfl,
-    // Раньше здесь также указывались название товара и количество — убрано по просьбе
-    // пользователя: в ИЛОВА №1 рядом с тарифом должно быть только название контейнера,
-    // без состава груза (см. README).
-    rentalInfo: containerName,
-    tariffText: formatTariffText(record.tariff),
-    contractNumber,
-    formattedDate: formatContractDate(record.createdAt),
-  };
-}
-
-function placeholderMap(data: ContractFillData): Record<string, string> {
-  return {
-    "<ФИО>": data.fullName,
-    "<Фамилия Имя Отчество>": data.fullName,
-    "<Номер паспорта>": data.passportData,
-    "<Дата выдачи>": data.passportIssueDate,
-    "<Кем выдан>": data.passportIssuedBy,
-    "<ПИФНЛ>": data.pinfl,
-    "<Информация про всю аренду>": data.rentalInfo,
-    "<Тариф>": data.tariffText,
-    "<Имя сокрощенное. Фамилия>": data.abbreviatedName,
-    "<Номер договора>": data.contractNumber,
-    "<Дата оформления>": data.formattedDate,
-  };
-}
-
-function fill(text: string, map: Record<string, string>): string {
-  let out = text;
-  for (const [token, value] of Object.entries(map)) {
-    out = out.split(token).join(value);
-  }
-  return out;
-}
 
 const PAGE_MARGIN = 54;
 
@@ -246,7 +155,7 @@ function renderBlock(
       break;
 
     case "signatureBlock":
-      renderSignatureBlock(doc, map, contentWidth);
+      renderSignatureBlock(doc, map, data, contentWidth);
       break;
 
     case "tariffBlock":
@@ -256,7 +165,12 @@ function renderBlock(
 }
 
 /** Двухколоночный блок реквизитов/подписей (раздел 11 шаблона). */
-function renderSignatureBlock(doc: PDFKit.PDFDocument, map: Record<string, string>, contentWidth: number) {
+function renderSignatureBlock(
+  doc: PDFKit.PDFDocument,
+  map: Record<string, string>,
+  data: ContractFillData,
+  contentWidth: number
+) {
   ensureSpace(doc, 170);
   doc.moveDown(0.3);
 
@@ -295,7 +209,20 @@ function renderSignatureBlock(doc: PDFKit.PDFDocument, map: Record<string, strin
   // Ранее здесь перед сокращённым именем арендатора стояло статичное "Ж.Сулаймонов"
   // (имя подписанта со стороны "Сақловчи", не относящееся к арендатору) — убрано по
   // просьбе пользователя, в колонке "КЛИЕНТ" должно быть только сокращённое имя арендатора.
-  doc.text("________________________*", rightX, sigY, { width: colWidth });
+  //
+  // Если клиент расписался в Mini App (см. components/miniapp/SignaturePad.tsx,
+  // models/StorageRecord.ts::clientSignaturePng) — рисуем PNG-подпись прямо над линией
+  // вместо пустого места под ней; pdfkit декодирует PNG-буфер "из коробки", без доп. библиотек.
+  // Легаси-записи без подписи (или юрлица, для которых договор вообще не формируется)
+  // по-прежнему получают пустую линию для подписи от руки.
+  if (data.signatureImage) {
+    const sigImgWidth = Math.min(140, colWidth);
+    const sigImgHeight = sigImgWidth * 0.45;
+    doc.image(data.signatureImage, rightX, sigY - sigImgHeight + 6, { width: sigImgWidth, height: sigImgHeight });
+    doc.text("________________________*", rightX, sigY + 6, { width: colWidth });
+  } else {
+    doc.text("________________________*", rightX, sigY, { width: colWidth });
+  }
   doc.text(fill("<Имя сокрощенное. Фамилия>", map), rightX, doc.y, { width: colWidth });
 
   doc.moveDown(1);

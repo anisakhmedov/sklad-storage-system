@@ -88,6 +88,10 @@ const storageRecordBaseSchema = z.object({
   unit: unitEnum,
   goodsOwner: goodsOwnerSchema,
   tariff: tariffSchema,
+  // PNG data URL подписи клиента, нарисованной на экране сотрудника в Mini App (см.
+  // components/miniapp/SignaturePad.tsx). Обязательна для физлиц — см. superRefine ниже
+  // в storageRecordCreateSchema; для юрлиц не требуется (договор не формируется).
+  clientSignaturePng: z.string().optional(),
 });
 
 // "За кг" тарифы требуют известного веса — доступны только для unit "kg"/"tonne".
@@ -101,6 +105,16 @@ export const storageRecordCreateSchema = storageRecordBaseSchema.superRefine((da
       code: z.ZodIssueCode.custom,
       path: ["tariff", "type"],
       message: 'Тариф "за кг" применим только к записям с единицей измерения "kg" или "tonne"',
+    });
+  }
+  // Договор формируется только для физлиц (см. lib/contract/generateContract.ts) — для них
+  // клиент обязан расписаться на экране сотрудника перед сохранением записи (см. шаг
+  // "Подпись" в components/miniapp/NewRecordWizard.tsx). Юрлицам подпись не нужна.
+  if (data.goodsOwner.type === "individual" && !data.clientSignaturePng) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["clientSignaturePng"],
+      message: "Клиент должен подписать договор",
     });
   }
 });

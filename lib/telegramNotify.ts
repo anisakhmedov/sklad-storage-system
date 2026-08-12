@@ -15,7 +15,15 @@ import { ownerLabelOf } from "@/lib/ownerKey";
 
 type RecordForNotify = Pick<
   IStorageRecord,
-  "productName" | "quantity" | "unit" | "tariff" | "createdAt" | "goodsOwner" | "_id" | "contractNumber"
+  | "productName"
+  | "quantity"
+  | "unit"
+  | "tariff"
+  | "createdAt"
+  | "goodsOwner"
+  | "_id"
+  | "contractNumber"
+  | "clientSignaturePng"
 >;
 
 /**

@@ -3,6 +3,9 @@
 import { useEffect, useState } from "react";
 import { miniAppFetch } from "./telegram";
 import CellGrid, { CellGridCell } from "./CellGrid";
+import ContractPreview from "./ContractPreview";
+import SignaturePad from "./SignaturePad";
+import { buildContractFillData, placeholderMap } from "@/lib/contract/placeholders";
 import { TARIFF_TYPES, TARIFF_LABELS, DEFAULT_TARIFF_RATES, isTariffCompatibleWithUnit, TariffType, formatTariffText } from "@/lib/tariff";
 import {
   ArrowLeft,
@@ -14,6 +17,8 @@ import {
   UserRound,
   Building2,
   Wallet,
+  FileText,
+  PenLine,
   ClipboardCheck,
 } from "lucide-react";
 
@@ -48,10 +53,33 @@ const emptyForm = {
   // (см. /dashboard/income), поэтому здесь только ставка, не сумма и не способ оплаты.
   tariffType: "per_day" as TariffType,
   tariffRate: String(DEFAULT_TARIFF_RATES.per_day),
+  // PNG data URL подписи клиента (см. components/miniapp/SignaturePad.tsx) — только для физлиц.
+  clientSignaturePng: null as string | null,
 };
 
-const STEP_LABELS = ["Контейнер", "Камера", "Товар", "Владелец груза", "Тариф", "Проверка"];
-const STEP_ICONS = [Boxes, LayoutGrid, Package, UserRound, Wallet, ClipboardCheck];
+// "Договор" и "Подпись" существуют только для физлиц (юрлицам договор не формируется —
+// см. lib/contract/generateContract.ts) — список шагов пересчитывается на каждый рендер по
+// текущему form.ownerType, поэтому переключение типа арендатора на шаге "owner" всегда
+// корректно меняет хвост списка (индексы 0–4 стабильны для обоих типов).
+type StepKind = "container" | "cell" | "product" | "owner" | "tariff" | "contract" | "signature" | "review";
+
+function stepsFor(ownerType: OwnerType): StepKind[] {
+  const steps: StepKind[] = ["container", "cell", "product", "owner", "tariff"];
+  if (ownerType === "individual") steps.push("contract", "signature");
+  steps.push("review");
+  return steps;
+}
+
+const STEP_META: Record<StepKind, { label: string; icon: typeof Boxes }> = {
+  container: { label: "Контейнер", icon: Boxes },
+  cell: { label: "Камера", icon: LayoutGrid },
+  product: { label: "Товар", icon: Package },
+  owner: { label: "Владелец груза", icon: UserRound },
+  tariff: { label: "Тариф", icon: Wallet },
+  contract: { label: "Договор", icon: FileText },
+  signature: { label: "Подпись", icon: PenLine },
+  review: { label: "Проверка", icon: ClipboardCheck },
+};
 
 export default function NewRecordWizard({ onExit }: { onExit: () => void }) {
   const [containers, setContainers] = useState<Container[]>([]);
@@ -63,6 +91,9 @@ export default function NewRecordWizard({ onExit }: { onExit: () => void }) {
   const [busy, setBusy] = useState(false);
   const [savedScreen, setSavedScreen] = useState(false);
 
+  const steps = stepsFor(form.ownerType);
+  const kind = steps[step];
+
   useEffect(() => {
     miniAppFetch("/api/miniapp/containers")
       .then((r) => r.json())
@@ -70,7 +101,7 @@ export default function NewRecordWizard({ onExit }: { onExit: () => void }) {
   }, []);
 
   // Сетка камер конкретного контейнера — подгружается сразу при выборе контейнера
-  // (шаг 0), чтобы шаг "Камера" открывался уже с готовыми данными.
+  // (шаг "container"), чтобы шаг "cell" открывался уже с готовыми данными.
   useEffect(() => {
     if (!form.containerId) {
       setCells([]);
@@ -85,12 +116,12 @@ export default function NewRecordWizard({ onExit }: { onExit: () => void }) {
 
   function next() {
     setError(null);
-    if (step === 0 && !form.containerId) return setError("Выберите контейнер");
-    if (step === 1 && !form.cellNumber) return setError("Выберите камеру");
-    if (step === 2 && (!form.productName || !form.quantity)) {
+    if (kind === "container" && !form.containerId) return setError("Выберите контейнер");
+    if (kind === "cell" && !form.cellNumber) return setError("Выберите камеру");
+    if (kind === "product" && (!form.productName || !form.quantity)) {
       return setError("Заполните наименование и количество");
     }
-    if (step === 3) {
+    if (kind === "owner") {
       if (form.ownerType === "individual") {
         if (
           !form.ownerFullName ||
@@ -108,7 +139,8 @@ export default function NewRecordWizard({ onExit }: { onExit: () => void }) {
         }
       }
     }
-    if (step === 4 && !form.tariffRate) return setError("Укажите ставку тарифа");
+    if (kind === "tariff" && !form.tariffRate) return setError("Укажите ставку тарифа");
+    if (kind === "signature" && !form.clientSignaturePng) return setError("Клиент должен расписаться");
     setStep((s) => s + 1);
   }
 
@@ -149,6 +181,9 @@ export default function NewRecordWizard({ onExit }: { onExit: () => void }) {
           unit: form.unit,
           goodsOwner,
           tariff: { type: form.tariffType, rate: form.tariffRate },
+          // Подпись обязательна для физлиц — проверено на предыдущем шаге ("signature") и
+          // ещё раз на сервере (lib/validation.ts::storageRecordCreateSchema).
+          ...(form.ownerType === "individual" ? { clientSignaturePng: form.clientSignaturePng } : {}),
         }),
       });
       const data = await res.json();
@@ -196,7 +231,32 @@ export default function NewRecordWizard({ onExit }: { onExit: () => void }) {
     );
   }
 
-  const StepIcon = STEP_ICONS[step];
+  const StepIcon = STEP_META[kind].icon;
+
+  // Заполненный текст договора для шага "contract" — читается клиентом на экране сотрудника
+  // до подписи. Номер договора ещё неизвестен (присваивается только при сохранении записи,
+  // см. app/api/miniapp/records/route.ts) — на превью показываем прочерк, итоговый PDF
+  // получит настоящий номер. Вычисляется всегда (не только на шаге "contract") — дёшево,
+  // а форма всё равно уже содержит все нужные поля к этому моменту мастера.
+  const contractPreviewMap = placeholderMap(
+    buildContractFillData(
+      {
+        tariff: { type: form.tariffType, rate: Number(form.tariffRate) || 0 },
+        goodsOwner: {
+          type: "individual",
+          fullName: form.ownerFullName,
+          phone: form.ownerPhone,
+          passportData: form.ownerPassport,
+          pinfl: form.ownerPinfl,
+          passportIssueDate: form.ownerPassportIssueDate,
+          passportIssuedBy: form.ownerPassportIssuedBy,
+        },
+        createdAt: new Date(),
+      },
+      containers.find((c) => c.id === form.containerId)?.name || "—",
+      "—"
+    )
+  );
 
   return (
     <div className="pt-4">
@@ -209,13 +269,13 @@ export default function NewRecordWizard({ onExit }: { onExit: () => void }) {
           <ArrowLeft className="h-4.5 w-4.5" strokeWidth={2.1} />
         </button>
         <span className="text-xs font-medium text-ink-400">
-          Шаг {step + 1} из {STEP_LABELS.length}
+          Шаг {step + 1} из {steps.length}
         </span>
       </div>
 
       {/* Progress bar */}
       <div className="flex items-center gap-1.5 mb-5">
-        {STEP_LABELS.map((_, i) => (
+        {steps.map((_, i) => (
           <div
             key={i}
             className={`h-1.5 flex-1 rounded-full transition-colors ${
@@ -229,10 +289,10 @@ export default function NewRecordWizard({ onExit }: { onExit: () => void }) {
         <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-brand-50 text-brand-600 shrink-0">
           <StepIcon className="h-4 w-4" strokeWidth={2.1} />
         </div>
-        <h2 className="text-base font-semibold text-ink-900">{STEP_LABELS[step]}</h2>
+        <h2 className="text-base font-semibold text-ink-900">{STEP_META[kind].label}</h2>
       </div>
 
-      {step === 0 && (
+      {kind === "container" && (
         <div className="space-y-3">
           {containers.length === 0 ? (
             <div className="empty-state">
@@ -269,7 +329,7 @@ export default function NewRecordWizard({ onExit }: { onExit: () => void }) {
         </div>
       )}
 
-      {step === 1 && (
+      {kind === "cell" && (
         <div className="space-y-3">
           {cellsLoading ? (
             <div className="space-y-2.5">
@@ -300,7 +360,7 @@ export default function NewRecordWizard({ onExit }: { onExit: () => void }) {
         </div>
       )}
 
-      {step === 2 && (
+      {kind === "product" && (
         <div className="space-y-3">
           <div>
             <label className="label">Наименование товара</label>
@@ -347,7 +407,7 @@ export default function NewRecordWizard({ onExit }: { onExit: () => void }) {
         </div>
       )}
 
-      {step === 3 && (
+      {kind === "owner" && (
         <div className="space-y-3">
           <label className="label">Тип арендатора</label>
           <div className="flex gap-2">
@@ -381,7 +441,8 @@ export default function NewRecordWizard({ onExit }: { onExit: () => void }) {
             <>
               <p className="text-xs text-ink-400 leading-relaxed">
                 Для физлиц автоматически формируется договор — паспортные данные и ПИНФЛ
-                подставляются в его текст.
+                подставляются в его текст, а на следующих шагах клиент читает договор и
+                расписывается.
               </p>
               <div>
                 <label className="label">ФИО владельца груза</label>
@@ -469,7 +530,7 @@ export default function NewRecordWizard({ onExit }: { onExit: () => void }) {
         </div>
       )}
 
-      {step === 4 && (
+      {kind === "tariff" && (
         <div className="space-y-3">
           <p className="text-xs text-ink-400 leading-relaxed">
             Это договорённые условия оплаты за хранение, а не сама оплата — фактические
@@ -515,7 +576,31 @@ export default function NewRecordWizard({ onExit }: { onExit: () => void }) {
         </div>
       )}
 
-      {step === 5 && (
+      {kind === "contract" && (
+        <div className="space-y-3">
+          <p className="text-xs text-ink-400 leading-relaxed">
+            Передайте телефон клиенту — пусть прочитает договор до конца, затем нажмите
+            «Ознакомлен».
+          </p>
+          <div className="max-h-[55vh] overflow-y-auto rounded-2xl border border-ink-200 bg-white p-3.5">
+            <ContractPreview map={contractPreviewMap} />
+          </div>
+        </div>
+      )}
+
+      {kind === "signature" && (
+        <div className="space-y-3">
+          <p className="text-xs text-ink-400 leading-relaxed">
+            Клиент расписывается сам — передайте ему телефон.
+          </p>
+          <SignaturePad
+            value={form.clientSignaturePng}
+            onChange={(dataUrl) => setForm({ ...form, clientSignaturePng: dataUrl })}
+          />
+        </div>
+      )}
+
+      {kind === "review" && (
         <div className="space-y-2 text-sm">
           <div className="card">
             <Row label="Контейнер" value={containers.find((c) => c.id === form.containerId)?.name} />
@@ -545,6 +630,17 @@ export default function NewRecordWizard({ onExit }: { onExit: () => void }) {
               last
             />
           </div>
+          {form.ownerType === "individual" && form.clientSignaturePng && (
+            <div className="card">
+              <p className="text-xs text-ink-400 mb-1.5">Подпись клиента</p>
+              {/* eslint-disable-next-line @next/next/no-img-element -- data URL, не файл из /public */}
+              <img
+                src={form.clientSignaturePng}
+                alt="Подпись клиента"
+                className="h-16 rounded-lg border border-ink-200 bg-white"
+              />
+            </div>
+          )}
         </div>
       )}
 
@@ -555,9 +651,9 @@ export default function NewRecordWizard({ onExit }: { onExit: () => void }) {
       )}
 
       <div className="mt-6">
-        {step < STEP_LABELS.length - 1 ? (
+        {step < steps.length - 1 ? (
           <button className="btn-primary w-full py-3 rounded-2xl" onClick={next}>
-            Далее
+            {kind === "contract" ? "Ознакомлен" : "Далее"}
             <ChevronRight className="h-4 w-4" strokeWidth={2.25} />
           </button>
         ) : (
