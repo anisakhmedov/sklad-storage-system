@@ -5,6 +5,7 @@ import { StorageRecord } from "@/models/StorageRecord";
 import { requireWebUser } from "@/lib/auth";
 import Link from "next/link";
 import InventoryPanel from "@/components/dashboard/InventoryPanel";
+import ContainerCellsGrid from "@/components/dashboard/ContainerCellsGrid";
 import { UserCheck, Boxes, CalendarDays, ClipboardList, ArrowRight, AlertTriangle, Wallet } from "lucide-react";
 
 export default async function DashboardHome() {
@@ -87,6 +88,12 @@ export default async function DashboardHome() {
           </span>
         </Link>
       )}
+
+      <div className="mt-8">
+        <p className="section-eyebrow">Занятость</p>
+        <h2 className="section-title mt-1 text-lg">Контейнеры и камеры</h2>
+        <ContainerCellsGrid />
+      </div>
 
       {user?.role === "owner" && <InventoryPanel />}
     </div>

@@ -35,6 +35,14 @@ export const containerCreateSchema = z.object({
 
 export const containerUpdateSchema = containerCreateSchema.partial();
 
+// Ручная отметка занятости камеры хранения (см. models/Container.ts::fullCells,
+// lib/containerCells.ts::toggleCellFull) — сотрудник сам решает, что в камеру больше
+// физически ничего не влезет; это не автоматический подсчёт арендаторов.
+export const cellFullToggleSchema = z.object({
+  cellNumber: z.coerce.number().int().min(1, "Некорректный номер камеры").max(8, "Некорректный номер камеры"),
+  full: z.boolean(),
+});
+
 // Арендатор — физическое лицо: договор формируется именно из этих полей
 // (см. lib/contract/generateContract.ts), поэтому они хранятся открытым текстом.
 export const goodsOwnerIndividualSchema = z.object({
@@ -74,6 +82,7 @@ export const tariffSchema = z.object({
 
 const storageRecordBaseSchema = z.object({
   containerId: z.string().min(1, "Выберите контейнер"),
+  cellNumber: z.coerce.number().int().min(1, "Выберите камеру").max(8, "Некорректный номер камеры"),
   productName: z.string().min(1, "Укажите наименование товара").max(300),
   quantity: z.coerce.number().positive("Количество должно быть больше 0"),
   unit: unitEnum,

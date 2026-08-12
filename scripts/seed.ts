@@ -97,6 +97,7 @@ async function main() {
     records = await StorageRecord.create([
       {
         containerId: containerA._id,
+        cellNumber: 1,
         productName: "Яблоки",
         quantity: 5,
         unit: "tonne",
@@ -115,6 +116,7 @@ async function main() {
       },
       {
         containerId: containerA._id,
+        cellNumber: 2,
         productName: "Картофель",
         quantity: 120,
         unit: "box",
@@ -133,6 +135,7 @@ async function main() {
       },
       {
         containerId: containerB._id,
+        cellNumber: 1,
         productName: "Мука",
         quantity: 2000,
         unit: "kg",
@@ -151,6 +154,7 @@ async function main() {
       },
       {
         containerId: containerB._id,
+        cellNumber: 3,
         productName: "Рис",
         quantity: 1500,
         unit: "kg",

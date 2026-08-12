@@ -28,6 +28,13 @@ export async function POST(req: NextRequest) {
   const container = await Container.findById(parsed.data.containerId);
   if (!container) return jsonError("Контейнер не найден", 404);
 
+  // Камера, вручную отмеченная как "заполнена" (см. models/Container.ts::fullCells),
+  // недоступна для размещения нового груза — проверяем на сервере, а не только в UI
+  // мастера (см. components/miniapp/NewRecordWizard.tsx), т.к. клиенту нельзя доверять.
+  if (container.fullCells?.includes(parsed.data.cellNumber)) {
+    return jsonError("Камера отмечена как заполненная — выберите другую", 409);
+  }
+
   // Номер договора присваивается один раз, только физлицам (только для них формируется
   // договор, см. lib/contract/generateContract.ts) — последовательность по текущему году
   // (см. lib/counter.ts, README → «Номер договора»).
@@ -38,6 +45,7 @@ export async function POST(req: NextRequest) {
 
   const record = await StorageRecord.create({
     containerId: parsed.data.containerId,
+    cellNumber: parsed.data.cellNumber,
     productName: parsed.data.productName,
     quantity: parsed.data.quantity,
     unit: parsed.data.unit,

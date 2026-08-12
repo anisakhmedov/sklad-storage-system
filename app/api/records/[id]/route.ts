@@ -25,6 +25,7 @@ export async function PATCH(
 
   const data = parsed.data;
   if (data.containerId !== undefined) record.containerId = data.containerId as any;
+  if (data.cellNumber !== undefined) record.cellNumber = data.cellNumber;
   if (data.productName !== undefined) record.productName = data.productName;
   if (data.quantity !== undefined) record.quantity = data.quantity;
   if (data.unit !== undefined) record.unit = data.unit;

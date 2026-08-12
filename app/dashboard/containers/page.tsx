@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { Boxes, PackagePlus, Pencil, Trash2, AlertCircle, X } from "lucide-react";
+import ContainerCellsGrid from "@/components/dashboard/ContainerCellsGrid";
 
 interface ContainerRow {
   _id: string;
@@ -186,6 +187,12 @@ export default function ContainersPage() {
             </tbody>
           </table>
         )}
+      </div>
+
+      <div className="mt-8">
+        <p className="section-eyebrow">Занятость</p>
+        <h2 className="section-title mt-1 text-lg">Камеры хранения</h2>
+        <ContainerCellsGrid />
       </div>
 
       {editing && (

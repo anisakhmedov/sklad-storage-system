@@ -50,6 +50,10 @@ export interface ITariff {
 export interface IStorageRecord {
   _id: Types.ObjectId;
   containerId: Types.ObjectId;
+  /** Номер камеры хранения внутри контейнера (1–8, см. lib/cells.ts::CELL_COUNT) —
+   * в какую именно камеру сотрудник поставил товар клиента. Несколько клиентов могут
+   * делить одну камеру (см. lib/containerCells.ts::getCellsGrid). */
+  cellNumber: number;
   productName: string;
   quantity: number;
   unit: Unit;
@@ -127,6 +131,7 @@ const TariffSchema = new Schema<ITariff>(
 
 const StorageRecordSchema = new Schema<IStorageRecord>({
   containerId: { type: Schema.Types.ObjectId, ref: "Container", required: true, index: true },
+  cellNumber: { type: Number, required: true, min: 1, max: 8 },
   productName: { type: String, required: true, trim: true },
   quantity: { type: Number, required: true, min: 0 },
   unit: { type: String, enum: ["tonne", "kg", "box", "piece"], required: true },
@@ -142,6 +147,9 @@ const StorageRecordSchema = new Schema<IStorageRecord>({
 // Договор формируется только для физлиц — индекс ускоряет поиск по телефону
 // (уведомления, сводка и запрос договора владельцем груза, см. lib/telegramBot.ts).
 StorageRecordSchema.index({ "goodsOwner.type": 1, "goodsOwner.phone": 1 });
+
+// Ускоряет построение сетки камер по контейнеру (см. lib/containerCells.ts::getCellsGrid).
+StorageRecordSchema.index({ containerId: 1, cellNumber: 1 });
 
 // Тариф "за кг" считается от веса в килограммах (см. lib/tariff.ts) — недоступен для
 // единиц "box"/"piece", у которых вес неизвестен. Дублирует проверку из lib/validation.ts

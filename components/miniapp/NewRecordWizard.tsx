@@ -2,12 +2,14 @@
 
 import { useEffect, useState } from "react";
 import { miniAppFetch } from "./telegram";
+import CellGrid, { CellGridCell } from "./CellGrid";
 import { TARIFF_TYPES, TARIFF_LABELS, DEFAULT_TARIFF_RATES, isTariffCompatibleWithUnit, TariffType, formatTariffText } from "@/lib/tariff";
 import {
   ArrowLeft,
   CheckCircle2,
   ChevronRight,
   Boxes,
+  LayoutGrid,
   Package,
   UserRound,
   Building2,
@@ -26,6 +28,7 @@ type OwnerType = "individual" | "company";
 
 const emptyForm = {
   containerId: "",
+  cellNumber: null as number | null,
   productName: "",
   quantity: "",
   unit: "tonne" as Unit,
@@ -47,11 +50,13 @@ const emptyForm = {
   tariffRate: String(DEFAULT_TARIFF_RATES.per_day),
 };
 
-const STEP_LABELS = ["Контейнер", "Товар", "Владелец груза", "Тариф", "Проверка"];
-const STEP_ICONS = [Boxes, Package, UserRound, Wallet, ClipboardCheck];
+const STEP_LABELS = ["Контейнер", "Камера", "Товар", "Владелец груза", "Тариф", "Проверка"];
+const STEP_ICONS = [Boxes, LayoutGrid, Package, UserRound, Wallet, ClipboardCheck];
 
 export default function NewRecordWizard({ onExit }: { onExit: () => void }) {
   const [containers, setContainers] = useState<Container[]>([]);
+  const [cells, setCells] = useState<CellGridCell[]>([]);
+  const [cellsLoading, setCellsLoading] = useState(false);
   const [step, setStep] = useState(0);
   const [form, setForm] = useState(emptyForm);
   const [error, setError] = useState<string | null>(null);
@@ -64,13 +69,28 @@ export default function NewRecordWizard({ onExit }: { onExit: () => void }) {
       .then((d) => setContainers(d.containers || []));
   }, []);
 
+  // Сетка камер конкретного контейнера — подгружается сразу при выборе контейнера
+  // (шаг 0), чтобы шаг "Камера" открывался уже с готовыми данными.
+  useEffect(() => {
+    if (!form.containerId) {
+      setCells([]);
+      return;
+    }
+    setCellsLoading(true);
+    miniAppFetch(`/api/miniapp/containers/${form.containerId}/cells`)
+      .then((r) => r.json())
+      .then((d) => setCells(d.cells || []))
+      .finally(() => setCellsLoading(false));
+  }, [form.containerId]);
+
   function next() {
     setError(null);
     if (step === 0 && !form.containerId) return setError("Выберите контейнер");
-    if (step === 1 && (!form.productName || !form.quantity)) {
+    if (step === 1 && !form.cellNumber) return setError("Выберите камеру");
+    if (step === 2 && (!form.productName || !form.quantity)) {
       return setError("Заполните наименование и количество");
     }
-    if (step === 2) {
+    if (step === 3) {
       if (form.ownerType === "individual") {
         if (
           !form.ownerFullName ||
@@ -88,7 +108,7 @@ export default function NewRecordWizard({ onExit }: { onExit: () => void }) {
         }
       }
     }
-    if (step === 3 && !form.tariffRate) return setError("Укажите ставку тарифа");
+    if (step === 4 && !form.tariffRate) return setError("Укажите ставку тарифа");
     setStep((s) => s + 1);
   }
 
@@ -123,6 +143,7 @@ export default function NewRecordWizard({ onExit }: { onExit: () => void }) {
         method: "POST",
         body: JSON.stringify({
           containerId: form.containerId,
+          cellNumber: form.cellNumber,
           productName: form.productName,
           quantity: form.quantity,
           unit: form.unit,
@@ -225,7 +246,7 @@ export default function NewRecordWizard({ onExit }: { onExit: () => void }) {
               {containers.map((c) => (
                 <button
                   key={c.id}
-                  onClick={() => setForm({ ...form, containerId: c.id })}
+                  onClick={() => setForm({ ...form, containerId: c.id, cellNumber: null })}
                   className={`w-full text-left rounded-2xl border px-4 py-3.5 transition-colors ${
                     form.containerId === c.id
                       ? "border-brand-600 bg-brand-50"
@@ -249,6 +270,37 @@ export default function NewRecordWizard({ onExit }: { onExit: () => void }) {
       )}
 
       {step === 1 && (
+        <div className="space-y-3">
+          {cellsLoading ? (
+            <div className="space-y-2.5">
+              {[...Array(2)].map((_, i) => (
+                <div key={i} className="skeleton h-16 w-full" />
+              ))}
+            </div>
+          ) : (
+            <>
+              <CellGrid
+                cells={cells}
+                selected={form.cellNumber}
+                onSelect={(n) => setForm({ ...form, cellNumber: n })}
+              />
+              <div className="flex items-center gap-4 text-xs text-ink-400 pt-1">
+                <span className="flex items-center gap-1.5">
+                  <span className="h-2.5 w-2.5 rounded-full bg-emerald-500" /> свободна
+                </span>
+                <span className="flex items-center gap-1.5">
+                  <span className="h-2.5 w-2.5 rounded-full bg-amber-500" /> есть груз
+                </span>
+                <span className="flex items-center gap-1.5">
+                  <span className="h-2.5 w-2.5 rounded-full bg-rose-500" /> заполнена
+                </span>
+              </div>
+            </>
+          )}
+        </div>
+      )}
+
+      {step === 2 && (
         <div className="space-y-3">
           <div>
             <label className="label">Наименование товара</label>
@@ -295,7 +347,7 @@ export default function NewRecordWizard({ onExit }: { onExit: () => void }) {
         </div>
       )}
 
-      {step === 2 && (
+      {step === 3 && (
         <div className="space-y-3">
           <label className="label">Тип арендатора</label>
           <div className="flex gap-2">
@@ -417,7 +469,7 @@ export default function NewRecordWizard({ onExit }: { onExit: () => void }) {
         </div>
       )}
 
-      {step === 3 && (
+      {step === 4 && (
         <div className="space-y-3">
           <p className="text-xs text-ink-400 leading-relaxed">
             Это договорённые условия оплаты за хранение, а не сама оплата — фактические
@@ -463,10 +515,11 @@ export default function NewRecordWizard({ onExit }: { onExit: () => void }) {
         </div>
       )}
 
-      {step === 4 && (
+      {step === 5 && (
         <div className="space-y-2 text-sm">
           <div className="card">
             <Row label="Контейнер" value={containers.find((c) => c.id === form.containerId)?.name} />
+            <Row label="Камера" value={form.cellNumber ? String(form.cellNumber) : undefined} />
             <Row label="Товар" value={form.productName} />
             <Row label="Количество" value={`${form.quantity} ${form.unit}`} />
             <Row label="Тип арендатора" value={form.ownerType === "individual" ? "Физ. лицо" : "Юр. лицо"} />
