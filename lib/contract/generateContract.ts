@@ -152,27 +152,38 @@ function renderBlock(
     case "closingLine": {
       doc.font("body").fontSize(10);
       const text = fill(block.text, map);
-      // Помимо блока "РЕКВИЗИТЫ И ПОДПИСИ СТОРОН" (renderSignatureBlock выше) подпись
-      // клиента печатается ещё раз здесь — в финальном блоке "Подписи сторон:", прямо у
-      // строки "КЛИЕНТ", по просьбе пользователя. Строку "ХРАНИТЕЛЬ" не трогаем.
-      const clientLabel = text.trim().startsWith("КЛИЕНТ") ? text.replace(/_+\s*$/, "").trim() : null;
-      if (clientLabel && data.signatureImage) {
-        const startX = doc.page.margins.left;
-        const startY = doc.y;
-        const imgWidth = 90;
-        const imgHeight = imgWidth * 0.4;
-        doc.text(clientLabel, startX, startY);
-        const labelWidth = doc.widthOfString(clientLabel);
-        doc.image(data.signatureImage, startX + labelWidth + 12, startY - imgHeight / 2 + 5, {
-          width: imgWidth,
-          height: imgHeight,
-        });
-        doc.x = startX;
-        doc.y = startY + Math.max(doc.currentLineHeight(), imgHeight);
+      const trimmed = text.trim();
+      // Пара "ХРАНИТЕЛЬ ___" / "КЛИЕНТ ___" в финальном блоке "Подписи сторон:" — раскладка
+      // как CSS justify-content: space-between (по просьбе пользователя): "ХРАНИТЕЛЬ" слева,
+      // "КЛИЕНТ" справа, на одной строке. Это два отдельных блока CONTRACT_BLOCKS подряд —
+      // "ХРАНИТЕЛЬ" печатается и НЕ опускает курсор (doc.y возвращается на место, т.к.
+      // doc.text() с явными x/y всё равно продвигает его), чтобы следующий блок "КЛИЕНТ"
+      // лёг на тот же doc.y справа.
+      if (trimmed.startsWith("ХРАНИТЕЛЬ")) {
+        const y = doc.y;
+        doc.text(text, doc.page.margins.left, y);
+        doc.y = y;
+      } else if (trimmed.startsWith("КЛИЕНТ")) {
+        const y = doc.y;
+        const rightX = doc.page.margins.left + contentWidth / 2 + 10;
+        doc.text(text, rightX, y);
+        // Подпись — поверх тире строки "КЛИЕНТ ___" (по просьбе пользователя), помимо той,
+        // что уже стоит в блоке "РЕКВИЗИТЫ И ПОДПИСИ СТОРОН" выше (renderSignatureBlock).
+        if (data.signatureImage) {
+          const labelWidth = doc.widthOfString("КЛИЕНТ ");
+          const imgWidth = 100;
+          const imgHeight = imgWidth * 0.4;
+          doc.image(data.signatureImage, rightX + labelWidth, y - imgHeight / 2 + 5, {
+            width: imgWidth,
+            height: imgHeight,
+          });
+        }
+        doc.x = doc.page.margins.left;
+        doc.moveDown(0.4);
       } else {
         doc.text(text);
+        doc.moveDown(0.2);
       }
-      doc.moveDown(0.2);
       break;
     }
 
