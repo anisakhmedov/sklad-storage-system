@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { CELL_NUMBERS } from "@/lib/cells";
 import { Boxes, Lock, X } from "lucide-react";
 
 interface CellOccupant {
@@ -23,7 +22,8 @@ interface ContainerGrid {
 }
 
 /**
- * Сетка камер хранения (2×4 на контейнер, см. lib/cells.ts) для владельца — переиспользуется
+ * Сетка камер хранения (по умолчанию 2×4 на контейнер, количество редактируется индивидуально
+ * на контейнер, см. models/Container.ts::cellCount) для владельца — переиспользуется
  * и на /dashboard (обзор), и на /dashboard/containers ("та же самая картина", по просьбе
  * владельца). Зелёная камера — свободна, красная — есть арендаторы (буквально то, что просил
  * владелец); флажок "заполнена", который сотрудник ставит в мини-аппе (см.
@@ -86,8 +86,8 @@ export default function ContainerCellsGrid() {
               </h3>
             </div>
             <div className="grid grid-cols-4 gap-2">
-              {CELL_NUMBERS.map((n) => {
-                const cell = g.cells.find((c) => c.number === n) || { number: n, occupants: [], isFull: false };
+              {g.cells.map((cell) => {
+                const n = cell.number;
                 const occupied = cell.occupants.length > 0;
                 return (
                   <button

@@ -64,13 +64,31 @@ export function isTariffCompatibleWithUnit(type: TariffType, unit: Unit): boolea
 }
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
+// Тот же сдвиг, что и в lib/patrols.ts::tashkentDateString — не импортируем оттуда напрямую,
+// чтобы не тянуть mongoose в клиентский бандл (см. комментарий вверху файла: этот модуль
+// используется и в компонентах). Нужен, чтобы "день" считался по календарю Ташкента, а не
+// сервера (Vercel — UTC), иначе граница дня могла бы сдвигаться на несколько часов.
+const TASHKENT_OFFSET_MS = 5 * 60 * 60 * 1000;
 // Месяц принят равным 30 дням — простое и предсказуемое приближение вместо календарных
 // месяцев разной длины (см. README, раздел «Тарифы, оплата и задолженность»).
 const DAYS_PER_MONTH = 30;
 
+function tashkentCalendarDay(date: Date): number {
+  const shifted = new Date(date.getTime() + TASHKENT_OFFSET_MS);
+  return Date.UTC(shifted.getUTCFullYear(), shifted.getUTCMonth(), shifted.getUTCDate());
+}
+
+/**
+ * Количество оплачиваемых дней между датой заключения договора и датой расчёта — ВКЛЮЧИТЕЛЬНО
+ * считая день заключения (по решению владельца: "в первый день уже должен заплатить эту
+ * сумму"). Пример: договор "за день" 100 000 сум — в день заключения уже начислено 100 000
+ * (1 день), на следующий календарный день — 200 000 (2 дня). Считается по календарным датам
+ * (Ташкент), а не по прошедшим часам — начисление "скачками" по дню, а не непрерывно.
+ */
 function daysBetween(from: Date, to: Date): number {
-  const ms = to.getTime() - from.getTime();
-  return Math.max(0, ms / MS_PER_DAY);
+  const diff = Math.round((tashkentCalendarDay(to) - tashkentCalendarDay(from)) / MS_PER_DAY);
+  if (diff < 0) return 0;
+  return diff + 1;
 }
 
 /**

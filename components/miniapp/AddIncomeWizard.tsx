@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { miniAppFetch } from "./telegram";
 import { PAYMENT_METHOD_LABELS } from "@/lib/labels";
+import { DEFAULT_CELL_COUNT, cellNumbersForCount } from "@/lib/cells";
 import {
   ArrowLeft,
   CheckCircle2,
@@ -12,16 +13,15 @@ import {
   Boxes,
   Banknote,
   CreditCard,
-  Landmark,
   Wallet,
   ClipboardCheck,
 } from "lucide-react";
 
 type OwnerType = "individual" | "company";
-// Перечисление намеренно исключено — сотрудник принимает оплату лично только этими
-// тремя способами, перевод на счёт вносит сам владелец на веб-панели (см.
+// Банковский счёт (перевод) намеренно исключён — сотрудник принимает оплату лично только
+// этими двумя способами, перевод на счёт вносит сам владелец на веб-панели (см.
 // lib/validation.ts::incomeCreateSchemaEmployee, app/api/miniapp/income/route.ts).
-type Method = "cash" | "terminal" | "card";
+type Method = "cash" | "card";
 
 interface OwnerContainerDebt {
   ownerType: OwnerType;
@@ -34,13 +34,18 @@ interface OwnerContainerDebt {
   balance: number;
 }
 
+interface ContainerRef {
+  id: string;
+  name: string;
+  cellCount?: number;
+}
+
 const money = (n: number) => Math.round(n).toLocaleString("ru-RU");
 const todayInput = () => new Date().toISOString().slice(0, 10);
 
 const METHODS: Array<{ value: Method; icon: typeof Banknote }> = [
   { value: "cash", icon: Banknote },
-  { value: "terminal", icon: CreditCard },
-  { value: "card", icon: Landmark },
+  { value: "card", icon: CreditCard },
 ];
 
 const STEP_LABELS = ["Владелец", "Контейнер", "Оплата", "Проверка"];
@@ -48,6 +53,7 @@ const STEP_ICONS = [UserRound, Boxes, Wallet, ClipboardCheck];
 
 export default function AddIncomeWizard({ onExit }: { onExit: () => void }) {
   const [debts, setDebts] = useState<OwnerContainerDebt[]>([]);
+  const [containers, setContainers] = useState<ContainerRef[]>([]);
   const [loadingDebts, setLoadingDebts] = useState(true);
   const [step, setStep] = useState(0);
   const [ownerKey, setOwnerKey] = useState("");
@@ -76,6 +82,12 @@ export default function AddIncomeWizard({ onExit }: { onExit: () => void }) {
       })
       .catch(() => setLoadError("Не удалось связаться с сервером"))
       .finally(() => setLoadingDebts(false));
+    // Нужно только для количества камер в выпадающем списке ниже (см. models/Container.ts::cellCount) —
+    // ошибку загрузки этого списка отдельно не показываем, дропдаун просто останется на 8 по умолчанию.
+    miniAppFetch("/api/miniapp/containers")
+      .then((r) => r.json())
+      .then((d) => setContainers(d.containers || []))
+      .catch(() => {});
   }, []);
 
   const owners = useMemo(() => {
@@ -307,11 +319,13 @@ export default function AddIncomeWizard({ onExit }: { onExit: () => void }) {
             <label className="label">Камера (необязательно)</label>
             <select className="input" value={cellNumber} onChange={(e) => setCellNumber(e.target.value)}>
               <option value="">За контейнер в целом</option>
-              {[1, 2, 3, 4, 5, 6, 7, 8].map((n) => (
-                <option key={n} value={n}>
-                  Камера {n}
-                </option>
-              ))}
+              {cellNumbersForCount(containers.find((c) => c.id === containerId)?.cellCount || DEFAULT_CELL_COUNT).map(
+                (n) => (
+                  <option key={n} value={n}>
+                    Камера {n}
+                  </option>
+                )
+              )}
             </select>
           </div>
           <div>

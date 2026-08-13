@@ -5,14 +5,21 @@ import { Expense } from "@/models/Expense";
 import type { PaymentMethod } from "@/models/StorageRecord";
 
 /**
- * Касса = только фактические наличные (см. README-обсуждение) — терминал, перечисление
- * (счёт-банк) и карта (счёт-карта) в кассу не входят, но учитываются в «общем приходе».
+ * Касса = только фактические наличные (см. README-обсуждение) — банковский перевод и карта
+ * (П2П) в кассу не входят, но учитываются в «общем приходе».
  */
 export const KASSA_METHODS: PaymentMethod[] = ["cash"];
 
 export interface FinanceSummary {
   totalIncome: number; // Income + GeneralIncome, все способы
-  kassa: number; // Income + GeneralIncome, только KASSA_METHODS
+  /**
+   * ЧИСТЫЙ остаток наличных "на руках" = наличный приход минус уже одобренные наличные
+   * расходы (раньше здесь был валовый приход без вычета расходов — баг: карточка "Касса"
+   * не уменьшалась при расходе наличными). Совпадает с getCashBalance() ниже.
+   */
+  kassa: number;
+  cardTotal: number; // Income + GeneralIncome, method "card" (П2П) — валовый приход
+  transferTotal: number; // Income + GeneralIncome, method "transfer" (банковский счёт) — валовый приход
   totalExpenses: number; // Expense со status "approved"
   salaryTotal: number; // Expense type "salary" со status "approved"
   balance: number; // totalIncome - totalExpenses
@@ -22,10 +29,10 @@ export interface FinanceSummary {
 
 /**
  * Наличные "на руках" прямо сейчас = вся наличная выручка (Income+GeneralIncome, method cash)
- * минус уже одобренные наличные расходы (Expense, method cash, status approved). В отличие от
- * kassa из FinanceSummary (валовый наличный приход, см. KASSA_METHODS выше), это чистый остаток,
- * с которым сверяется новый расход наличными — см. app/api/expenses/route.ts,
- * app/api/miniapp/expenses/route.ts, app/api/expenses/[id]/route.ts.
+ * минус уже одобренные наличные расходы (Expense, method cash, status approved) — то же самое
+ * значение, что FinanceSummary.kassa, но отдельным лёгким запросом (без остальных агрегаций
+ * getFinanceSummary), т.к. вызывается на каждое создание/одобрение расхода — см.
+ * app/api/expenses/route.ts, app/api/miniapp/expenses/route.ts, app/api/expenses/[id]/route.ts.
  */
 export async function getCashBalance(): Promise<number> {
   await connectDB();
@@ -84,41 +91,59 @@ export async function getIncomeBreakdown(): Promise<IncomeBreakdownRow[]> {
     .sort((a, b) => a.containerName.localeCompare(b.containerName, "ru") || (a.cellNumber ?? 0) - (b.cellNumber ?? 0));
 }
 
-/** Сводка для новых карточек на странице «Оплаты» (см. app/dashboard/income/page.tsx). */
+/** Сводка для карточек на странице «Оплаты» (см. app/dashboard/income/page.tsx). */
 export async function getFinanceSummary(): Promise<FinanceSummary> {
   await connectDB();
 
-  const [incomeAgg, generalIncomeAgg, expenseAgg, pendingCount, ownerCashAgg] = await Promise.all([
-    Income.aggregate([{ $group: { _id: "$method", total: { $sum: "$amount" } } }]),
-    GeneralIncome.aggregate([{ $group: { _id: "$method", total: { $sum: "$amount" } } }]),
-    Expense.aggregate([
-      { $match: { status: "approved" } },
-      { $group: { _id: "$type", total: { $sum: "$amount" } } },
-    ]),
-    Expense.countDocuments({ status: "pending" }),
-    Expense.aggregate([
-      { $match: { type: "owner_withdrawal", method: "cash", status: "approved" } },
-      { $group: { _id: null, total: { $sum: "$amount" } } },
-    ]),
-  ]);
+  const [incomeAgg, generalIncomeAgg, expenseByTypeAgg, expenseByMethodAgg, pendingCount, ownerCashAgg] =
+    await Promise.all([
+      Income.aggregate([{ $group: { _id: "$method", total: { $sum: "$amount" } } }]),
+      GeneralIncome.aggregate([{ $group: { _id: "$method", total: { $sum: "$amount" } } }]),
+      Expense.aggregate([
+        { $match: { status: "approved" } },
+        { $group: { _id: "$type", total: { $sum: "$amount" } } },
+      ]),
+      // Отдельная агрегация по способу — нужна, чтобы вычесть наличные расходы из кассы (см.
+      // ниже), не полагаясь на то, что "type" и "method" агрегируются вместе.
+      Expense.aggregate([
+        { $match: { status: "approved" } },
+        { $group: { _id: "$method", total: { $sum: "$amount" } } },
+      ]),
+      Expense.countDocuments({ status: "pending" }),
+      Expense.aggregate([
+        { $match: { type: "owner_withdrawal", method: "cash", status: "approved" } },
+        { $group: { _id: null, total: { $sum: "$amount" } } },
+      ]),
+    ]);
 
   let totalIncome = 0;
-  let kassa = 0;
+  let cashIncome = 0;
+  let cardTotal = 0;
+  let transferTotal = 0;
   for (const row of [...incomeAgg, ...generalIncomeAgg]) {
     totalIncome += row.total;
-    if (KASSA_METHODS.includes(row._id as PaymentMethod)) kassa += row.total;
+    if (KASSA_METHODS.includes(row._id as PaymentMethod)) cashIncome += row.total;
+    if (row._id === "card") cardTotal += row.total;
+    if (row._id === "transfer") transferTotal += row.total;
   }
 
   let totalExpenses = 0;
   let salaryTotal = 0;
-  for (const row of expenseAgg) {
+  for (const row of expenseByTypeAgg) {
     totalExpenses += row.total;
     if (row._id === "salary") salaryTotal = row.total;
   }
 
+  let cashExpenses = 0;
+  for (const row of expenseByMethodAgg) {
+    if (row._id === "cash") cashExpenses = row.total;
+  }
+
   return {
     totalIncome,
-    kassa,
+    kassa: cashIncome - cashExpenses,
+    cardTotal,
+    transferTotal,
     totalExpenses,
     salaryTotal,
     balance: totalIncome - totalExpenses,

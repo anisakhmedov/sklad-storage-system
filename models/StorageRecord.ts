@@ -1,4 +1,5 @@
 import { Schema, model, models, Model, Types } from "mongoose";
+import { MAX_CELL_COUNT } from "@/lib/cells";
 
 export type Unit = "tonne" | "kg" | "box" | "piece";
 // "cash" — единственный способ, учитываемый в кассе (см. lib/finance.ts::KASSA_METHODS);
@@ -81,6 +82,24 @@ export interface IStorageRecord {
    * им номер присваивается лениво при первой генерации PDF (см. lib/contract/contractService.ts).
    */
   contractNumber?: string;
+  /**
+   * Снимок реквизитов фирмы-подписанта ("Сақловчи") на момент создания записи — см.
+   * lib/contract/firmDefaults.ts::FirmSnapshot (та же форма), models/Firm.ts. Снимок, а не
+   * ссылка на Firm — чтобы более позднее редактирование/удаление фирмы не меняло задним
+   * числом уже выданные PDF. Отсутствует у записей, созданных до этой доработки (и когда
+   * сотрудник ничего не выбрал, если фирма ещё не заведена) — тогда PDF использует
+   * DEFAULT_FIRM (те же значения, что раньше были захардкожены в шаблоне).
+   */
+  issuingFirm?: {
+    name: string;
+    directorFullName: string;
+    directorShortName: string;
+    address: string;
+    bankBranch: string;
+    bankAccount: string;
+    inn: string;
+    bankCode: string;
+  };
 }
 
 // Единая гибкая Mongoose-схема на оба варианта goodsOwner (Mongoose не умеет нативно
@@ -142,7 +161,9 @@ const TariffSchema = new Schema<ITariff>(
 
 const StorageRecordSchema = new Schema<IStorageRecord>({
   containerId: { type: Schema.Types.ObjectId, ref: "Container", required: true, index: true },
-  cellNumber: { type: Number, required: true, min: 1, max: 8 },
+  // Верхняя граница — общий MAX_CELL_COUNT (второй рубеж защиты); реальный лимит для
+  // конкретного контейнера — его собственный cellCount (см. models/Container.ts).
+  cellNumber: { type: Number, required: true, min: 1, max: MAX_CELL_COUNT },
   productName: { type: String, required: true, trim: true },
   quantity: { type: Number, required: true, min: 0 },
   unit: { type: String, enum: ["tonne", "kg", "box", "piece"], required: true },
@@ -155,6 +176,22 @@ const StorageRecordSchema = new Schema<IStorageRecord>({
   contractNumber: { type: String },
   clientSignaturePng: { type: Buffer },
   signedAt: { type: Date },
+  issuingFirm: {
+    type: new Schema(
+      {
+        name: { type: String, required: true },
+        directorFullName: { type: String, required: true },
+        directorShortName: { type: String, required: true },
+        address: { type: String, required: true },
+        bankBranch: { type: String, required: true },
+        bankAccount: { type: String, required: true },
+        inn: { type: String, required: true },
+        bankCode: { type: String, required: true },
+      },
+      { _id: false }
+    ),
+    required: false,
+  },
 });
 
 // Договор формируется только для физлиц — индекс ускоряет поиск по телефону

@@ -14,6 +14,7 @@ import { logAudit } from "@/lib/audit";
 export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
   const user = await requireWebUser();
   if (!user) return jsonError("Не авторизован", 401);
+  if (user.role !== "owner") return jsonError("Доступно только владельцу", 403);
 
   const body = await req.json().catch(() => null);
   if (!body || (body.action !== "give" && body.action !== "free")) {
@@ -56,6 +57,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
 export async function DELETE(_req: NextRequest, { params }: { params: { id: string } }) {
   const user = await requireWebUser();
   if (!user) return jsonError("Не авторизован", 401);
+  if (user.role !== "owner") return jsonError("Доступно только владельцу", 403);
 
   await connectDB();
   const container = await TransportContainer.findById(params.id);

@@ -6,10 +6,16 @@ import { jsonError, zodErrorResponse } from "@/lib/apiHelpers";
 import { transportContainerCreateSchema } from "@/lib/validation";
 import { logAudit } from "@/lib/audit";
 
-/** Контейнеры для перевозки (временные, без камер/актов) — см. models/TransportContainer.ts. */
+/**
+ * Контейнеры для перевозки (временные, без камер/актов) — см. models/TransportContainer.ts.
+ * На веб-панели доступ строго владельцу (по решению владельца) — доверенное лицо этот раздел
+ * не видит. Сотрудники в Mini App по-прежнему могут выдавать/освобождать (см.
+ * app/api/miniapp/transport-containers) — это отдельный сценарий, ограничение касается только сайта.
+ */
 export async function GET() {
   const user = await requireWebUser();
   if (!user) return jsonError("Не авторизован", 401);
+  if (user.role !== "owner") return jsonError("Доступно только владельцу", 403);
 
   await connectDB();
   const containers = await TransportContainer.find().sort({ label: 1 }).lean();
@@ -19,6 +25,7 @@ export async function GET() {
 export async function POST(req: NextRequest) {
   const user = await requireWebUser();
   if (!user) return jsonError("Не авторизован", 401);
+  if (user.role !== "owner") return jsonError("Доступно только владельцу", 403);
 
   const body = await req.json().catch(() => null);
   const parsed = transportContainerCreateSchema.safeParse(body);

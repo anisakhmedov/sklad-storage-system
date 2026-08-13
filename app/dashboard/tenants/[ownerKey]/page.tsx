@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { ArrowLeft, Download, UserRound, Building2, TriangleAlert } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { ArrowLeft, Download, UserRound, Building2, TriangleAlert, Pencil, X, AlertCircle } from "lucide-react";
 
 type OwnerType = "individual" | "company";
 type GoodsOwner =
@@ -66,11 +67,14 @@ const METHOD_LABELS: Record<string, string> = { cash: "Наличные", termin
 const money = (n: number) => Math.round(n).toLocaleString("ru-RU");
 
 export default function TenantDetailPage({ params }: { params: { ownerKey: string } }) {
+  const router = useRouter();
   const [detail, setDetail] = useState<Detail | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [editingProfile, setEditingProfile] = useState(false);
 
   useEffect(() => {
+    setLoading(true);
     fetch(`/api/tenants/${encodeURIComponent(params.ownerKey)}`)
       .then(async (r) => {
         const d = await r.json().catch(() => ({}));
@@ -150,6 +154,10 @@ export default function TenantDetailPage({ params }: { params: { ownerKey: strin
       <div className="card mb-8">
         <div className="card-header">
           <h2 className="card-title">Профиль</h2>
+          <button className="btn-secondary btn-sm" onClick={() => setEditingProfile(true)}>
+            <Pencil className="h-3.5 w-3.5" strokeWidth={2} />
+            Изменить
+          </button>
         </div>
         {detail.profile.type === "individual" ? (
           <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2.5 text-sm">
@@ -271,6 +279,162 @@ export default function TenantDetailPage({ params }: { params: { ownerKey: strin
             ))}
           </tbody>
         </table>
+      </div>
+
+      {editingProfile && (
+        <TenantProfileEditModal
+          ownerKey={params.ownerKey}
+          profile={detail.profile}
+          onClose={() => setEditingProfile(false)}
+          onSaved={(newOwnerKey) => {
+            setEditingProfile(false);
+            if (newOwnerKey && newOwnerKey !== params.ownerKey) {
+              // Телефон/ИНН изменился — ownerKey (и URL этой страницы) устарел.
+              router.replace(`/dashboard/tenants/${encodeURIComponent(newOwnerKey)}`);
+            } else {
+              router.refresh();
+              fetch(`/api/tenants/${encodeURIComponent(params.ownerKey)}`)
+                .then((r) => r.json())
+                .then((d) => setDetail(d.detail));
+            }
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+/**
+ * Правка карточки арендатора — применяется КО ВСЕМ его записям разом (см.
+ * app/api/tenants/[ownerKey]/route.ts). Тип (физ./юр. лицо) не редактируется здесь — он задан
+ * профилем, который уже есть.
+ */
+function TenantProfileEditModal({
+  ownerKey,
+  profile,
+  onClose,
+  onSaved,
+}: {
+  ownerKey: string;
+  profile: GoodsOwner;
+  onClose: () => void;
+  onSaved: (newOwnerKey?: string) => void;
+}) {
+  const [form, setForm] = useState<GoodsOwner>(profile);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setError(null);
+    setBusy(true);
+    try {
+      const res = await fetch(`/api/tenants/${encodeURIComponent(ownerKey)}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(form),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setError(data.error || "Ошибка сохранения");
+        return;
+      }
+      onSaved(data.newOwnerKey);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="modal-backdrop overflow-y-auto py-8" onClick={onClose}>
+      <div className="modal-panel w-full max-w-lg my-auto" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="card-title">Редактирование арендатора</h3>
+          <button className="btn-icon btn-ghost" onClick={onClose} aria-label="Закрыть">
+            <X className="h-4 w-4" strokeWidth={2} />
+          </button>
+        </div>
+        <p className="text-xs text-ink-400 mb-3">
+          Изменения применятся ко всем записям этого арендатора (все контейнеры/камеры).
+        </p>
+        <form onSubmit={handleSubmit} className="space-y-3">
+          {form.type === "individual" ? (
+            <div className="grid grid-cols-2 gap-3">
+              <input
+                className="input"
+                placeholder="ФИО"
+                value={form.fullName}
+                onChange={(e) => setForm({ ...form, fullName: e.target.value })}
+              />
+              <input
+                className="input"
+                placeholder="Телефон"
+                value={form.phone}
+                onChange={(e) => setForm({ ...form, phone: e.target.value })}
+              />
+              <input
+                className="input"
+                placeholder="Номер паспорта"
+                value={form.passportData}
+                onChange={(e) => setForm({ ...form, passportData: e.target.value })}
+              />
+              <input
+                className="input"
+                placeholder="ПИНФЛ"
+                value={form.pinfl}
+                onChange={(e) => setForm({ ...form, pinfl: e.target.value })}
+              />
+              <input
+                className="input"
+                placeholder="Дата выдачи паспорта"
+                value={form.passportIssueDate}
+                onChange={(e) => setForm({ ...form, passportIssueDate: e.target.value })}
+              />
+              <input
+                className="input"
+                placeholder="Кем выдан паспорт"
+                value={form.passportIssuedBy}
+                onChange={(e) => setForm({ ...form, passportIssuedBy: e.target.value })}
+              />
+            </div>
+          ) : (
+            <div className="grid grid-cols-2 gap-3">
+              <input
+                className="input col-span-2"
+                placeholder="Наименование фирмы"
+                value={form.companyName}
+                onChange={(e) => setForm({ ...form, companyName: e.target.value })}
+              />
+              <input
+                className="input"
+                placeholder="ИНН"
+                value={form.inn}
+                onChange={(e) => setForm({ ...form, inn: e.target.value })}
+              />
+              <input
+                className="input"
+                placeholder="Имя и фамилия директора"
+                value={form.directorName}
+                onChange={(e) => setForm({ ...form, directorName: e.target.value })}
+              />
+            </div>
+          )}
+
+          {error && (
+            <div className="alert-danger">
+              <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" strokeWidth={2} />
+              <span>{error}</span>
+            </div>
+          )}
+          <div className="flex gap-2 pt-2">
+            <button className="btn-primary" disabled={busy}>
+              {busy ? "Сохранение…" : "Сохранить"}
+            </button>
+            <button type="button" className="btn-secondary" onClick={onClose}>
+              Отмена
+            </button>
+          </div>
+        </form>
       </div>
     </div>
   );

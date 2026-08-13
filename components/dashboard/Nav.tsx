@@ -20,12 +20,14 @@ import {
   Thermometer,
   Package,
   Truck,
+  Landmark,
 } from "lucide-react";
 
 const links = [
   { href: "/dashboard", label: "Обзор", icon: LayoutGrid },
   { href: "/dashboard/employees", label: "Сотрудники", icon: Users },
   { href: "/dashboard/access", label: "Доступ", icon: KeyRound },
+  { href: "/dashboard/firms", label: "Фирмы", icon: Landmark },
   { href: "/dashboard/containers", label: "Контейнеры", icon: Boxes },
   { href: "/dashboard/transport-containers", label: "Перевозка", icon: Truck },
   { href: "/dashboard/records", label: "Записи", icon: ClipboardList },

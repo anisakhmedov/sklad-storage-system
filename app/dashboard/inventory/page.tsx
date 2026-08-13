@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useState, useCallback, useMemo } from "react";
-import { Package, ArrowRightLeft, X } from "lucide-react";
+import { Package, ArrowRightLeft, X, FileStack } from "lucide-react";
+import { DEFAULT_CELL_COUNT, cellNumbersForCount } from "@/lib/cells";
 
 interface InventoryRow {
   _id: string;
@@ -15,6 +16,7 @@ interface InventoryRow {
 interface ContainerRef {
   _id: string;
   name: string;
+  cellCount?: number;
 }
 
 interface OwnerContainerDebt {
@@ -33,6 +35,7 @@ interface LedgerEntry {
   cellNumber?: number;
   direction: "given" | "returned";
   quantity: number;
+  actId?: string;
   createdBy: string;
   createdAt: string;
 }
@@ -85,6 +88,17 @@ export default function InventoryLedgerPage() {
   async function refreshAll() {
     await Promise.all([loadItems(), loadEntries()]);
   }
+
+  // Диапазон камер для фильтра — камеры теперь редактируются индивидуально на контейнер (см.
+  // models/Container.ts::cellCount).
+  const filterCellOptions = useMemo(() => {
+    if (filters.containerId) {
+      const c = containers.find((c) => c._id === filters.containerId);
+      return cellNumbersForCount(c?.cellCount || DEFAULT_CELL_COUNT);
+    }
+    const maxCount = containers.reduce((max, c) => Math.max(max, c.cellCount || DEFAULT_CELL_COUNT), DEFAULT_CELL_COUNT);
+    return cellNumbersForCount(maxCount);
+  }, [containers, filters.containerId]);
 
   return (
     <div>
@@ -154,7 +168,7 @@ export default function InventoryLedgerPage() {
               onChange={(e) => setFilters({ ...filters, cellNumber: e.target.value })}
             >
               <option value="">Все</option>
-              {[1, 2, 3, 4, 5, 6, 7, 8].map((n) => (
+              {filterCellOptions.map((n) => (
                 <option key={n} value={n}>
                   Камера {n}
                 </option>
@@ -187,6 +201,7 @@ export default function InventoryLedgerPage() {
                 <th>Направление</th>
                 <th>Кол-во</th>
                 <th>Кто оформил</th>
+                <th></th>
               </tr>
             </thead>
             <tbody>
@@ -204,6 +219,21 @@ export default function InventoryLedgerPage() {
                   </td>
                   <td className="tabular-nums">{e.quantity}</td>
                   <td className="text-ink-500">{e.createdBy}</td>
+                  <td className="whitespace-nowrap">
+                    {e.actId ? (
+                      <a
+                        className="btn-icon btn-secondary"
+                        href={`/api/acts/${e.actId}/pdf`}
+                        target="_blank"
+                        rel="noreferrer"
+                        title="Открыть акт"
+                      >
+                        <FileStack className="h-3.5 w-3.5" strokeWidth={2} />
+                      </a>
+                    ) : (
+                      "—"
+                    )}
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -347,11 +377,13 @@ function LendModal({
               <label className="label">Камера (необязательно)</label>
               <select className="input" value={cellNumber} onChange={(e) => setCellNumber(e.target.value)}>
                 <option value="">—</option>
-                {[1, 2, 3, 4, 5, 6, 7, 8].map((n) => (
-                  <option key={n} value={n}>
-                    Камера {n}
-                  </option>
-                ))}
+                {cellNumbersForCount(containers.find((c) => c._id === containerId)?.cellCount || DEFAULT_CELL_COUNT).map(
+                  (n) => (
+                    <option key={n} value={n}>
+                      Камера {n}
+                    </option>
+                  )
+                )}
               </select>
             </div>
           </div>

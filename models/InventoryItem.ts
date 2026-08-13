@@ -3,8 +3,12 @@ import { Schema, model, models, Model, Types } from "mongoose";
 /**
  * Складской инструмент/инвентарь (поддоны, ящики, рохля, кара и т.п.) — НЕ товар клиентов
  * (см. models/StorageRecord.ts) и не ящики под товар клиента (см. models/BoxLedgerEntry.ts),
- * а собственное оборудование склада. Доступ строго владельцу (role === "owner"), см.
- * app/api/inventory/route.ts.
+ * а собственное оборудование склада, которое можно временно выдавать арендатору (см.
+ * models/InventoryLedgerEntry.ts). Управление самими позициями (создание/переименование/
+ * списание общего количества) — строго владелец (role === "owner"), см. app/api/inventory/route.ts
+ * и app/api/inventory/ledger/route.ts. Исключение — app/api/miniapp/inventory/route.ts: там
+ * подтверждённый сотрудник читает список позиций с остатком и оформляет выдачу/приём клиенту
+ * (не может создавать/удалять сами позиции).
  */
 export interface IInventoryItem {
   _id: Types.ObjectId;

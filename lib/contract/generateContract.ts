@@ -44,7 +44,7 @@ export function renderContractPdf(data: ContractFillData): Promise<Buffer> {
         size: "A4",
         margins: { top: PAGE_MARGIN, bottom: PAGE_MARGIN, left: PAGE_MARGIN, right: PAGE_MARGIN },
         bufferPages: true,
-        info: { Title: "Договор хранения", Author: "INTURIST MAROQAND" },
+        info: { Title: "Договор хранения", Author: data.firm.name },
       });
 
       const chunks: Buffer[] = [];
@@ -214,12 +214,12 @@ function renderSignatureBlock(
 
   doc.font("bold").fontSize(10).text("ХРАНИТЕЛЬ", leftX, startY, { width: colWidth });
   doc.font("body").fontSize(9.5);
-  doc.text("INTURIST MAROQAND МЧЖ", leftX, doc.y, { width: colWidth });
-  doc.text("Самарқанд вилояти, Булунғур тумани", leftX, doc.y, { width: colWidth });
-  doc.text('ТОШКЕНТ Ш., "ТУРОНБАНК" АТ БАНКИНИНГ БОШ ОФИСИ', leftX, doc.y, { width: colWidth });
-  doc.text("х/р 20208000500771510001", leftX, doc.y, { width: colWidth });
-  doc.text("ИНН: 304871250", leftX, doc.y, { width: colWidth });
-  doc.text("БАНК КОДИ: 00446", leftX, doc.y, { width: colWidth });
+  doc.text(data.firm.name, leftX, doc.y, { width: colWidth });
+  doc.text(data.firm.address, leftX, doc.y, { width: colWidth });
+  doc.text(data.firm.bankBranch, leftX, doc.y, { width: colWidth });
+  doc.text(`х/р ${data.firm.bankAccount}`, leftX, doc.y, { width: colWidth });
+  doc.text(`ИНН: ${data.firm.inn}`, leftX, doc.y, { width: colWidth });
+  doc.text(`БАНК КОДИ: ${data.firm.bankCode}`, leftX, doc.y, { width: colWidth });
   const leftEndY = doc.y;
 
   doc.font("bold").fontSize(10).text("КЛИЕНТ", rightX, startY, { width: colWidth });
@@ -237,7 +237,7 @@ function renderSignatureBlock(
   doc.font("body").fontSize(9.5);
   doc.text("Директор", leftX, sigY, { width: colWidth });
   doc.text("________________________", leftX, doc.y, { width: colWidth });
-  doc.text("О.Рахимов", leftX, doc.y, { width: colWidth });
+  doc.text(data.firm.directorShortName, leftX, doc.y, { width: colWidth });
 
   // Ранее здесь перед сокращённым именем арендатора стояло статичное "Ж.Сулаймонов"
   // (имя подписанта со стороны "Сақловчи", не относящееся к арендатору) — убрано по

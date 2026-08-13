@@ -13,9 +13,12 @@ export const UNIT_LABELS: Record<Unit, string> = {
   piece: "шт.",
 };
 
+// "terminal" больше не предлагается как способ оплаты нигде в системе (см.
+// lib/validation.ts::incomePaymentMethodEnum/expensePaymentMethodEnum) — подпись оставлена
+// только для отображения старых записей, созданных до отказа от терминала.
 export const PAYMENT_METHOD_LABELS: Record<PaymentMethod, string> = {
   cash: "Наличные",
   terminal: "Терминал",
-  transfer: "Перечисление (счёт-банк)",
-  card: "Карта (счёт-карта)",
+  transfer: "Банковский счет (перевод)",
+  card: "Банковская карта (П2П)",
 };

@@ -22,9 +22,14 @@ export async function PATCH(
   const container = await Container.findById(params.id);
   if (!container) return jsonError("Контейнер не найден", 404);
 
-  const before = { name: container.name, description: container.description };
+  const before = { name: container.name, description: container.description, cellCount: container.cellCount };
   if (parsed.data.name !== undefined) container.name = parsed.data.name;
   if (parsed.data.description !== undefined) container.description = parsed.data.description;
+  // Уменьшать cellCount ниже уже занятых/отмеченных "заполненными" камер не запрещаем на
+  // уровне API — это решение владельца (сотрудник физически видит, что там лежит товар);
+  // такие камеры просто перестанут отображаться в сетке (см. lib/containerCells.ts), но
+  // связанные StorageRecord/Income с этим cellNumber в БД не удаляются.
+  if (parsed.data.cellCount !== undefined) container.cellCount = parsed.data.cellCount;
   await container.save();
 
   await logAudit({
@@ -33,7 +38,7 @@ export async function PATCH(
     action: "update",
     actorId: user.identifier,
     actorRole: user.role,
-    changes: { before, after: { name: container.name, description: container.description } },
+    changes: { before, after: { name: container.name, description: container.description, cellCount: container.cellCount } },
   });
 
   return NextResponse.json({ container });

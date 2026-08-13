@@ -86,6 +86,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       changedQuantityText: fillData.changedQuantityText,
       totalQuantityText: fillData.totalQuantityText,
       contractNumber: record.contractNumber,
+      firmName: fillData.firmName,
       createdBy: employee.name,
       createdByRole: "employee",
     });

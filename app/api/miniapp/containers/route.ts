@@ -14,8 +14,13 @@ export async function GET(req: NextRequest) {
   await connectDB();
   const allowed = allowedContainerIds(employee);
   const filter = allowed ? { _id: { $in: allowed } } : {};
-  const containers = await Container.find(filter).sort({ name: 1 }).select("name description").lean();
+  const containers = await Container.find(filter).sort({ name: 1 }).select("name description cellCount").lean();
   return NextResponse.json({
-    containers: containers.map((c) => ({ id: String(c._id), name: c.name, description: c.description })),
+    containers: containers.map((c) => ({
+      id: String(c._id),
+      name: c.name,
+      description: c.description,
+      cellCount: c.cellCount,
+    })),
   });
 }

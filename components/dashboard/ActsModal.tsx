@@ -24,17 +24,19 @@ const KIND_LABELS: Record<string, string> = {
 };
 
 /**
- * Список всех актов по записи и по клиенту+контейнеру (товарные + инвентарные + ящичные) —
- * кнопка "Акты" на app/dashboard/records/page.tsx. Данные — app/api/acts/route.ts, PDF —
+ * Список всех актов по записи и/или по клиенту+контейнеру (товарные + инвентарные + ящичные) —
+ * кнопка "Акты" на app/dashboard/records/page.tsx, а также на app/dashboard/boxes/page.tsx и
+ * app/dashboard/inventory/page.tsx (там recordId не передаётся — ищем только по ownerKey+
+ * containerId, см. app/api/acts/route.ts). Данные — app/api/acts/route.ts, PDF —
  * app/api/acts/[id]/pdf/route.ts (сохранённый файл, открывается мгновенно).
  */
 export default function ActsModal({
-  recordId,
+  recordId = "",
   ownerKey,
   containerId,
   onClose,
 }: {
-  recordId: string;
+  recordId?: string;
   ownerKey: string;
   containerId: string;
   onClose: () => void;

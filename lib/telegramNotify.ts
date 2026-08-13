@@ -23,6 +23,7 @@ type RecordForNotify = Pick<
   | "_id"
   | "contractNumber"
   | "clientSignaturePng"
+  | "issuingFirm"
 >;
 
 /**

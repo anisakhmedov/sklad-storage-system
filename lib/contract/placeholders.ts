@@ -1,5 +1,6 @@
 import type { IStorageRecord } from "@/models/StorageRecord";
 import { formatTariffText } from "@/lib/tariff";
+import { DEFAULT_FIRM, FirmSnapshot } from "./firmDefaults";
 
 /**
  * Текстовая логика заполнения договора (плейсхолдеры, форматирование даты) — БЕЗ
@@ -26,6 +27,8 @@ export interface ContractFillData {
    * только на сервере при рендере PDF (lib/contract/generateContract.ts::renderSignatureBlock),
    * в браузерном превью текста не участвует. */
   signatureImage?: Buffer;
+  /** Фирма-подписант ("Сақловчи") — см. lib/contract/firmDefaults.ts. */
+  firm: FirmSnapshot;
 }
 
 const MONTH_ABBR = ["Янв", "Фев", "Мар", "Апр", "Май", "Июн", "Июл", "Авг", "Сен", "Окт", "Ноя", "Дек"];
@@ -58,7 +61,7 @@ export function abbreviateFullName(fullName: string): string {
 
 /** Данные, сопоставленные с плейсхолдерами шаблона (см. таблицу в README, часть 3). */
 export function buildContractFillData(
-  record: Pick<IStorageRecord, "tariff" | "goodsOwner" | "createdAt" | "clientSignaturePng">,
+  record: Pick<IStorageRecord, "tariff" | "goodsOwner" | "createdAt" | "clientSignaturePng" | "issuingFirm">,
   containerName: string,
   contractNumber: string
 ): ContractFillData {
@@ -82,6 +85,7 @@ export function buildContractFillData(
     contractNumber,
     formattedDate: formatContractDate(record.createdAt),
     signatureImage: record.clientSignaturePng,
+    firm: record.issuingFirm || DEFAULT_FIRM,
   };
 }
 
@@ -98,6 +102,8 @@ export function placeholderMap(data: ContractFillData): Record<string, string> {
     "<Имя сокрощенное. Фамилия>": data.abbreviatedName,
     "<Номер договора>": data.contractNumber,
     "<Дата оформления>": data.formattedDate,
+    "<Фирма>": data.firm.name,
+    "<Директор>": data.firm.directorFullName,
   };
 }
 

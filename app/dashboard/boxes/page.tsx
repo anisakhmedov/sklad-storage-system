@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { PackageSearch, UserRound, Building2 } from "lucide-react";
+import { PackageSearch, UserRound, Building2, FileStack } from "lucide-react";
+import ActsModal from "@/components/dashboard/ActsModal";
 
 interface BoxBalanceRow {
   ownerKey: string;
@@ -21,6 +22,7 @@ const money = (n: number) => Math.round(n).toLocaleString("ru-RU");
 export default function BoxesPage() {
   const [rows, setRows] = useState<BoxBalanceRow[]>([]);
   const [loading, setLoading] = useState(true);
+  const [actsFor, setActsFor] = useState<BoxBalanceRow | null>(null);
 
   useEffect(() => {
     fetch("/api/boxes")
@@ -63,6 +65,7 @@ export default function BoxesPage() {
                 <th>Ставка/ящ.</th>
                 <th>Сумма</th>
                 <th>Последняя операция</th>
+                <th></th>
               </tr>
             </thead>
             <tbody>
@@ -86,6 +89,11 @@ export default function BoxesPage() {
                     <td className="whitespace-nowrap text-ink-500">
                       {new Date(r.lastActivity).toLocaleDateString("ru-RU")}
                     </td>
+                    <td className="whitespace-nowrap">
+                      <button className="btn-icon btn-secondary" title="Акты" onClick={() => setActsFor(r)}>
+                        <FileStack className="h-3.5 w-3.5" strokeWidth={2} />
+                      </button>
+                    </td>
                   </tr>
                 );
               })}
@@ -93,6 +101,10 @@ export default function BoxesPage() {
           </table>
         )}
       </div>
+
+      {actsFor && (
+        <ActsModal ownerKey={actsFor.ownerKey} containerId={actsFor.containerId} onClose={() => setActsFor(null)} />
+      )}
     </div>
   );
 }

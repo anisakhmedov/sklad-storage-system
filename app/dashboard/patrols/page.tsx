@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useMemo } from "react";
 import { Thermometer, Sun, Moon } from "lucide-react";
+import { DEFAULT_CELL_COUNT, cellNumbersForCount } from "@/lib/cells";
 
 interface PatrolLogRow {
   _id: string;
@@ -18,6 +19,7 @@ interface PatrolLogRow {
 interface ContainerRef {
   _id: string;
   name: string;
+  cellCount?: number;
 }
 
 const PERIOD_LABELS: Record<string, string> = { morning: "Дневной", evening: "Вечерний" };
@@ -60,6 +62,18 @@ export default function PatrolsPage() {
     load();
   }, [load]);
 
+  // Диапазон камер для фильтра — камеры теперь редактируются индивидуально на контейнер (см.
+  // models/Container.ts::cellCount): если выбран конкретный контейнер, берём его cellCount,
+  // иначе — максимум по всем контейнерам.
+  const cellOptions = useMemo(() => {
+    if (filters.containerId) {
+      const c = containers.find((c) => c._id === filters.containerId);
+      return cellNumbersForCount(c?.cellCount || DEFAULT_CELL_COUNT);
+    }
+    const maxCount = containers.reduce((max, c) => Math.max(max, c.cellCount || DEFAULT_CELL_COUNT), DEFAULT_CELL_COUNT);
+    return cellNumbersForCount(maxCount);
+  }, [containers, filters.containerId]);
+
   return (
     <div>
       <div className="mb-7">
@@ -97,7 +111,7 @@ export default function PatrolsPage() {
               onChange={(e) => setFilters({ ...filters, cellNumber: e.target.value })}
             >
               <option value="">Все</option>
-              {[1, 2, 3, 4, 5, 6, 7, 8].map((n) => (
+              {cellOptions.map((n) => (
                 <option key={n} value={n}>
                   Камера {n}
                 </option>

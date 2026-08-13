@@ -1,6 +1,5 @@
 "use client";
 
-import { CELL_NUMBERS } from "@/lib/cells";
 import { Lock } from "lucide-react";
 
 export interface CellGridCell {
@@ -10,10 +9,13 @@ export interface CellGridCell {
 }
 
 /**
- * Сетка камер хранения 2×4 (см. lib/cells.ts::CELL_COUNT). Используется и для выбора
- * камеры при размещении товара (components/miniapp/NewRecordWizard.tsx, onSelect + красные
- * камеры недоступны), и для управления флажком "заполнена" (components/miniapp/CellsScreen.tsx,
- * allowSelectFull=true — там как раз нужно тапать по красным, чтобы снять отметку).
+ * Сетка камер хранения — количество камер редактируется индивидуально на контейнер (см.
+ * models/Container.ts::cellCount, по умолчанию 8), поэтому рендерится ровно столько кнопок,
+ * сколько элементов в `cells` (эта сетка приходит уже нужного размера с сервера, см.
+ * lib/containerCells.ts::getCellsGrid). Используется и для выбора камеры при размещении товара
+ * (components/miniapp/NewRecordWizard.tsx, onSelect + красные камеры недоступны), и для
+ * управления флажком "заполнена" (components/miniapp/CellsScreen.tsx, allowSelectFull=true —
+ * там как раз нужно тапать по красным, чтобы снять отметку).
  */
 export default function CellGrid({
   cells,
@@ -26,14 +28,14 @@ export default function CellGrid({
   onSelect?: (n: number) => void;
   allowSelectFull?: boolean;
 }) {
-  const byNumber = new Map(cells.map((c) => [c.number, c]));
+  const sortedCells = [...cells].sort((a, b) => a.number - b.number);
 
   return (
     <div className="grid grid-cols-4 gap-2">
-      {CELL_NUMBERS.map((n) => {
-        const cell = byNumber.get(n);
-        const occupants = cell?.occupants || [];
-        const full = !!cell?.isFull;
+      {sortedCells.map((cell) => {
+        const n = cell.number;
+        const occupants = cell.occupants || [];
+        const full = !!cell.isFull;
         const isSelected = selected === n;
         const clickable = !!onSelect && (!full || allowSelectFull);
 

@@ -2,7 +2,7 @@ import { connectDB } from "./db";
 import { Container } from "@/models/Container";
 import { StorageRecord } from "@/models/StorageRecord";
 import { ownerKeyOf, ownerLabelOf } from "./ownerKey";
-import { CELL_NUMBERS } from "./cells";
+import { DEFAULT_CELL_COUNT, cellNumbersForCount } from "./cells";
 import type { IGoodsOwner, GoodsOwnerType } from "@/models/StorageRecord";
 
 export interface CellOccupant {
@@ -28,8 +28,9 @@ export interface ContainerCellsGrid {
 }
 
 /**
- * Сетка камер хранения (2×4 на контейнер, см. lib/cells.ts) для одного или нескольких
- * контейнеров. Занятость камеры вычисляется из активных (quantity > 0) StorageRecord —
+ * Сетка камер хранения (по умолчанию 2×4 на контейнер, см. lib/cells.ts — количество камер
+ * теперь редактируется индивидуально на контейнер, см. models/Container.ts::cellCount) для
+ * одного или нескольких контейнеров. Занятость камеры вычисляется из активных (quantity > 0) StorageRecord —
  * записи с обнулённым количеством (см. app/api/miniapp/records/[id]/adjust/route.ts)
  * считаются вывезенными и не занимают камеру. Один арендатор с несколькими записями в
  * одной камере схлопывается в одного occupant (по ownerKeyOf), как и в lib/boxes.ts /
@@ -83,7 +84,8 @@ export async function getCellsGrid(containerIds?: string[]): Promise<ContainerCe
     const containerId = String(c._id);
     const byCell = byContainer.get(containerId);
     const fullCells = new Set(c.fullCells || []);
-    const cells: CellStatus[] = CELL_NUMBERS.map((number) => {
+    const cellNumbers = cellNumbersForCount(c.cellCount ?? DEFAULT_CELL_COUNT);
+    const cells: CellStatus[] = cellNumbers.map((number) => {
       const byOwner = byCell?.get(number);
       const occupants: CellOccupant[] = byOwner
         ? Array.from(byOwner.values()).map(({ occupant, products }) => ({

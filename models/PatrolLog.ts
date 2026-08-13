@@ -1,4 +1,5 @@
 import { Schema, model, models, Model, Types } from "mongoose";
+import { MAX_CELL_COUNT } from "@/lib/cells";
 
 /**
  * Запись обхода холодильной камеры — 2 раза в день, отдельно на КАЖДУЮ камеру (1–8, см.
@@ -29,7 +30,7 @@ export interface IPatrolLog {
 
 const PatrolLogSchema = new Schema<IPatrolLog>({
   containerId: { type: Schema.Types.ObjectId, ref: "Container", required: true, index: true },
-  cellNumber: { type: Number, min: 1, max: 8 },
+  cellNumber: { type: Number, min: 1, max: MAX_CELL_COUNT },
   employeeId: { type: Schema.Types.ObjectId, ref: "Employee", required: true, index: true },
   period: { type: String, enum: ["morning", "evening"], required: true },
   temperature: { type: Number, required: true },

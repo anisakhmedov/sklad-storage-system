@@ -4,6 +4,7 @@ import { Act, IAct, ActKind } from "@/models/Act";
 import { getNextSequence } from "@/lib/counter";
 import { renderActPdf, ActSubject, ActDirection } from "./generateAct";
 import { actFilename } from "./actService";
+import { DEFAULT_FIRM } from "./firmDefaults";
 import type { GoodsOwnerType } from "@/models/StorageRecord";
 
 const KIND_TO_SUBJECT: Record<ActKind, { subject: ActSubject; direction: ActDirection }> = {
@@ -28,6 +29,9 @@ export interface CreateAndSaveActInput {
   changedQuantityText: string;
   totalQuantityText?: string;
   contractNumber?: string;
+  /** Фирма-подписант ("Сақловчи") — см. lib/contract/firmDefaults.ts. По умолчанию DEFAULT_FIRM
+   * (акты по инвентарю/ящикам не привязаны к конкретной фирме записи). */
+  firmName?: string;
   createdBy: string;
   createdByRole: "owner" | "employee";
 }
@@ -62,6 +66,7 @@ export async function createAndSaveAct(input: CreateAndSaveActInput): Promise<IA
     contractNumber: input.contractNumber,
     actNumber,
     dateText: new Date().toLocaleDateString("ru-RU"),
+    firmName: input.firmName || DEFAULT_FIRM.name,
   });
 
   const filename = actFilename(subject, direction, input.ownerLabel);

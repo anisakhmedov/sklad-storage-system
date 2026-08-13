@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { connectDB } from "@/lib/db";
 import { StorageRecord } from "@/models/StorageRecord";
 import { Container } from "@/models/Container";
+import { Firm } from "@/models/Firm";
 import { resolveEmployee, employeeCanAccessContainer } from "@/lib/miniAuth";
 import { storageRecordCreateSchema } from "@/lib/validation";
 import { jsonError, zodErrorResponse } from "@/lib/apiHelpers";
@@ -57,6 +58,27 @@ export async function POST(req: NextRequest) {
       ? `${await getNextSequence(`contract:${new Date().getFullYear()}`)}-${new Date().getFullYear()}`
       : undefined;
 
+  // Снимок реквизитов выбранной фирмы (см. models/Firm.ts) — если сотрудник ничего не выбрал
+  // (или firmId не найден), issuingFirm остаётся не заполненным, и документы используют
+  // lib/contract/firmDefaults.ts::DEFAULT_FIRM (см. lib/contract/placeholders.ts,
+  // lib/contract/generateAct.ts).
+  let issuingFirm: InstanceType<typeof StorageRecord>["issuingFirm"];
+  if (parsed.data.firmId) {
+    const firm = await Firm.findById(parsed.data.firmId).lean();
+    if (firm) {
+      issuingFirm = {
+        name: firm.name,
+        directorFullName: firm.directorFullName,
+        directorShortName: firm.directorShortName,
+        address: firm.address,
+        bankBranch: firm.bankBranch,
+        bankAccount: firm.bankAccount,
+        inn: firm.inn,
+        bankCode: firm.bankCode,
+      };
+    }
+  }
+
   const record = await StorageRecord.create({
     containerId: parsed.data.containerId,
     cellNumber: parsed.data.cellNumber,
@@ -69,6 +91,7 @@ export async function POST(req: NextRequest) {
     contractNumber,
     clientSignaturePng: clientSignatureBuffer,
     signedAt: clientSignatureBuffer ? new Date() : undefined,
+    issuingFirm,
   });
 
   await logAudit({

@@ -1,11 +1,19 @@
 import { z } from "zod";
 import { normalizePhone } from "./phone";
+import { MAX_CELL_COUNT } from "./cells";
 
 export const unitEnum = z.enum(["tonne", "kg", "box", "piece"]);
+// Широкий enum ("terminal" включён) используется ТОЛЬКО как второй рубеж защиты в схемах
+// моделей (models/Income.ts, models/GeneralIncome.ts, models/Expense.ts) — чтобы легаси-записи
+// со старым способом "terminal" не ломались на full-document .save() (см. комментарий в
+// models/Expense.ts). На входе (создание новых записей) везде используются более узкие enum'ы
+// ниже — "terminal" нигде не принимается от клиента.
 export const paymentMethodEnum = z.enum(["cash", "terminal", "transfer", "card"]);
-// Расходы больше не принимают "Терминал" (по решению владельца) — только наличные,
-// перечисление и карта. Income/GeneralIncome по-прежнему используют широкий paymentMethodEnum.
+// Расходы принимают только эти три способа (по решению владельца).
 export const expensePaymentMethodEnum = z.enum(["cash", "transfer", "card"]);
+// Оплаты (Income/GeneralIncome) — те же три способа, переименованы по просьбе владельца:
+// "Наличные" / "Банковский счет (перевод)" / "Банковская карта (П2П)" (см. lib/labels.ts).
+export const incomePaymentMethodEnum = z.enum(["cash", "transfer", "card"]);
 export const webRoleEnum = z.enum(["owner", "trusted"]);
 export const goodsOwnerTypeEnum = z.enum(["individual", "company"]);
 export const tariffTypeEnum = z.enum(["per_day", "per_month", "per_kg_month", "per_kg_6_months"]);
@@ -34,15 +42,29 @@ export const employeeUpdateSchema = z.object({
 export const containerCreateSchema = z.object({
   name: z.string().min(1, "Укажите номер/название контейнера").max(100),
   description: z.string().max(1000).optional().default(""),
+  // Количество камер в контейнере — по умолчанию 8 (см. lib/cells.ts::DEFAULT_CELL_COUNT),
+  // редактируется индивидуально на контейнер (см. models/Container.ts::cellCount).
+  cellCount: z.coerce
+    .number()
+    .int()
+    .min(1, "Должна быть хотя бы одна камера")
+    .max(MAX_CELL_COUNT, "Слишком много камер")
+    .optional(),
 });
 
 export const containerUpdateSchema = containerCreateSchema.partial();
 
 // Ручная отметка занятости камеры хранения (см. models/Container.ts::fullCells,
 // lib/containerCells.ts::toggleCellFull) — сотрудник сам решает, что в камеру больше
-// физически ничего не влезет; это не автоматический подсчёт арендаторов.
+// физически ничего не влезет; это не автоматический подсчёт арендаторов. Верхняя граница —
+// общий MAX_CELL_COUNT (второй рубеж защиты); реальный лимит для конкретного контейнера —
+// его собственный cellCount, проверяется на уровне UI/бизнес-логики, а не здесь.
 export const cellFullToggleSchema = z.object({
-  cellNumber: z.coerce.number().int().min(1, "Некорректный номер камеры").max(8, "Некорректный номер камеры"),
+  cellNumber: z.coerce
+    .number()
+    .int()
+    .min(1, "Некорректный номер камеры")
+    .max(MAX_CELL_COUNT, "Некорректный номер камеры"),
   full: z.boolean(),
 });
 
@@ -85,7 +107,7 @@ export const tariffSchema = z.object({
 
 const storageRecordBaseSchema = z.object({
   containerId: z.string().min(1, "Выберите контейнер"),
-  cellNumber: z.coerce.number().int().min(1, "Выберите камеру").max(8, "Некорректный номер камеры"),
+  cellNumber: z.coerce.number().int().min(1, "Выберите камеру").max(MAX_CELL_COUNT, "Некорректный номер камеры"),
   productName: z.string().min(1, "Укажите наименование товара").max(300),
   quantity: z.coerce.number().positive("Количество должно быть больше 0"),
   unit: unitEnum,
@@ -95,6 +117,10 @@ const storageRecordBaseSchema = z.object({
   // components/miniapp/SignaturePad.tsx). Обязательна для физлиц — см. superRefine ниже
   // в storageRecordCreateSchema; для юрлиц не требуется (договор не формируется).
   clientSignaturePng: z.string().optional(),
+  // От чьего имени (какой фирмы владельца) составляется договор/акт — см. models/Firm.ts.
+  // Необязательно: если фирм ещё не заведено или сотрудник ничего не выбрал, документ
+  // использует lib/contract/firmDefaults.ts::DEFAULT_FIRM (см. app/api/miniapp/records/route.ts).
+  firmId: z.string().optional(),
 });
 
 // "За кг" тарифы требуют известного веса — доступны только для unit "kg"/"tonne".
@@ -139,6 +165,20 @@ export const transportContainerGiveSchema = z.object({
   currentOwnerLabel: z.string().min(1, "Укажите клиента").max(300),
 });
 
+// Собственная фирма владельца склада ("Сақловчи" в договоре/акте) — см. models/Firm.ts,
+// lib/contract/firmDefaults.ts::FirmSnapshot.
+export const firmCreateSchema = z.object({
+  name: z.string().min(1, "Укажите название фирмы").max(300),
+  directorFullName: z.string().min(1, "Укажите ФИО директора (как в договоре)").max(200),
+  directorShortName: z.string().min(1, "Укажите сокращённое имя директора (для подписи)").max(100),
+  address: z.string().min(1, "Укажите адрес").max(300),
+  bankBranch: z.string().min(1, "Укажите банк/отделение").max(300),
+  bankAccount: z.string().min(1, "Укажите расчётный счёт").max(50),
+  inn: z.string().min(1, "Укажите ИНН").max(50),
+  bankCode: z.string().min(1, "Укажите банковский код (МФО)").max(20),
+});
+export const firmUpdateSchema = firmCreateSchema.partial();
+
 export const webAccessCreateSchema = z.object({
   identifier: z.string().min(3, "Укажите username или телефон"),
   role: webRoleEnum,
@@ -177,10 +217,21 @@ export const expenseStatusSchema = z.object({
   status: z.enum(["approved", "rejected"]),
 });
 
+// Полное редактирование уже созданного расхода (веб-панель) — в отличие от expenseStatusSchema
+// выше (только подтверждение/отклонение заявки владельцем), это правка самих полей расхода,
+// доступна независимо от текущего способа оплаты и статуса (см. app/api/expenses/[id]/route.ts).
+export const expenseUpdateSchema = z.object({
+  type: z.enum(["owner_withdrawal", "salary", "other"]).optional(),
+  amount: z.coerce.number().positive("Сумма должна быть больше 0").optional(),
+  method: expensePaymentMethodEnum.optional(),
+  note: z.string().max(500).optional(),
+  employeeName: z.string().max(200).optional(),
+});
+
 // «Приход на холодильник» — общий приход не по конкретному клиенту (см. models/GeneralIncome.ts).
 export const generalIncomeCreateSchema = z.object({
   amount: z.coerce.number().positive("Сумма должна быть больше 0"),
-  method: paymentMethodEnum,
+  method: incomePaymentMethodEnum,
   note: z.string().max(500).optional().default(""),
   paidAt: z.coerce.date().optional(),
 });
@@ -208,7 +259,7 @@ export const inventoryLedgerEntryCreateSchema = z.object({
   ownerType: goodsOwnerTypeEnum,
   ownerLabel: z.string().min(1, "Не указано имя/наименование владельца").max(300),
   containerId: z.string().min(1, "Выберите контейнер"),
-  cellNumber: z.coerce.number().int().min(1).max(8).optional(),
+  cellNumber: z.coerce.number().int().min(1).max(MAX_CELL_COUNT).optional(),
   direction: z.enum(["given", "returned"]),
   quantity: z.coerce.number().positive("Количество должно быть больше 0"),
 });
@@ -217,7 +268,7 @@ export const inventoryLedgerEntryCreateSchema = z.object({
 // отдельно (см. models/PatrolLog.ts, lib/patrols.ts).
 export const patrolLogCreateSchema = z.object({
   containerId: z.string().min(1, "Выберите контейнер"),
-  cellNumber: z.coerce.number().int().min(1, "Некорректный номер камеры").max(8, "Некорректный номер камеры"),
+  cellNumber: z.coerce.number().int().min(1, "Некорректный номер камеры").max(MAX_CELL_COUNT, "Некорректный номер камеры"),
   period: z.enum(["morning", "evening"]),
   temperature: z.coerce.number().min(-100).max(100, "Некорректная температура"),
   amperage: z.coerce.number().min(0, "Некорректное значение ампер").max(1000, "Некорректное значение ампер"),
@@ -242,20 +293,36 @@ export const incomeCreateSchema = z.object({
   ownerLabel: z.string().min(1, "Не указано имя/наименование владельца").max(300),
   containerId: z.string().min(1, "Выберите контейнер"),
   // Необязательно — платёж может быть "за контейнер в целом" (см. models/Income.ts).
-  cellNumber: z.coerce.number().int().min(1).max(8).optional(),
+  cellNumber: z.coerce.number().int().min(1).max(MAX_CELL_COUNT).optional(),
   amount: z.coerce.number().positive("Сумма должна быть больше 0"),
-  method: paymentMethodEnum,
+  method: incomePaymentMethodEnum,
   paidAt: z.coerce.date().optional(),
   note: z.string().max(500).optional().default(""),
 });
 
-// Перечисление (банковский перевод) поступает сразу на счёт владельца, минуя сотрудника на
-// складе, — сотрудник физически не может подтвердить такой платёж, поэтому в Mini App
+// Полное редактирование уже внесённого платежа (веб-панель) — раньше редактирования не было
+// вовсе, доступно независимо от способа оплаты. ownerKey/ownerType сознательно НЕ включены —
+// это идентификатор арендатора (см. lib/ownerKey.ts), его смена ломала бы привязку к
+// задолженности; исправить имя владельца можно через ownerLabel (просто отображаемая подпись)
+// или через редактирование карточки арендатора (см. app/api/tenants/[ownerKey]/route.ts).
+export const incomeUpdateSchema = z.object({
+  ownerLabel: z.string().min(1, "Не указано имя/наименование владельца").max(300).optional(),
+  containerId: z.string().min(1, "Выберите контейнер").optional(),
+  // null — явно очистить камеру (платёж "за контейнер в целом"); undefined — не менять.
+  cellNumber: z.union([z.coerce.number().int().min(1).max(MAX_CELL_COUNT), z.null()]).optional(),
+  amount: z.coerce.number().positive("Сумма должна быть больше 0").optional(),
+  method: incomePaymentMethodEnum.optional(),
+  paidAt: z.coerce.date().optional(),
+  note: z.string().max(500).optional(),
+});
+
+// Банковский счёт (перевод) поступает сразу на счёт владельца, минуя сотрудника на складе, —
+// сотрудник физически не может подтвердить такой платёж, поэтому в Mini App
 // (app/api/miniapp/income/route.ts, components/miniapp/AddIncomeWizard.tsx) доступны только
-// способы, которые сотрудник принимает лично: наличные, терминал, карта. Перечисление
+// способы, которые сотрудник принимает лично: наличные и карта (П2П). Банковский перевод
 // по-прежнему вносит сам владелец на веб-панели (app/api/income/route.ts, incomeCreateSchema
 // без сужения).
-export const employeePaymentMethodEnum = z.enum(["cash", "terminal", "card"]);
+export const employeePaymentMethodEnum = z.enum(["cash", "card"]);
 export const incomeCreateSchemaEmployee = incomeCreateSchema.extend({ method: employeePaymentMethodEnum });
 
 export type LoginInput = z.infer<typeof loginSchema>;

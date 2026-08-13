@@ -1,6 +1,6 @@
 import { connectDB } from "./db";
 import { PatrolLog, PatrolPeriod } from "@/models/PatrolLog";
-import { CELL_NUMBERS } from "./cells";
+import { DEFAULT_CELL_COUNT, cellNumbersForCount } from "./cells";
 
 /**
  * Обход холодильных камер 2 раза в день — вся логика времени завязана на Ташкент (UTC+5,
@@ -52,14 +52,16 @@ export interface PatrolStatusRow {
 }
 
 /**
- * Статус обходов на сегодня (по Ташкенту) для списка контейнеров — по каждой из 8 камер
- * отдельно (см. models/PatrolLog.ts). Легаси-записи без cellNumber (созданные до перехода на
- * по-камерный учёт) не попадают ни в одну камеру и не отмечают контейнер как пройденный —
- * это ожидаемо: старые обходы были на уровне контейнера и с новой (по-камерной) моделью
- * несопоставимы напрямую.
+ * Статус обходов на сегодня (по Ташкенту) для списка контейнеров — по каждой камере отдельно
+ * (см. models/PatrolLog.ts), количество камер берётся индивидуально на контейнер (см.
+ * models/Container.ts::cellCount; параметр cellCount необязателен — по умолчанию
+ * DEFAULT_CELL_COUNT для контейнеров, созданных до этой доработки). Легаси-записи без
+ * cellNumber (созданные до перехода на по-камерный учёт) не попадают ни в одну камеру и не
+ * отмечают контейнер как пройденный — это ожидаемо: старые обходы были на уровне контейнера и
+ * с новой (по-камерной) моделью несопоставимы напрямую.
  */
 export async function getTodayPatrolStatus(
-  containers: Array<{ id: string; name: string }>
+  containers: Array<{ id: string; name: string; cellCount?: number }>
 ): Promise<PatrolStatusRow[]> {
   await connectDB();
   const today = tashkentDateString();
@@ -71,7 +73,8 @@ export async function getTodayPatrolStatus(
 
   const doneSet = new Set(logs.map((l) => `${String(l.containerId)}::${l.cellNumber}::${l.period}`));
   return containers.map((c) => {
-    const cells: PatrolCellStatus[] = CELL_NUMBERS.map((n) => ({
+    const cellNumbers = cellNumbersForCount(c.cellCount ?? DEFAULT_CELL_COUNT);
+    const cells: PatrolCellStatus[] = cellNumbers.map((n) => ({
       number: n,
       morningDone: doneSet.has(`${c.id}::${n}::morning`),
       eveningDone: doneSet.has(`${c.id}::${n}::evening`),

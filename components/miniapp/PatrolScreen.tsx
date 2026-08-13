@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { miniAppFetch } from "./telegram";
-import { CELL_NUMBERS } from "@/lib/cells";
 import { ArrowLeft, Thermometer, Zap, Sun, Moon, CheckCircle2, TriangleAlert, ChevronRight } from "lucide-react";
 
 type Period = "morning" | "evening";
@@ -205,7 +204,7 @@ function ContainerCellsPatrol({
   onChanged: () => void;
 }) {
   const [picked, setPicked] = useState<number | null>(null);
-  const byNumber = new Map(row.cells.map((c) => [c.number, c]));
+  const sortedCells = [...row.cells].sort((a, b) => a.number - b.number);
 
   return (
     <div className="pt-4 pb-8">
@@ -219,9 +218,9 @@ function ContainerCellsPatrol({
       <p className="text-xs text-ink-400 mb-3">Нажмите на камеру, чтобы внести температуру и ампер.</p>
 
       <div className="grid grid-cols-4 gap-2">
-        {CELL_NUMBERS.map((n) => {
-          const cell = byNumber.get(n);
-          const done = cell ? (period === "morning" ? cell.morningDone : cell.eveningDone) : false;
+        {sortedCells.map((cell) => {
+          const n = cell.number;
+          const done = period === "morning" ? cell.morningDone : cell.eveningDone;
           return (
             <button
               key={n}

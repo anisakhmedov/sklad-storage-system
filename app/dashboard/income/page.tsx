@@ -8,7 +8,6 @@ import {
   ChevronDown,
   Banknote,
   CreditCard,
-  ArrowLeftRight,
   Landmark,
   AlertCircle,
   Receipt,
@@ -20,7 +19,11 @@ import {
   Check,
   X,
   Clock,
+  Search,
+  XCircle,
+  Pencil,
 } from "lucide-react";
+import { DEFAULT_CELL_COUNT, cellNumbersForCount } from "@/lib/cells";
 
 type OwnerType = "individual" | "company";
 
@@ -54,6 +57,7 @@ interface IncomeEntry {
   ownerKey: string;
   ownerLabel: string;
   containerId: { _id: string; name: string } | string;
+  cellNumber?: number;
   amount: number;
   method: string;
   paidAt: string;
@@ -64,6 +68,8 @@ interface IncomeEntry {
 interface FinanceSummary {
   totalIncome: number;
   kassa: number;
+  cardTotal: number;
+  transferTotal: number;
   totalExpenses: number;
   salaryTotal: number;
   balance: number;
@@ -76,6 +82,12 @@ interface IncomeBreakdownRow {
   containerName: string;
   cellNumber: number | null;
   total: number;
+}
+
+interface ContainerRef {
+  _id: string;
+  name: string;
+  cellCount?: number;
 }
 
 interface ExpenseEntry {
@@ -97,18 +109,26 @@ const expenseTypeLabels: Record<string, string> = {
   other: "Прочее",
 };
 
+// "terminal" больше не предлагается как способ ни для расходов, ни для оплат — оставлен в
+// подписях только чтобы старые записи (созданные до отказа от терминала) не показывали "—"/
+// undefined вместо названия способа.
 const methodLabels: Record<string, string> = {
   cash: "Наличные",
   terminal: "Терминал",
-  transfer: "Перечисление (счёт-банк)",
-  card: "Карта (счёт-карта)",
+  transfer: "Банковский счет (перевод)",
+  card: "Банковская карта (П2П)",
 };
 const methodIcons: Record<string, typeof Banknote> = {
   cash: Banknote,
   terminal: CreditCard,
-  transfer: ArrowLeftRight,
-  card: Landmark,
+  transfer: Landmark,
+  card: CreditCard,
 };
+const SELECTABLE_METHODS: Array<{ value: string; label: string }> = [
+  { value: "cash", label: "Наличные" },
+  { value: "transfer", label: "Банковский счет (перевод)" },
+  { value: "card", label: "Банковская карта (П2П)" },
+];
 const money = (n: number) => Math.round(n).toLocaleString("ru-RU");
 const todayInput = () => new Date().toISOString().slice(0, 10);
 
@@ -122,9 +142,25 @@ export default function IncomePage() {
   const [finance, setFinance] = useState<FinanceSummary | null>(null);
   const [breakdown, setBreakdown] = useState<IncomeBreakdownRow[]>([]);
   const [expenses, setExpenses] = useState<ExpenseEntry[]>([]);
+  const [containers, setContainers] = useState<ContainerRef[]>([]);
   const [isOwner, setIsOwner] = useState(false);
   const [showExpenseModal, setShowExpenseModal] = useState(false);
   const [showGeneralIncomeModal, setShowGeneralIncomeModal] = useState(false);
+  const [editingIncome, setEditingIncome] = useState<IncomeEntry | null>(null);
+  const [editingExpense, setEditingExpense] = useState<ExpenseEntry | null>(null);
+
+  // Фильтр таблицы "Последние платежи" — управляется и селектами в панели фильтра, и кликом
+  // по карточкам кассы/П2П/банк.перевода (см. cardClickFilter ниже).
+  const [incomeFilter, setIncomeFilter] = useState({ method: "", containerId: "", cellNumber: "", search: "" });
+  // Фильтр таблицы "Расходы" — управляется кликом по карточкам Расходы/Зарплата/Владелец забрал.
+  const [expenseFilter, setExpenseFilter] = useState({ type: "", method: "" });
+
+  function toggleIncomeMethodFilter(method: string) {
+    setIncomeFilter((f) => ({ ...f, method: f.method === method ? "" : method }));
+  }
+  function toggleExpenseFilter(type: string, method: string) {
+    setExpenseFilter((f) => (f.type === type && f.method === method ? { type: "", method: "" } : { type, method }));
+  }
 
   const loadFinance = useCallback(async () => {
     const res = await fetch("/api/finance/summary");
@@ -148,6 +184,9 @@ export default function IncomePage() {
     fetch("/api/auth/me")
       .then((r) => r.json())
       .then((d) => setIsOwner(d.user?.role === "owner"));
+    fetch("/api/containers")
+      .then((r) => r.json())
+      .then((d) => setContainers(d.containers || []));
     loadFinance();
     loadExpenses();
     loadBreakdown();
@@ -203,6 +242,42 @@ export default function IncomePage() {
   const totalAccrued = useMemo(() => debts.reduce((s, d) => s + d.accrued, 0), [debts]);
   const totalPaid = useMemo(() => debts.reduce((s, d) => s + d.paid, 0), [debts]);
 
+  const filteredIncomes = useMemo(() => {
+    const search = incomeFilter.search.trim().toLowerCase();
+    return incomes.filter((inc) => {
+      if (incomeFilter.method && inc.method !== incomeFilter.method) return false;
+      const containerId = typeof inc.containerId === "object" ? inc.containerId._id : inc.containerId;
+      if (incomeFilter.containerId && containerId !== incomeFilter.containerId) return false;
+      if (incomeFilter.cellNumber && String(inc.cellNumber ?? "") !== incomeFilter.cellNumber) return false;
+      if (search && !inc.ownerLabel.toLowerCase().includes(search)) return false;
+      return true;
+    });
+  }, [incomes, incomeFilter]);
+
+  const filteredExpenses = useMemo(() => {
+    return expenses.filter((exp) => {
+      if (expenseFilter.type && exp.type !== expenseFilter.type) return false;
+      if (expenseFilter.method && exp.method !== expenseFilter.method) return false;
+      return true;
+    });
+  }, [expenses, expenseFilter]);
+
+  const hasIncomeFilter = !!(incomeFilter.method || incomeFilter.containerId || incomeFilter.cellNumber || incomeFilter.search);
+  const hasExpenseFilter = !!(expenseFilter.type || expenseFilter.method);
+
+  // Диапазон камер для фильтра "Последние платежи" — камеры теперь редактируются индивидуально
+  // на контейнер (см. models/Container.ts::cellCount): если выбран конкретный контейнер, берём
+  // его cellCount, иначе — максимум по всем контейнерам (чтобы не спрятать камеры 9+ у больших
+  // контейнеров, когда фильтр по контейнеру не задан).
+  const filterCellOptions = useMemo(() => {
+    if (incomeFilter.containerId) {
+      const c = containers.find((c) => c._id === incomeFilter.containerId);
+      return cellNumbersForCount(c?.cellCount || DEFAULT_CELL_COUNT);
+    }
+    const maxCount = containers.reduce((max, c) => Math.max(max, c.cellCount || DEFAULT_CELL_COUNT), DEFAULT_CELL_COUNT);
+    return cellNumbersForCount(maxCount);
+  }, [containers, incomeFilter.containerId]);
+
   return (
     <div>
       <div className="mb-7">
@@ -232,7 +307,11 @@ export default function IncomePage() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-4 mb-8">
+      <p className="text-xs text-ink-400 mb-2">
+        Карточки кассы/П2П/банк. перевода, а также «Расходы»/«Зарплата»/«Владелец забрал» —
+        кликабельны: фильтруют таблицу платежей или расходов ниже именно под этот блок.
+      </p>
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
         <div className="card">
           <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-brand-50 text-brand-600 mb-3">
             <TrendingUp className="h-4.5 w-4.5" strokeWidth={2} />
@@ -240,20 +319,57 @@ export default function IncomePage() {
           <div className="text-2xl font-semibold text-ink-900 tabular-nums">{money(finance?.totalIncome || 0)}</div>
           <div className="text-xs text-ink-400 mt-1">Общий приход, сум</div>
         </div>
-        <div className="card">
+        <button
+          className={`card text-left transition-colors ${incomeFilter.method === "cash" ? "ring-2 ring-brand-600" : "hover:border-brand-300"}`}
+          onClick={() => toggleIncomeMethodFilter("cash")}
+        >
+          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-brand-50 text-brand-600 mb-3">
+            <Banknote className="h-4.5 w-4.5" strokeWidth={2} />
+          </div>
+          <div className="text-2xl font-semibold text-ink-900 tabular-nums">{money(finance?.kassa || 0)}</div>
+          <div className="text-xs text-ink-400 mt-1">Касса (наличные), сум</div>
+        </button>
+        <button
+          className={`card text-left transition-colors ${incomeFilter.method === "card" ? "ring-2 ring-brand-600" : "hover:border-brand-300"}`}
+          onClick={() => toggleIncomeMethodFilter("card")}
+        >
+          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-violet-100 text-violet-700 mb-3">
+            <CreditCard className="h-4.5 w-4.5" strokeWidth={2} />
+          </div>
+          <div className="text-2xl font-semibold text-ink-900 tabular-nums">{money(finance?.cardTotal || 0)}</div>
+          <div className="text-xs text-ink-400 mt-1">Банковская карта (П2П), сум</div>
+        </button>
+        <button
+          className={`card text-left transition-colors ${incomeFilter.method === "transfer" ? "ring-2 ring-brand-600" : "hover:border-brand-300"}`}
+          onClick={() => toggleIncomeMethodFilter("transfer")}
+        >
+          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-sky-100 text-sky-700 mb-3">
+            <Landmark className="h-4.5 w-4.5" strokeWidth={2} />
+          </div>
+          <div className="text-2xl font-semibold text-ink-900 tabular-nums">{money(finance?.transferTotal || 0)}</div>
+          <div className="text-xs text-ink-400 mt-1">Банковский счёт (перевод), сум</div>
+        </button>
+        <button
+          className="card text-left transition-colors hover:border-brand-300"
+          onClick={() => setExpenseFilter({ type: "", method: "" })}
+          title="Показать все расходы без фильтра"
+        >
           <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-rose-50 text-rose-600 mb-3">
             <TrendingDown className="h-4.5 w-4.5" strokeWidth={2} />
           </div>
           <div className="text-2xl font-semibold text-ink-900 tabular-nums">{money(finance?.totalExpenses || 0)}</div>
-          <div className="text-xs text-ink-400 mt-1">Расходы, сум</div>
-        </div>
-        <div className="card">
+          <div className="text-xs text-ink-400 mt-1">Расходы, сум (клик — сброс фильтра)</div>
+        </button>
+        <button
+          className={`card text-left transition-colors ${expenseFilter.type === "salary" ? "ring-2 ring-brand-600" : "hover:border-brand-300"}`}
+          onClick={() => toggleExpenseFilter("salary", "")}
+        >
           <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-amber-100 text-amber-700 mb-3">
             <Landmark className="h-4.5 w-4.5" strokeWidth={2} />
           </div>
           <div className="text-2xl font-semibold text-ink-900 tabular-nums">{money(finance?.salaryTotal || 0)}</div>
           <div className="text-xs text-ink-400 mt-1">Зарплата сотрудникам, сум</div>
-        </div>
+        </button>
         <div className="card">
           <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600 mb-3">
             <PiggyBank className="h-4.5 w-4.5" strokeWidth={2} />
@@ -261,20 +377,16 @@ export default function IncomePage() {
           <div className="text-2xl font-semibold text-ink-900 tabular-nums">{money(finance?.balance || 0)}</div>
           <div className="text-xs text-ink-400 mt-1">Остаток, сум</div>
         </div>
-        <div className="card">
-          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-brand-50 text-brand-600 mb-3">
-            <Banknote className="h-4.5 w-4.5" strokeWidth={2} />
-          </div>
-          <div className="text-2xl font-semibold text-ink-900 tabular-nums">{money(finance?.kassa || 0)}</div>
-          <div className="text-xs text-ink-400 mt-1">Касса (наличные), сум</div>
-        </div>
-        <div className="card">
+        <button
+          className={`card text-left transition-colors ${expenseFilter.type === "owner_withdrawal" && expenseFilter.method === "cash" ? "ring-2 ring-brand-600" : "hover:border-brand-300"}`}
+          onClick={() => toggleExpenseFilter("owner_withdrawal", "cash")}
+        >
           <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-rose-50 text-rose-600 mb-3">
             <Banknote className="h-4.5 w-4.5" strokeWidth={2} />
           </div>
           <div className="text-2xl font-semibold text-ink-900 tabular-nums">{money(finance?.ownerCashWithdrawn || 0)}</div>
           <div className="text-xs text-ink-400 mt-1">Владелец забрал наличными, сум</div>
-        </div>
+        </button>
       </div>
 
       {finance && finance.pendingExpensesCount > 0 && (
@@ -289,13 +401,28 @@ export default function IncomePage() {
       )}
 
       <div className="card mb-8 overflow-x-auto">
-        <h2 className="card-title mb-3">Расходы</h2>
+        <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+          <h2 className="card-title mb-0">Расходы</h2>
+          {hasExpenseFilter && (
+            <button
+              className="btn-secondary btn-sm"
+              onClick={() => setExpenseFilter({ type: "", method: "" })}
+            >
+              <XCircle className="h-3.5 w-3.5" strokeWidth={2} />
+              Сбросить фильтр ({expenseTypeLabels[expenseFilter.type] || methodLabels[expenseFilter.method] || "активен"})
+            </button>
+          )}
+        </div>
         {expenses.length === 0 ? (
           <div className="empty-state">
             <div className="empty-state-icon">
               <MinusCircle className="h-5 w-5" strokeWidth={1.8} />
             </div>
             <p className="text-sm text-ink-500">Расходов ещё не было.</p>
+          </div>
+        ) : filteredExpenses.length === 0 ? (
+          <div className="empty-state">
+            <p className="text-sm text-ink-500">По этому фильтру расходов не найдено.</p>
           </div>
         ) : (
           <table className="table-base">
@@ -312,7 +439,7 @@ export default function IncomePage() {
               </tr>
             </thead>
             <tbody>
-              {expenses.map((exp) => {
+              {filteredExpenses.map((exp) => {
                 const MethodIcon = methodIcons[exp.method] || Banknote;
                 return (
                   <tr key={exp._id}>
@@ -343,24 +470,35 @@ export default function IncomePage() {
                       </span>
                     </td>
                     <td className="whitespace-nowrap">
-                      {exp.status === "pending" && isOwner && (
-                        <div className="flex justify-end gap-1.5">
-                          <button
-                            className="btn-icon btn-secondary"
-                            title="Подтвердить"
-                            onClick={() => handleExpenseStatus(exp._id, "approved")}
-                          >
-                            <Check className="h-3.5 w-3.5" strokeWidth={2.25} />
-                          </button>
-                          <button
-                            className="btn-icon btn-danger-ghost"
-                            title="Отклонить"
-                            onClick={() => handleExpenseStatus(exp._id, "rejected")}
-                          >
-                            <X className="h-3.5 w-3.5" strokeWidth={2.25} />
-                          </button>
-                        </div>
-                      )}
+                      <div className="flex justify-end gap-1.5">
+                        {exp.status === "pending" && isOwner && (
+                          <>
+                            <button
+                              className="btn-icon btn-secondary"
+                              title="Подтвердить"
+                              onClick={() => handleExpenseStatus(exp._id, "approved")}
+                            >
+                              <Check className="h-3.5 w-3.5" strokeWidth={2.25} />
+                            </button>
+                            <button
+                              className="btn-icon btn-danger-ghost"
+                              title="Отклонить"
+                              onClick={() => handleExpenseStatus(exp._id, "rejected")}
+                            >
+                              <X className="h-3.5 w-3.5" strokeWidth={2.25} />
+                            </button>
+                          </>
+                        )}
+                        {/* Полное редактирование — независимо от способа оплаты и статуса
+                            (см. app/api/expenses/[id]/route.ts). */}
+                        <button
+                          className="btn-icon btn-secondary"
+                          title="Изменить"
+                          onClick={() => setEditingExpense(exp)}
+                        >
+                          <Pencil className="h-3.5 w-3.5" strokeWidth={2} />
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 );
@@ -397,7 +535,7 @@ export default function IncomePage() {
         </div>
       </div>
 
-      <PaymentForm debts={debts} onSaved={refreshAll} />
+      <PaymentForm debts={debts} containers={containers} onSaved={refreshAll} />
 
       <div className="card mb-6 mt-6">
         <div className="flex flex-wrap items-end justify-between gap-3 mb-4">
@@ -553,13 +691,89 @@ export default function IncomePage() {
       </div>
 
       <div className="card overflow-x-auto">
-        <h2 className="card-title mb-3">Последние платежи</h2>
+        <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+          <h2 className="card-title mb-0">Последние платежи</h2>
+          {hasIncomeFilter && (
+            <button
+              className="btn-secondary btn-sm"
+              onClick={() => setIncomeFilter({ method: "", containerId: "", cellNumber: "", search: "" })}
+            >
+              <XCircle className="h-3.5 w-3.5" strokeWidth={2} />
+              Сбросить фильтр
+            </button>
+          )}
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
+          <div>
+            <label className="label">Способ оплаты</label>
+            <select
+              className="input"
+              value={incomeFilter.method}
+              onChange={(e) => setIncomeFilter({ ...incomeFilter, method: e.target.value })}
+            >
+              <option value="">Все</option>
+              {SELECTABLE_METHODS.map((m) => (
+                <option key={m.value} value={m.value}>
+                  {m.label}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="label">Контейнер (бокс)</label>
+            <select
+              className="input"
+              value={incomeFilter.containerId}
+              onChange={(e) => setIncomeFilter({ ...incomeFilter, containerId: e.target.value })}
+            >
+              <option value="">Все</option>
+              {containers.map((c) => (
+                <option key={c._id} value={c._id}>
+                  {c.name}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="label">Камера</label>
+            <select
+              className="input"
+              value={incomeFilter.cellNumber}
+              onChange={(e) => setIncomeFilter({ ...incomeFilter, cellNumber: e.target.value })}
+            >
+              <option value="">Все</option>
+              {filterCellOptions.map((n) => (
+                <option key={n} value={n}>
+                  Камера {n}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="label">Поиск по имени владельца</label>
+            <div className="input-icon-wrap">
+              <Search className="input-icon h-4 w-4" strokeWidth={2} />
+              <input
+                className="input"
+                placeholder="ФИО/наименование"
+                value={incomeFilter.search}
+                onChange={(e) => setIncomeFilter({ ...incomeFilter, search: e.target.value })}
+              />
+            </div>
+          </div>
+        </div>
+
         {incomes.length === 0 ? (
           <div className="empty-state">
             <div className="empty-state-icon">
               <Receipt className="h-5 w-5" strokeWidth={1.8} />
             </div>
             <p className="text-sm text-ink-500">Платежей ещё не было.</p>
+          </div>
+        ) : filteredIncomes.length === 0 ? (
+          <div className="empty-state">
+            <p className="text-sm text-ink-500">По этому фильтру платежей не найдено.</p>
           </div>
         ) : (
           <table className="table-base">
@@ -568,14 +782,16 @@ export default function IncomePage() {
                 <th>Дата</th>
                 <th>Владелец</th>
                 <th>Контейнер</th>
+                <th>Камера</th>
                 <th>Сумма</th>
                 <th>Способ</th>
                 <th>Кто внёс</th>
                 <th>Примечание</th>
+                <th></th>
               </tr>
             </thead>
             <tbody>
-              {incomes.map((inc) => {
+              {filteredIncomes.map((inc) => {
                 const MethodIcon = methodIcons[inc.method] || Banknote;
                 return (
                   <tr key={inc._id}>
@@ -589,6 +805,7 @@ export default function IncomePage() {
                       </Link>
                     </td>
                     <td>{typeof inc.containerId === "object" ? inc.containerId.name : inc.containerId}</td>
+                    <td className="text-ink-600">{inc.cellNumber ?? "—"}</td>
                     <td className="whitespace-nowrap font-medium text-ink-800 tabular-nums">{money(inc.amount)} сум</td>
                     <td>
                       <span className="inline-flex items-center gap-1.5 text-ink-600">
@@ -598,6 +815,17 @@ export default function IncomePage() {
                     </td>
                     <td className="text-ink-500">{inc.recordedBy}</td>
                     <td className="text-ink-400">{inc.note || "—"}</td>
+                    <td className="whitespace-nowrap">
+                      {/* Полное редактирование — независимо от способа оплаты (см.
+                          app/api/income/[id]/route.ts). */}
+                      <button
+                        className="btn-icon btn-secondary"
+                        title="Изменить"
+                        onClick={() => setEditingIncome(inc)}
+                      >
+                        <Pencil className="h-3.5 w-3.5" strokeWidth={2} />
+                      </button>
+                    </td>
                   </tr>
                 );
               })}
@@ -655,11 +883,40 @@ export default function IncomePage() {
           }}
         />
       )}
+      {editingIncome && (
+        <IncomeEditModal
+          income={editingIncome}
+          containers={containers}
+          onClose={() => setEditingIncome(null)}
+          onSaved={async () => {
+            setEditingIncome(null);
+            await refreshAll();
+          }}
+        />
+      )}
+      {editingExpense && (
+        <ExpenseEditModal
+          expense={editingExpense}
+          onClose={() => setEditingExpense(null)}
+          onSaved={async () => {
+            setEditingExpense(null);
+            await refreshAll();
+          }}
+        />
+      )}
     </div>
   );
 }
 
-function PaymentForm({ debts, onSaved }: { debts: OwnerContainerDebt[]; onSaved: () => void }) {
+function PaymentForm({
+  debts,
+  containers,
+  onSaved,
+}: {
+  debts: OwnerContainerDebt[];
+  containers: ContainerRef[];
+  onSaved: () => void;
+}) {
   const owners = useMemo(() => {
     const map = new Map<string, { ownerKey: string; ownerType: OwnerType; ownerLabel: string }>();
     for (const d of debts) {
@@ -808,7 +1065,7 @@ function PaymentForm({ debts, onSaved }: { debts: OwnerContainerDebt[]; onSaved:
               <label className="label">Камера (необязательно)</label>
               <select className="input" value={cellNumber} onChange={(e) => setCellNumber(e.target.value)}>
                 <option value="">За контейнер в целом</option>
-                {[1, 2, 3, 4, 5, 6, 7, 8].map((n) => (
+                {cellNumbersForCount(containers.find((c) => c._id === containerId)?.cellCount || DEFAULT_CELL_COUNT).map((n) => (
                   <option key={n} value={n}>
                     Камера {n}
                   </option>
@@ -820,10 +1077,11 @@ function PaymentForm({ debts, onSaved }: { debts: OwnerContainerDebt[]; onSaved:
             <div>
               <label className="label">Способ оплаты</label>
               <select className="input" value={method} onChange={(e) => setMethod(e.target.value)}>
-                <option value="cash">Наличные</option>
-                <option value="terminal">Терминал</option>
-                <option value="transfer">Перечисление (счёт-банк)</option>
-                <option value="card">Карта (счёт-карта)</option>
+                {SELECTABLE_METHODS.map((m) => (
+                  <option key={m.value} value={m.value}>
+                    {m.label}
+                  </option>
+                ))}
               </select>
             </div>
             <div>
@@ -1021,8 +1279,282 @@ function GeneralIncomeModal({ onClose, onSaved }: { onClose: () => void; onSaved
             <div className="flex-1">
               <label className="label">Способ</label>
               <select className="input" value={method} onChange={(e) => setMethod(e.target.value)}>
+                {SELECTABLE_METHODS.map((m) => (
+                  <option key={m.value} value={m.value}>
+                    {m.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+          <div>
+            <label className="label">Примечание</label>
+            <input className="input" value={note} onChange={(e) => setNote(e.target.value)} />
+          </div>
+          {error && (
+            <div className="alert-danger">
+              <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" strokeWidth={2} />
+              <span>{error}</span>
+            </div>
+          )}
+          <div className="flex gap-2 pt-1">
+            <button className="btn-primary" disabled={busy}>
+              {busy ? "Сохранение…" : "Записать приход"}
+            </button>
+            <button type="button" className="btn-secondary" onClick={onClose}>
+              Отмена
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Полное редактирование уже внесённого платежа — раньше платёж можно было только создать.
+ * Доступно независимо от способа оплаты (см. app/api/income/[id]/route.ts). ownerKey/ownerType
+ * не редактируются здесь — это идентификатор арендатора (см. lib/ownerKey.ts), для исправления
+ * ФИО/ИНН/паспорта и т.п. служит редактирование карточки на странице "Арендаторы".
+ */
+function IncomeEditModal({
+  income,
+  containers,
+  onClose,
+  onSaved,
+}: {
+  income: IncomeEntry;
+  containers: ContainerRef[];
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const initialContainerId = typeof income.containerId === "object" ? income.containerId._id : income.containerId;
+  const [ownerLabel, setOwnerLabel] = useState(income.ownerLabel);
+  const [containerId, setContainerId] = useState(initialContainerId);
+  const [cellNumber, setCellNumber] = useState(income.cellNumber ? String(income.cellNumber) : "");
+  const [amount, setAmount] = useState(String(income.amount));
+  const [method, setMethod] = useState(income.method);
+  const [paidAt, setPaidAt] = useState(income.paidAt.slice(0, 10));
+  const [note, setNote] = useState(income.note || "");
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const selectedContainer = containers.find((c) => c._id === containerId);
+  const cellOptions = cellNumbersForCount(selectedContainer?.cellCount || DEFAULT_CELL_COUNT);
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setError(null);
+    setBusy(true);
+    try {
+      const res = await fetch(`/api/income/${income._id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ownerLabel,
+          containerId,
+          cellNumber: cellNumber ? Number(cellNumber) : null,
+          amount,
+          method,
+          paidAt,
+          note,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setError(data.error || "Ошибка сохранения");
+        return;
+      }
+      onSaved();
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="modal-backdrop" onClick={onClose}>
+      <div className="modal-panel max-w-md" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="card-title flex items-center gap-2">
+            <Pencil className="h-4 w-4 text-brand-600" strokeWidth={2.1} />
+            Изменить платёж
+          </h3>
+          <button className="btn-icon btn-ghost" onClick={onClose} aria-label="Закрыть">
+            <X className="h-4 w-4" strokeWidth={2} />
+          </button>
+        </div>
+        <form onSubmit={handleSubmit} className="space-y-3">
+          <div>
+            <label className="label">Владелец груза</label>
+            <input className="input" value={ownerLabel} onChange={(e) => setOwnerLabel(e.target.value)} />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="label">Контейнер</label>
+              <select
+                className="input"
+                value={containerId}
+                onChange={(e) => {
+                  setContainerId(e.target.value);
+                  setCellNumber("");
+                }}
+              >
+                {containers.map((c) => (
+                  <option key={c._id} value={c._id}>
+                    {c.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="label">Камера (необязательно)</label>
+              <select className="input" value={cellNumber} onChange={(e) => setCellNumber(e.target.value)}>
+                <option value="">За контейнер в целом</option>
+                {cellOptions.map((n) => (
+                  <option key={n} value={n}>
+                    Камера {n}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="label">Сумма, сум</label>
+              <input
+                type="number"
+                inputMode="decimal"
+                className="input"
+                value={amount}
+                onChange={(e) => setAmount(e.target.value)}
+                required
+              />
+            </div>
+            <div>
+              <label className="label">Способ оплаты</label>
+              <select className="input" value={method} onChange={(e) => setMethod(e.target.value)}>
+                {SELECTABLE_METHODS.map((m) => (
+                  <option key={m.value} value={m.value}>
+                    {m.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+          <div>
+            <label className="label">Дата оплаты</label>
+            <input type="date" className="input" value={paidAt} onChange={(e) => setPaidAt(e.target.value)} />
+          </div>
+          <div>
+            <label className="label">Примечание</label>
+            <input className="input" value={note} onChange={(e) => setNote(e.target.value)} />
+          </div>
+          {error && (
+            <div className="alert-danger">
+              <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" strokeWidth={2} />
+              <span>{error}</span>
+            </div>
+          )}
+          <div className="flex gap-2 pt-1">
+            <button className="btn-primary" disabled={busy}>
+              {busy ? "Сохранение…" : "Сохранить"}
+            </button>
+            <button type="button" className="btn-secondary" onClick={onClose}>
+              Отмена
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Полное редактирование уже созданного расхода — независимо от способа оплаты и текущего
+ * статуса (см. app/api/expenses/[id]/route.ts). Отдельно от подтверждения/отклонения заявки
+ * (кнопки Check/X в таблице) — это правка самих полей.
+ */
+function ExpenseEditModal({
+  expense,
+  onClose,
+  onSaved,
+}: {
+  expense: ExpenseEntry;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const [type, setType] = useState<"owner_withdrawal" | "salary" | "other">(expense.type);
+  const [amount, setAmount] = useState(String(expense.amount));
+  const [method, setMethod] = useState(expense.method);
+  const [employeeName, setEmployeeName] = useState(expense.employeeName || "");
+  const [note, setNote] = useState(expense.note || "");
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setError(null);
+    setBusy(true);
+    try {
+      const res = await fetch(`/api/expenses/${expense._id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ type, amount, method, employeeName, note }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setError(data.error || "Ошибка сохранения");
+        return;
+      }
+      onSaved();
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="modal-backdrop" onClick={onClose}>
+      <div className="modal-panel max-w-md" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="card-title flex items-center gap-2">
+            <Pencil className="h-4 w-4 text-brand-600" strokeWidth={2.1} />
+            Изменить расход
+          </h3>
+          <button className="btn-icon btn-ghost" onClick={onClose} aria-label="Закрыть">
+            <X className="h-4 w-4" strokeWidth={2} />
+          </button>
+        </div>
+        <form onSubmit={handleSubmit} className="space-y-3">
+          <div>
+            <label className="label">Тип</label>
+            <select className="input" value={type} onChange={(e) => setType(e.target.value as typeof type)}>
+              <option value="owner_withdrawal">Снятие владельцем</option>
+              <option value="salary">Зарплата сотруднику</option>
+              <option value="other">Прочее</option>
+            </select>
+          </div>
+          {type === "salary" && (
+            <div>
+              <label className="label">Кому (имя сотрудника)</label>
+              <input className="input" value={employeeName} onChange={(e) => setEmployeeName(e.target.value)} />
+            </div>
+          )}
+          <div className="flex gap-3">
+            <div className="flex-1">
+              <label className="label">Сумма, сум</label>
+              <input
+                type="number"
+                inputMode="decimal"
+                className="input"
+                value={amount}
+                onChange={(e) => setAmount(e.target.value)}
+                required
+              />
+            </div>
+            <div className="flex-1">
+              <label className="label">Способ</label>
+              <select className="input" value={method} onChange={(e) => setMethod(e.target.value)}>
                 <option value="cash">Наличные</option>
-                <option value="terminal">Терминал</option>
                 <option value="transfer">Перечисление (счёт-банк)</option>
                 <option value="card">Карта (счёт-карта)</option>
               </select>
@@ -1040,7 +1572,7 @@ function GeneralIncomeModal({ onClose, onSaved }: { onClose: () => void; onSaved
           )}
           <div className="flex gap-2 pt-1">
             <button className="btn-primary" disabled={busy}>
-              {busy ? "Сохранение…" : "Записать приход"}
+              {busy ? "Сохранение…" : "Сохранить"}
             </button>
             <button type="button" className="btn-secondary" onClick={onClose}>
               Отмена

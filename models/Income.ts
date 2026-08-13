@@ -1,5 +1,6 @@
 import { Schema, model, models, Model, Types } from "mongoose";
 import type { GoodsOwnerType, PaymentMethod } from "./StorageRecord";
+import { MAX_CELL_COUNT } from "@/lib/cells";
 
 /**
  * Фактически полученная оплата за хранение — отдельная от StorageRecord сущность, потому
@@ -35,7 +36,7 @@ const IncomeSchema = new Schema<IIncome>({
   ownerKey: { type: String, required: true, index: true },
   ownerLabel: { type: String, required: true, trim: true },
   containerId: { type: Schema.Types.ObjectId, ref: "Container", required: true, index: true },
-  cellNumber: { type: Number, min: 1, max: 8 },
+  cellNumber: { type: Number, min: 1, max: MAX_CELL_COUNT },
   amount: { type: Number, required: true, min: 0 },
   method: { type: String, enum: ["cash", "terminal", "transfer", "card"], required: true },
   paidAt: { type: Date, required: true, default: Date.now },

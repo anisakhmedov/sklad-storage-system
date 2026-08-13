@@ -1,5 +1,6 @@
 import { Schema, model, models, Model, Types } from "mongoose";
 import type { GoodsOwnerType } from "./StorageRecord";
+import { MAX_CELL_COUNT } from "@/lib/cells";
 
 /**
  * Сгенерированный PDF-акт (приём/отдача товара, выдача/возврат инвентаря, выдача/приём ящиков)
@@ -55,7 +56,7 @@ const ActSchema = new Schema<IAct>({
   ownerType: { type: String, enum: ["individual", "company"], required: true },
   containerId: { type: Schema.Types.ObjectId, ref: "Container", required: true, index: true },
   containerName: { type: String, required: true, trim: true },
-  cellNumber: { type: Number, min: 1, max: 8 },
+  cellNumber: { type: Number, min: 1, max: MAX_CELL_COUNT },
   itemLabel: { type: String, required: true, trim: true },
   changedQuantityText: { type: String, required: true },
   totalQuantityText: { type: String },

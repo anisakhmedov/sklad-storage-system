@@ -20,12 +20,25 @@ import {
   FileText,
   PenLine,
   ClipboardCheck,
+  Landmark,
 } from "lucide-react";
 
 interface Container {
   id: string;
   name: string;
   description?: string;
+}
+
+interface Firm {
+  id: string;
+  name: string;
+  directorFullName: string;
+  directorShortName: string;
+  address: string;
+  bankBranch: string;
+  bankAccount: string;
+  inn: string;
+  bankCode: string;
 }
 
 type Unit = "tonne" | "kg" | "box" | "piece";
@@ -55,16 +68,21 @@ const emptyForm = {
   tariffRate: String(DEFAULT_TARIFF_RATES.per_day),
   // PNG data URL подписи клиента (см. components/miniapp/SignaturePad.tsx) — только для физлиц.
   clientSignaturePng: null as string | null,
+  // От чьего имени (какая фирма владельца) составляется договор/акт — см. models/Firm.ts.
+  // Пусто, если фирма ещё не заведена или единственная (тогда выбирается автоматически, без шага).
+  firmId: "",
 };
 
 // "Договор" и "Подпись" существуют только для физлиц (юрлицам договор не формируется —
 // см. lib/contract/generateContract.ts) — список шагов пересчитывается на каждый рендер по
 // текущему form.ownerType, поэтому переключение типа арендатора на шаге "owner" всегда
-// корректно меняет хвост списка (индексы 0–4 стабильны для обоих типов).
-type StepKind = "container" | "cell" | "product" | "owner" | "tariff" | "contract" | "signature" | "review";
+// корректно меняет хвост списка. Шаг "firm" появляется, только если у владельца заведено
+// ≥2 фирм — при 0 фирм используется DEFAULT_FIRM, при 1 она выбирается автоматически.
+type StepKind = "container" | "cell" | "product" | "owner" | "tariff" | "firm" | "contract" | "signature" | "review";
 
-function stepsFor(ownerType: OwnerType): StepKind[] {
+function stepsFor(ownerType: OwnerType, firmsCount: number): StepKind[] {
   const steps: StepKind[] = ["container", "cell", "product", "owner", "tariff"];
+  if (firmsCount > 1) steps.push("firm");
   if (ownerType === "individual") steps.push("contract", "signature");
   steps.push("review");
   return steps;
@@ -76,6 +94,7 @@ const STEP_META: Record<StepKind, { label: string; icon: typeof Boxes }> = {
   product: { label: "Товар", icon: Package },
   owner: { label: "Владелец груза", icon: UserRound },
   tariff: { label: "Тариф", icon: Wallet },
+  firm: { label: "Фирма", icon: Landmark },
   contract: { label: "Договор", icon: FileText },
   signature: { label: "Подпись", icon: PenLine },
   review: { label: "Проверка", icon: ClipboardCheck },
@@ -85,20 +104,31 @@ export default function NewRecordWizard({ onExit }: { onExit: () => void }) {
   const [containers, setContainers] = useState<Container[]>([]);
   const [cells, setCells] = useState<CellGridCell[]>([]);
   const [cellsLoading, setCellsLoading] = useState(false);
+  const [firms, setFirms] = useState<Firm[]>([]);
   const [step, setStep] = useState(0);
   const [form, setForm] = useState(emptyForm);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [savedScreen, setSavedScreen] = useState(false);
 
-  const steps = stepsFor(form.ownerType);
+  const steps = stepsFor(form.ownerType, firms.length);
   const kind = steps[step];
 
   useEffect(() => {
     miniAppFetch("/api/miniapp/containers")
       .then((r) => r.json())
       .then((d) => setContainers(d.containers || []));
+    miniAppFetch("/api/miniapp/firms")
+      .then((r) => r.json())
+      .then((d) => setFirms(d.firms || []));
   }, []);
+
+  // Если фирма всего одна — выбираем её автоматически, без отдельного шага в мастере.
+  useEffect(() => {
+    if (firms.length === 1 && !form.firmId) {
+      setForm((f) => ({ ...f, firmId: firms[0].id }));
+    }
+  }, [firms, form.firmId]);
 
   // Сетка камер конкретного контейнера — подгружается сразу при выборе контейнера
   // (шаг "container"), чтобы шаг "cell" открывался уже с готовыми данными.
@@ -140,6 +170,7 @@ export default function NewRecordWizard({ onExit }: { onExit: () => void }) {
       }
     }
     if (kind === "tariff" && !form.tariffRate) return setError("Укажите ставку тарифа");
+    if (kind === "firm" && !form.firmId) return setError("Выберите, от какой фирмы оформляется договор");
     if (kind === "signature" && !form.clientSignaturePng) return setError("Клиент должен расписаться");
     setStep((s) => s + 1);
   }
@@ -184,6 +215,7 @@ export default function NewRecordWizard({ onExit }: { onExit: () => void }) {
           // Подпись обязательна для физлиц — проверено на предыдущем шаге ("signature") и
           // ещё раз на сервере (lib/validation.ts::storageRecordCreateSchema).
           ...(form.ownerType === "individual" ? { clientSignaturePng: form.clientSignaturePng } : {}),
+          firmId: form.firmId || undefined,
         }),
       });
       const data = await res.json();
@@ -238,6 +270,7 @@ export default function NewRecordWizard({ onExit }: { onExit: () => void }) {
   // см. app/api/miniapp/records/route.ts) — на превью показываем прочерк, итоговый PDF
   // получит настоящий номер. Вычисляется всегда (не только на шаге "contract") — дёшево,
   // а форма всё равно уже содержит все нужные поля к этому моменту мастера.
+  const selectedFirm = firms.find((f) => f.id === form.firmId);
   const contractPreviewMap = placeholderMap(
     buildContractFillData(
       {
@@ -252,6 +285,7 @@ export default function NewRecordWizard({ onExit }: { onExit: () => void }) {
           passportIssuedBy: form.ownerPassportIssuedBy,
         },
         createdAt: new Date(),
+        issuingFirm: selectedFirm,
       },
       containers.find((c) => c.id === form.containerId)?.name || "—",
       "—"
@@ -576,6 +610,34 @@ export default function NewRecordWizard({ onExit }: { onExit: () => void }) {
         </div>
       )}
 
+      {kind === "firm" && (
+        <div className="space-y-3">
+          <p className="text-xs text-ink-400 leading-relaxed">
+            От чьего имени (какая ваша фирма) оформляется договор/акт по этой записи.
+          </p>
+          <div className="space-y-2">
+            {firms.map((f) => (
+              <button
+                key={f.id}
+                type="button"
+                onClick={() => setForm({ ...form, firmId: f.id })}
+                className={`w-full text-left rounded-2xl border px-4 py-3.5 transition-colors ${
+                  form.firmId === f.id ? "border-brand-600 bg-brand-50" : "border-ink-200 bg-white hover:bg-ink-50"
+                }`}
+              >
+                <div className="flex items-center justify-between">
+                  <div>
+                    <div className="font-medium text-ink-900">{f.name}</div>
+                    <div className="text-xs text-ink-400 mt-0.5">Директор: {f.directorFullName}</div>
+                  </div>
+                  {form.firmId === f.id && <CheckCircle2 className="h-5 w-5 text-brand-600 shrink-0" strokeWidth={2} />}
+                </div>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
       {kind === "contract" && (
         <div className="space-y-3">
           <p className="text-xs text-ink-400 leading-relaxed">
@@ -605,6 +667,7 @@ export default function NewRecordWizard({ onExit }: { onExit: () => void }) {
           <div className="card">
             <Row label="Контейнер" value={containers.find((c) => c.id === form.containerId)?.name} />
             <Row label="Камера" value={form.cellNumber ? String(form.cellNumber) : undefined} />
+            {firms.length > 0 && <Row label="Фирма" value={selectedFirm?.name || "По умолчанию"} />}
             <Row label="Товар" value={form.productName} />
             <Row label="Количество" value={`${form.quantity} ${form.unit}`} />
             <Row label="Тип арендатора" value={form.ownerType === "individual" ? "Физ. лицо" : "Юр. лицо"} />

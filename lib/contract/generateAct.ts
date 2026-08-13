@@ -3,6 +3,7 @@ import path from "path";
 import { IStorageRecord } from "@/models/StorageRecord";
 import { UNIT_LABELS } from "@/lib/labels";
 import { ownerLabelOf } from "@/lib/ownerKey";
+import { DEFAULT_FIRM } from "./firmDefaults";
 
 /**
  * PDF-рендерер актов — общий для трёх видов операций (см. models/Act.ts::ActKind):
@@ -73,10 +74,13 @@ export interface ActFillData {
   contractNumber?: string;
   actNumber?: string;
   dateText: string;
+  /** Фирма-подписант ("Сақловчи") — см. lib/contract/firmDefaults.ts. По умолчанию
+   * DEFAULT_FIRM (акты по инвентарю/ящикам не привязаны к конкретной фирме записи). */
+  firmName: string;
 }
 
 export function buildActFillData(
-  record: Pick<IStorageRecord, "goodsOwner" | "productName" | "unit" | "contractNumber">,
+  record: Pick<IStorageRecord, "goodsOwner" | "productName" | "unit" | "contractNumber" | "issuingFirm">,
   containerName: string,
   delta: number,
   totalAfter: number
@@ -92,6 +96,7 @@ export function buildActFillData(
     totalQuantityText: `${numberFmt.format(totalAfter)} ${unitLabel}`,
     contractNumber: record.contractNumber,
     dateText: new Date().toLocaleDateString("ru-RU"),
+    firmName: record.issuingFirm?.name || DEFAULT_FIRM.name,
   };
 }
 
@@ -101,10 +106,10 @@ export function renderActPdf(data: ActFillData): Promise<Buffer> {
   const titleUz = labels.titleUz(isGiven);
   const titleRu = labels.titleRu(isGiven);
   const introText = isGiven
-    ? `«INTURIST MAROQAND» МЧЖ (Сақловчи) томонидан «${data.ownerLabel}» (Мижоз) га тегишли қуйидаги ${labels.subjectWordUz} қабул қилиб олинди / ` +
-      `ООО «INTURIST MAROQAND» (Хранитель) приняло от «${data.ownerLabel}» (Клиент) следующий ${labels.subjectWordRu}:`
-    : `«INTURIST MAROQAND» МЧЖ (Сақловчи) томонидан «${data.ownerLabel}» (Мижоз)га қуйидаги ${labels.subjectWordUz} қайтариб берилди / ` +
-      `ООО «INTURIST MAROQAND» (Хранитель) выдало (вернуло) «${data.ownerLabel}» (Клиент) следующий ${labels.subjectWordRu}:`;
+    ? `«${data.firmName}» (Сақловчи) томонидан «${data.ownerLabel}» (Мижоз) га тегишли қуйидаги ${labels.subjectWordUz} қабул қилиб олинди / ` +
+      `«${data.firmName}» (Хранитель) приняло от «${data.ownerLabel}» (Клиент) следующий ${labels.subjectWordRu}:`
+    : `«${data.firmName}» (Сақловчи) томонидан «${data.ownerLabel}» (Мижоз)га қуйидаги ${labels.subjectWordUz} қайтариб берилди / ` +
+      `«${data.firmName}» (Хранитель) выдало (вернуло) «${data.ownerLabel}» (Клиент) следующий ${labels.subjectWordRu}:`;
   const quantityRowLabel = labels.quantityRowLabel(isGiven);
 
   return new Promise((resolve, reject) => {
@@ -112,7 +117,7 @@ export function renderActPdf(data: ActFillData): Promise<Buffer> {
       const doc = new PDFDocument({
         size: "A4",
         margins: { top: PAGE_MARGIN, bottom: PAGE_MARGIN, left: PAGE_MARGIN, right: PAGE_MARGIN },
-        info: { Title: titleRu, Author: "INTURIST MAROQAND" },
+        info: { Title: titleRu, Author: data.firmName },
       });
 
       const chunks: Buffer[] = [];
@@ -173,7 +178,7 @@ export function renderActPdf(data: ActFillData): Promise<Buffer> {
       const sigY = doc.y;
       doc.font("bold").fontSize(10).text("Сақловчи", leftX, sigY, { width: colWidth });
       doc.font("body").fontSize(9.5);
-      doc.text("INTURIST MAROQAND МЧЖ", leftX, doc.y, { width: colWidth });
+      doc.text(data.firmName, leftX, doc.y, { width: colWidth });
       doc.text("________________________", leftX, doc.y, { width: colWidth });
 
       doc.font("bold").fontSize(10).text("Мижоз", rightX, sigY, { width: colWidth });

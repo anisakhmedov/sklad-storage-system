@@ -3,11 +3,13 @@
 import { useEffect, useState, useCallback } from "react";
 import { Boxes, PackagePlus, Pencil, Trash2, AlertCircle, X } from "lucide-react";
 import ContainerCellsGrid from "@/components/dashboard/ContainerCellsGrid";
+import { DEFAULT_CELL_COUNT, MAX_CELL_COUNT } from "@/lib/cells";
 
 interface ContainerRow {
   _id: string;
   name: string;
   description?: string;
+  cellCount?: number;
   createdBy: string;
   createdAt: string;
 }
@@ -17,6 +19,7 @@ export default function ContainersPage() {
   const [loading, setLoading] = useState(true);
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
+  const [cellCount, setCellCount] = useState(String(DEFAULT_CELL_COUNT));
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [editing, setEditing] = useState<ContainerRow | null>(null);
@@ -41,7 +44,7 @@ export default function ContainersPage() {
       const res = await fetch("/api/containers", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, description }),
+        body: JSON.stringify({ name, description, cellCount }),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -50,6 +53,7 @@ export default function ContainersPage() {
       }
       setName("");
       setDescription("");
+      setCellCount(String(DEFAULT_CELL_COUNT));
       await load();
     } finally {
       setBusy(false);
@@ -65,7 +69,7 @@ export default function ContainersPage() {
       const res = await fetch(`/api/containers/${editing._id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: editing.name, description: editing.description }),
+        body: JSON.stringify({ name: editing.name, description: editing.description, cellCount: editing.cellCount }),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -120,6 +124,18 @@ export default function ContainersPage() {
               rows={2}
             />
           </div>
+          <div>
+            <label className="label">Количество камер</label>
+            <input
+              type="number"
+              className="input"
+              min={1}
+              max={MAX_CELL_COUNT}
+              value={cellCount}
+              onChange={(e) => setCellCount(e.target.value)}
+            />
+            <p className="text-xs text-ink-400 mt-1">По умолчанию {DEFAULT_CELL_COUNT} — можно изменить позже.</p>
+          </div>
           {error && !editing && (
             <div className="alert-danger">
               <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" strokeWidth={2} />
@@ -153,6 +169,7 @@ export default function ContainersPage() {
               <tr>
                 <th>Название</th>
                 <th>Описание</th>
+                <th>Камер</th>
                 <th>Создал</th>
                 <th></th>
               </tr>
@@ -169,6 +186,7 @@ export default function ContainersPage() {
                     </div>
                   </td>
                   <td className="max-w-xs truncate text-ink-500">{c.description || "—"}</td>
+                  <td className="tabular-nums text-ink-500">{c.cellCount || DEFAULT_CELL_COUNT}</td>
                   <td className="text-ink-500">{c.createdBy}</td>
                   <td className="whitespace-nowrap">
                     <div className="flex justify-end gap-2">
@@ -221,6 +239,20 @@ export default function ContainersPage() {
                   value={editing.description || ""}
                   onChange={(e) => setEditing({ ...editing, description: e.target.value })}
                 />
+              </div>
+              <div>
+                <label className="label">Количество камер</label>
+                <input
+                  type="number"
+                  className="input"
+                  min={1}
+                  max={MAX_CELL_COUNT}
+                  value={editing.cellCount ?? DEFAULT_CELL_COUNT}
+                  onChange={(e) => setEditing({ ...editing, cellCount: Number(e.target.value) })}
+                />
+                <p className="text-xs text-ink-400 mt-1">
+                  Уменьшение не удаляет уже существующие записи в камерах за пределами нового числа.
+                </p>
               </div>
               {error && (
                 <div className="alert-danger">

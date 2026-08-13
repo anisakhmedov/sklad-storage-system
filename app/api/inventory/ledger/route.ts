@@ -13,11 +13,14 @@ import { createAndSaveAct } from "@/lib/contract/actPersistence";
 /**
  * Приход/уход инвентаря по каждому контейнеру и камере — страница app/dashboard/inventory.
  * "given" (клиент забрал) / "returned" (клиент вернул на склад) фильтруются по контейнеру и
- * камере, см. models/InventoryLedgerEntry.ts.
+ * камере, см. models/InventoryLedgerEntry.ts. Владелец-only — как и весь остальной инвентарь
+ * (см. models/InventoryItem.ts, app/api/inventory/route.ts), чтобы доверенное лицо не видело
+ * движения инвентаря через этот роут, раз сам список позиций ему не отдаётся.
  */
 export async function GET(req: NextRequest) {
   const user = await requireWebUser();
   if (!user) return jsonError("Не авторизован", 401);
+  if (user.role !== "owner") return jsonError("Доступно только владельцу", 403);
 
   await connectDB();
   const sp = req.nextUrl.searchParams;

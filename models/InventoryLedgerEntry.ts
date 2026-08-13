@@ -1,5 +1,6 @@
 import { Schema, model, models, Model, Types } from "mongoose";
 import type { GoodsOwnerType } from "./StorageRecord";
+import { MAX_CELL_COUNT } from "@/lib/cells";
 
 /**
  * Учёт складского инвентаря (models/InventoryItem.ts — поддоны/ящики/рохля/кара и т.п.),
@@ -42,7 +43,7 @@ const InventoryLedgerEntrySchema = new Schema<IInventoryLedgerEntry>({
   ownerType: { type: String, enum: ["individual", "company"], required: true },
   ownerLabel: { type: String, required: true, trim: true },
   containerId: { type: Schema.Types.ObjectId, ref: "Container", required: true, index: true },
-  cellNumber: { type: Number, min: 1, max: 8 },
+  cellNumber: { type: Number, min: 1, max: MAX_CELL_COUNT },
   direction: { type: String, enum: ["given", "returned"], required: true },
   quantity: { type: Number, required: true, min: 0 },
   actId: { type: Schema.Types.ObjectId, ref: "Act" },

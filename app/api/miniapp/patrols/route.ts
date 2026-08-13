@@ -20,9 +20,11 @@ export async function GET(req: NextRequest) {
     await connectDB();
     const allowed = allowedContainerIds(employee);
     const filter = allowed ? { _id: { $in: allowed } } : {};
-    const containers = await Container.find(filter).sort({ name: 1 }).select("name").lean();
+    const containers = await Container.find(filter).sort({ name: 1 }).select("name cellCount").lean();
 
-    const status = await getTodayPatrolStatus(containers.map((c) => ({ id: String(c._id), name: c.name })));
+    const status = await getTodayPatrolStatus(
+      containers.map((c) => ({ id: String(c._id), name: c.name, cellCount: c.cellCount }))
+    );
     return NextResponse.json({ status });
   } catch (err) {
     console.error("GET /api/miniapp/patrols:", err);

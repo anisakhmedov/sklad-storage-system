@@ -30,6 +30,7 @@ export async function POST(req: NextRequest) {
   const container = await Container.create({
     name: parsed.data.name,
     description: parsed.data.description,
+    cellCount: parsed.data.cellCount,
     createdBy: user.identifier,
   });
 
@@ -39,7 +40,7 @@ export async function POST(req: NextRequest) {
     action: "create",
     actorId: user.identifier,
     actorRole: user.role,
-    changes: { name: container.name, description: container.description },
+    changes: { name: container.name, description: container.description, cellCount: container.cellCount },
   });
 
   return NextResponse.json({ container });
