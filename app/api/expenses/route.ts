@@ -5,7 +5,8 @@ import { requireWebUser } from "@/lib/auth";
 import { jsonError, zodErrorResponse } from "@/lib/apiHelpers";
 import { expenseCreateSchema } from "@/lib/validation";
 import { logAudit } from "@/lib/audit";
-import { getCashBalance } from "@/lib/finance";
+import { getMethodBalance } from "@/lib/finance";
+import { PAYMENT_METHOD_LABELS } from "@/lib/labels";
 
 /** Список расходов (owner + trusted видят всё, включая pending-заявки от сотрудников). */
 export async function GET(req: NextRequest) {
@@ -34,13 +35,16 @@ export async function POST(req: NextRequest) {
 
   await connectDB();
 
-  // Расход наличными сразу становится "approved" (см. ниже), поэтому проверяем остаток
-  // кассы уже здесь — иначе она уйдёт в минус в тот же момент, что и создание.
-  if (parsed.data.method === "cash") {
-    const cashBalance = await getCashBalance();
-    if (parsed.data.amount > cashBalance) {
-      return jsonError(`Недостаточно наличных в кассе (доступно: ${cashBalance})`, 400);
-    }
+  // Расход сразу становится "approved" (см. ниже), поэтому проверяем остаток по способу оплаты
+  // уже здесь — иначе он уйдёт в минус в тот же момент, что и создание. Проверяется КАЖДЫЙ
+  // способ (наличные/перевод/карта), а не только касса — иначе через перевод или карту можно
+  // было списать сколько угодно без проверки остатка (см. lib/finance.ts::getMethodBalance).
+  const balance = await getMethodBalance(parsed.data.method);
+  if (parsed.data.amount > balance) {
+    return jsonError(
+      `Недостаточно средств (${PAYMENT_METHOD_LABELS[parsed.data.method]}) — доступно: ${Math.round(balance)}`,
+      400
+    );
   }
 
   const expense = await Expense.create({

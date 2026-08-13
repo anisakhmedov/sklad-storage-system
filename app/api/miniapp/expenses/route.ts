@@ -5,7 +5,8 @@ import { resolveEmployee } from "@/lib/miniAuth";
 import { jsonError, zodErrorResponse } from "@/lib/apiHelpers";
 import { expenseCreateSchema } from "@/lib/validation";
 import { logAudit } from "@/lib/audit";
-import { getCashBalance } from "@/lib/finance";
+import { getMethodBalance } from "@/lib/finance";
+import { PAYMENT_METHOD_LABELS } from "@/lib/labels";
 
 /**
  * Заявка сотрудника на расход (снятие/зарплата/прочее) — всегда создаётся со статусом
@@ -28,12 +29,15 @@ export async function POST(req: NextRequest) {
 
     // Заявка сотрудника остаётся "pending" и сама по себе не трогает остаток (см.
     // lib/finance.ts), но владелец попросил блокировать уже на этапе подачи заявки, а не
-    // ждать одобрения — чтобы сотрудник сразу видел, что наличных не хватает.
-    if (parsed.data.method === "cash") {
-      const cashBalance = await getCashBalance();
-      if (parsed.data.amount > cashBalance) {
-        return jsonError(`Недостаточно наличных в кассе (доступно: ${cashBalance})`, 400);
-      }
+    // ждать одобрения — чтобы сотрудник сразу видел, что средств не хватает. Проверяется
+    // остаток по ЛЮБОМУ способу оплаты (наличные/перевод/карта), не только касса — см.
+    // lib/finance.ts::getMethodBalance.
+    const balance = await getMethodBalance(parsed.data.method);
+    if (parsed.data.amount > balance) {
+      return jsonError(
+        `Недостаточно средств (${PAYMENT_METHOD_LABELS[parsed.data.method]}) — доступно: ${Math.round(balance)}`,
+        400
+      );
     }
 
     const expense = await Expense.create({

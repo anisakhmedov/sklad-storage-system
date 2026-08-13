@@ -5,7 +5,8 @@ import { requireWebUser } from "@/lib/auth";
 import { jsonError, zodErrorResponse } from "@/lib/apiHelpers";
 import { expenseStatusSchema, expenseUpdateSchema } from "@/lib/validation";
 import { logAudit } from "@/lib/audit";
-import { getCashBalance } from "@/lib/finance";
+import { getMethodBalance } from "@/lib/finance";
+import { PAYMENT_METHOD_LABELS } from "@/lib/labels";
 
 /**
  * PATCH обслуживает два разных сценария по форме тела запроса:
@@ -35,13 +36,17 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     if (!parsed.success) return zodErrorResponse(parsed.error);
     if (expense.status !== "pending") return jsonError("Эта заявка уже обработана", 409);
 
-    // Повторная проверка кассы прямо перед одобрением: заявка уже могла пройти проверку в
-    // момент подачи (см. app/api/miniapp/expenses/route.ts), но с тех пор кассу могла исчерпать
-    // другая одобренная заявка — не даём кассе уйти в минус.
-    if (parsed.data.status === "approved" && expense.method === "cash") {
-      const cashBalance = await getCashBalance();
-      if (expense.amount > cashBalance) {
-        return jsonError(`Недостаточно наличных в кассе для одобрения (доступно: ${cashBalance})`, 409);
+    // Повторная проверка остатка прямо перед одобрением: заявка уже могла пройти проверку в
+    // момент подачи (см. app/api/miniapp/expenses/route.ts), но с тех пор остаток мог исчерпать
+    // другая одобренная заявка — не даём остатку по этому способу оплаты уйти в минус. Проверяем
+    // ЛЮБОЙ способ (наличные/перевод/карта), не только кассу — см. lib/finance.ts::getMethodBalance.
+    if (parsed.data.status === "approved") {
+      const balance = await getMethodBalance(expense.method);
+      if (expense.amount > balance) {
+        return jsonError(
+          `Недостаточно средств (${PAYMENT_METHOD_LABELS[expense.method]}) для одобрения — доступно: ${Math.round(balance)}`,
+          409
+        );
       }
     }
 
@@ -68,17 +73,22 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   if (!parsed.success) return zodErrorResponse(parsed.error);
   const data = parsed.data;
 
-  // Если расход уже одобрен и (до или после правки) наличный — пересчитываем кассу, исключая
-  // текущий вклад ЭТОЙ записи, чтобы редактирование суммы/способа не увело кассу в минус.
+  // Если расход уже одобрен — пересчитываем остаток по способу оплаты ПОСЛЕ правки, исключая
+  // текущий вклад ЭТОЙ записи по её СТАРОМУ способу (если он тоже уже учтён в остатке), чтобы
+  // редактирование суммы/способа не увело остаток в минус. Проверяется любой способ (наличные/
+  // перевод/карта), не только касса — см. lib/finance.ts::getMethodBalance.
   const newMethod = data.method ?? expense.method;
-  const willBeApprovedCash = expense.status === "approved" && newMethod === "cash";
-  if (willBeApprovedCash) {
-    const wasApprovedCash = expense.status === "approved" && expense.method === "cash";
-    const cashBalance = await getCashBalance();
-    const available = cashBalance + (wasApprovedCash ? expense.amount : 0);
+  if (expense.status === "approved") {
+    const balance = await getMethodBalance(newMethod);
+    // Если способ не меняется, вклад этой же записи уже вычтен из остатка — возвращаем его,
+    // чтобы не сравнивать новую сумму с остатком, из которого сама эта запись уже вычтена.
+    const available = balance + (newMethod === expense.method ? expense.amount : 0);
     const newAmount = data.amount ?? expense.amount;
     if (newAmount > available) {
-      return jsonError(`Недостаточно наличных в кассе для такой правки (доступно: ${Math.round(available)})`, 409);
+      return jsonError(
+        `Недостаточно средств (${PAYMENT_METHOD_LABELS[newMethod]}) для такой правки — доступно: ${Math.round(available)}`,
+        409
+      );
     }
   }
 

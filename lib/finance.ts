@@ -28,25 +28,34 @@ export interface FinanceSummary {
 }
 
 /**
- * Наличные "на руках" прямо сейчас = вся наличная выручка (Income+GeneralIncome, method cash)
- * минус уже одобренные наличные расходы (Expense, method cash, status approved) — то же самое
- * значение, что FinanceSummary.kassa, но отдельным лёгким запросом (без остальных агрегаций
- * getFinanceSummary), т.к. вызывается на каждое создание/одобрение расхода — см.
- * app/api/expenses/route.ts, app/api/miniapp/expenses/route.ts, app/api/expenses/[id]/route.ts.
+ * Чистый остаток "на руках" прямо сейчас ПО КОНКРЕТНОМУ способу оплаты (наличные/перевод/карта)
+ * = весь приход этим способом (Income+GeneralIncome) минус уже одобренные расходы этим же
+ * способом (Expense, status approved) — обобщение прежней getCashBalance() (которая проверяла
+ * только "cash") на все способы: расход/снятие раньше можно было провести переводом или картой
+ * на любую сумму без проверки остатка — уходило в минус без предупреждения, ограничивалась
+ * только касса. Отдельным лёгким запросом (без остальных агрегаций getFinanceSummary), т.к.
+ * вызывается на каждое создание/одобрение/правку расхода — см. app/api/expenses/route.ts,
+ * app/api/miniapp/expenses/route.ts, app/api/expenses/[id]/route.ts.
  */
-export async function getCashBalance(): Promise<number> {
+export async function getMethodBalance(method: PaymentMethod): Promise<number> {
   await connectDB();
-  const [incomeCash, generalIncomeCash, expenseCash] = await Promise.all([
-    Income.aggregate([{ $match: { method: "cash" } }, { $group: { _id: null, total: { $sum: "$amount" } } }]),
-    GeneralIncome.aggregate([{ $match: { method: "cash" } }, { $group: { _id: null, total: { $sum: "$amount" } } }]),
+  const [incomeIn, generalIncomeIn, expenseOut] = await Promise.all([
+    Income.aggregate([{ $match: { method } }, { $group: { _id: null, total: { $sum: "$amount" } } }]),
+    GeneralIncome.aggregate([{ $match: { method } }, { $group: { _id: null, total: { $sum: "$amount" } } }]),
     Expense.aggregate([
-      { $match: { method: "cash", status: "approved" } },
+      { $match: { method, status: "approved" } },
       { $group: { _id: null, total: { $sum: "$amount" } } },
     ]),
   ]);
-  const cashIn = (incomeCash[0]?.total || 0) + (generalIncomeCash[0]?.total || 0);
-  const cashOut = expenseCash[0]?.total || 0;
-  return cashIn - cashOut;
+  const total = (incomeIn[0]?.total || 0) + (generalIncomeIn[0]?.total || 0);
+  const out = expenseOut[0]?.total || 0;
+  return total - out;
+}
+
+/** Частный случай getMethodBalance("cash") — оставлен под старым именем, т.к. касса (наличные
+ * "на руках") также используется как отдельное понятие в UI (FinanceSummary.kassa). */
+export async function getCashBalance(): Promise<number> {
+  return getMethodBalance("cash");
 }
 
 export interface IncomeBreakdownRow {
