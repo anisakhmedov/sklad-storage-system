@@ -262,6 +262,25 @@ export async function buildTenantMatrixWorkbook(sections: TenantMatrixSection[])
         ]);
       });
 
+      // "Итого по камере" — сумма каждого числового столбца по всем клиентам этой камеры (та же
+      // строка, что и на веб-странице, см. components/dashboard/TenantMatrixTable.tsx::sum).
+      const sumCol = (pick: (r: TenantMatrixRow) => number) => Math.round(cell.rows.reduce((s, r) => s + pick(r), 0));
+      const totalsRow = sheet.addRow([
+        "",
+        "Итого по камере",
+        sumCol((r) => r.balance),
+        sumCol((r) => r.paid),
+        ...section.goodsColumns.map((col) => sumCol((r) => r.goods[col]?.value || 0)),
+        "",
+        ...section.inventoryColumns.map((col) => sumCol((r) => r.inventory[col] || 0)),
+        ...(section.hasBoxesColumn ? [sumCol((r) => r.boxesOutstanding || 0)] : []),
+        sumCol((r) => r.balance),
+      ]);
+      totalsRow.font = { bold: true };
+      totalsRow.eachCell((c) => {
+        c.border = { top: { style: "thin" } };
+      });
+
       sheet.addRow([]); // разделитель между камерами
     }
 

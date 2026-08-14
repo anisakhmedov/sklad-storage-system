@@ -59,6 +59,13 @@ export default function InventorySection({
       setError("Укажите количество");
       return;
     }
+    if (direction === "returned") {
+      const outstanding = balances.find((b) => b.itemId === itemId)?.outstanding || 0;
+      if (qty > outstanding) {
+        setError(`У клиента сейчас только ${outstanding} — нельзя принять больше`);
+        return;
+      }
+    }
     setBusy(true);
     setError(null);
     try {

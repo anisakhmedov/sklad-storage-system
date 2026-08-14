@@ -237,6 +237,10 @@ function ItemRow({ item, onChanged }: { item: SummaryItem; onChanged: () => void
       setError("Укажите количество");
       return;
     }
+    if (sign === -1 && value > item.quantity) {
+      setError(`На хранении только ${item.quantity} ${UNIT_LABELS[item.unit]} — нельзя списать больше`);
+      return;
+    }
     setBusy(true);
     setError(null);
     try {

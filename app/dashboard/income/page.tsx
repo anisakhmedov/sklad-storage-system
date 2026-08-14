@@ -331,7 +331,7 @@ export default function IncomePage() {
 
   return (
     <div>
-      <div className="mb-7">
+      <div className="mb-7">  
         <p className="section-eyebrow">Финансы</p>
         <h1 className="section-title mt-1">Оплаты и задолженность</h1>
         <p className="text-sm text-ink-400 mt-2 max-w-2xl leading-relaxed">

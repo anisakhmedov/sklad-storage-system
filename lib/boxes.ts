@@ -62,3 +62,16 @@ export async function getAllBoxBalances(ownerKey?: string): Promise<BoxBalance[]
 export async function getBoxBalanceForOwner(ownerKey: string): Promise<BoxBalance[]> {
   return getAllBoxBalances(ownerKey);
 }
+
+/**
+ * Сколько ящиков сейчас реально на руках у этой связки владелец+контейнер — используется как
+ * верхняя граница для direction "returned" (см. app/api/boxes/route.ts,
+ * app/api/miniapp/boxes/[ownerKey]/route.ts): нельзя принять от клиента больше, чем ему когда-либо
+ * выдавали за вычетом уже возвращённого, иначе остаток уходит в минус без физического смысла.
+ * getAllBoxBalances() отфильтровывает нулевые остатки — здесь 0 означает и "никогда не выдавали",
+ * и "уже полностью вернул", что для этой проверки эквивалентно.
+ */
+export async function getBoxOutstanding(ownerKey: string, containerId: string): Promise<number> {
+  const balances = await getAllBoxBalances(ownerKey);
+  return balances.find((b) => b.containerId === containerId)?.outstanding || 0;
+}

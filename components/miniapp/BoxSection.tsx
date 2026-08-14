@@ -49,6 +49,10 @@ export default function BoxSection({
       setError("Укажите ставку за ящик");
       return;
     }
+    if (direction === "returned" && qty > (balance?.outstanding || 0)) {
+      setError(`У клиента сейчас только ${balance?.outstanding || 0} ящ. — нельзя принять больше`);
+      return;
+    }
     setBusy(true);
     setError(null);
     try {

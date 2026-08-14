@@ -6,7 +6,7 @@ import { resolveEmployee, employeeCanAccessContainer, allowedContainerIds } from
 import { jsonError, zodErrorResponse } from "@/lib/apiHelpers";
 import { boxEntryCreateSchema } from "@/lib/validation";
 import { logAudit } from "@/lib/audit";
-import { getBoxBalanceForOwner } from "@/lib/boxes";
+import { getBoxBalanceForOwner, getBoxOutstanding } from "@/lib/boxes";
 import { createAndSaveAct } from "@/lib/contract/actPersistence";
 import { sendActToEmployee } from "@/lib/telegramNotify";
 
@@ -51,6 +51,13 @@ export async function POST(req: NextRequest, { params }: { params: { ownerKey: s
     await connectDB();
     const container = await Container.findById(parsed.data.containerId);
     if (!container) return jsonError("Контейнер не найден", 404);
+
+    if (parsed.data.direction === "returned") {
+      const outstanding = await getBoxOutstanding(parsed.data.ownerKey, parsed.data.containerId);
+      if (parsed.data.quantity > outstanding) {
+        return jsonError(`У клиента сейчас только ${outstanding} ящ. — нельзя принять больше`, 400);
+      }
+    }
 
     const entry = await BoxLedgerEntry.create({
       ownerKey: parsed.data.ownerKey,

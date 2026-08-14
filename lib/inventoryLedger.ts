@@ -57,6 +57,22 @@ export async function getOutstandingByAllItems(): Promise<Map<string, number>> {
 }
 
 /**
+ * Сколько единиц позиции сейчас на руках у КОНКРЕТНОГО клиента в конкретном контейнере —
+ * верхняя граница для direction "returned" (см. app/api/inventory/ledger/route.ts,
+ * app/api/miniapp/inventory/route.ts): нельзя принять от клиента больше, чем у него реально
+ * есть, иначе остаток по связке уходит в минус без физического смысла (существовавшая раньше
+ * проверка была только на "given" — на весь свободный остаток склада, а не на "returned").
+ */
+export async function getInventoryOutstandingForOwner(
+  ownerKey: string,
+  itemId: string,
+  containerId: string
+): Promise<number> {
+  const balances = await getAllInventoryBalances(ownerKey);
+  return balances.find((b) => b.itemId === itemId && b.containerId === containerId)?.outstanding || 0;
+}
+
+/**
  * Баланс инвентаря по каждой связке клиент+позиция+контейнер (симметрично
  * lib/boxes.ts::getAllBoxBalances) — для страницы "Инвентарь" и профиля клиента.
  */

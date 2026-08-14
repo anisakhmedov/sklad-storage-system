@@ -49,6 +49,11 @@ interface InventoryItemRef {
 
 const money = (n: number) => (n ? Math.round(n).toLocaleString("ru-RU") : "");
 const num = (n: number | undefined) => (n ? n.toLocaleString("ru-RU") : "");
+/** Итоговая строка "Итого по камере" в конце каждой камера-таблицы (см. рендер ниже) — сумма
+ * колонки по всем строкам камеры. Для инвентаря/ящиков суммирование внутри ОДНОЙ камеры
+ * корректно (каждый клиент встречается в ней ровно один раз), хотя сама величина одинакова
+ * по всем камера-таблицам этого клиента в этом контейнере (см. lib/tenantMatrix.ts). */
+const sum = (rows: TenantMatrixRow[], pick: (r: TenantMatrixRow) => number) => rows.reduce((s, r) => s + pick(r), 0);
 
 type EditTarget =
   | {
@@ -332,6 +337,30 @@ export default function TenantMatrixTable({ isOwner }: { isOwner: boolean }) {
                         </tr>
                       ))}
                     </tbody>
+                    <tfoot>
+                      <tr className="font-semibold border-t-2 border-ink-200">
+                        <td colSpan={2} className="text-ink-700">
+                          Итого по камере
+                        </td>
+                        <td className="tabular-nums">{money(sum(cell.rows, (r) => r.balance))}</td>
+                        <td className="tabular-nums">{money(sum(cell.rows, (r) => r.paid))}</td>
+                        {section.goodsColumns.map((col) => (
+                          <td key={col} className="tabular-nums">
+                            {num(sum(cell.rows, (r) => r.goods[col]?.value || 0))}
+                          </td>
+                        ))}
+                        <td />
+                        {section.inventoryColumns.map((col) => (
+                          <td key={col} className="tabular-nums">
+                            {num(sum(cell.rows, (r) => r.inventory[col] || 0))}
+                          </td>
+                        ))}
+                        {section.hasBoxesColumn && (
+                          <td className="tabular-nums">{num(sum(cell.rows, (r) => r.boxesOutstanding || 0))}</td>
+                        )}
+                        <td className="tabular-nums">{money(sum(cell.rows, (r) => r.balance))}</td>
+                      </tr>
+                    </tfoot>
                   </table>
                 </div>
               ))}
@@ -484,6 +513,10 @@ function GoodsForm({
       const v = Number(delta);
       if (!delta || Number.isNaN(v) || v <= 0) {
         setError("Укажите количество");
+        return;
+      }
+      if (sign === -1 && v > target.currentValue) {
+        setError(`На хранении только ${num(target.currentValue) || 0} — нельзя списать больше`);
         return;
       }
       setBusy(true);
@@ -640,6 +673,10 @@ function InventoryForm({
         setError("Укажите количество");
         return;
       }
+      if (direction === "returned" && v > target.currentValue) {
+        setError(`У клиента сейчас только ${num(target.currentValue) || 0} — нельзя принять больше`);
+        return;
+      }
       setBusy(true);
       setError(null);
       try {
@@ -733,6 +770,10 @@ function BoxesForm({
     }
     if (!rate || Number.isNaN(rateNum) || rateNum < 0) {
       setError("Укажите ставку за ящик");
+      return;
+    }
+    if (direction === "returned" && v > target.currentValue) {
+      setError(`У клиента сейчас только ${num(target.currentValue) || 0} ящ. — нельзя принять больше`);
       return;
     }
     setBusy(true);

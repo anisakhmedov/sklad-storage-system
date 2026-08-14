@@ -7,7 +7,7 @@ import { resolveEmployee, employeeCanAccessContainer } from "@/lib/miniAuth";
 import { jsonError, zodErrorResponse } from "@/lib/apiHelpers";
 import { inventoryLedgerEntryCreateSchema } from "@/lib/validation";
 import { logAudit } from "@/lib/audit";
-import { getOutstandingByAllItems, itemAvailability } from "@/lib/inventoryLedger";
+import { getOutstandingByAllItems, itemAvailability, getInventoryOutstandingForOwner } from "@/lib/inventoryLedger";
 import { createAndSaveAct } from "@/lib/contract/actPersistence";
 import { sendActToEmployee } from "@/lib/telegramNotify";
 
@@ -70,6 +70,15 @@ export async function POST(req: NextRequest) {
       const { available } = itemAvailability(item.quantity, outstanding);
       if (parsed.data.quantity > available) {
         return jsonError(`Недостаточно свободного остатка (доступно: ${available})`, 400);
+      }
+    } else {
+      const ownerOutstanding = await getInventoryOutstandingForOwner(
+        parsed.data.ownerKey,
+        String(item._id),
+        parsed.data.containerId
+      );
+      if (parsed.data.quantity > ownerOutstanding) {
+        return jsonError(`У клиента сейчас только ${ownerOutstanding} — нельзя принять больше`, 400);
       }
     }
 
