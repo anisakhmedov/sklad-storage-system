@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useEffect, useState, useCallback, useMemo } from "react";
+import { Fragment, useEffect, useState, useCallback, useMemo, useRef } from "react";
 import Link from "next/link";
 import {
   Wallet,
@@ -107,6 +107,12 @@ interface ExpenseEntry {
   createdAt: string;
 }
 
+const expenseStatusLabels: Record<string, string> = {
+  approved: "Одобрено",
+  pending: "На одобрении",
+  rejected: "Отклонено",
+};
+
 const expenseTypeLabels: Record<string, string> = {
   owner_withdrawal: "Снятие владельцем",
   salary: "Зарплата",
@@ -153,6 +159,15 @@ export default function IncomePage() {
   const [editingIncome, setEditingIncome] = useState<IncomeEntry | null>(null);
   const [editingExpense, setEditingExpense] = useState<ExpenseEntry | null>(null);
 
+  // Таблицы стоят значительно ниже карточек кассы/расходов — сам по себе клик по карточке
+  // фильтрует их и без этого, но на длинной странице эффект легко не заметить (кажется, что
+  // "ничего не произошло"), поэтому клик ещё и докручивает нужную таблицу в видимую область.
+  const incomesTableRef = useRef<HTMLDivElement>(null);
+  const expensesTableRef = useRef<HTMLDivElement>(null);
+  function scrollToTable(ref: React.RefObject<HTMLDivElement>) {
+    ref.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
   // Фильтр таблицы "Последние платежи" — управляется и селектами в панели фильтра, и кликом
   // по карточкам кассы/П2П/банк.перевода/внешнего прихода (см. cardClickFilter ниже).
   const [incomeFilter, setIncomeFilter] = useState({
@@ -163,16 +178,31 @@ export default function IncomePage() {
     source: "",
   });
   // Фильтр таблицы "Расходы" — управляется кликом по карточкам Расходы/Зарплата/Владелец забрал.
-  const [expenseFilter, setExpenseFilter] = useState({ type: "", method: "" });
+  // status — карточки над таблицей (см. lib/finance.ts::getFinanceSummary) считают суммы ТОЛЬКО
+  // по одобренным расходам, поэтому клик по конкретной карточке (Зарплата/Владелец забрал)
+  // фильтрует и по status: "approved" — иначе в таблице вперемешку показывались бы ещё и
+  // заявки "на одобрении"/"отклонено", и сумма видимых строк не совпадала бы с цифrой на карточке.
+  const [expenseFilter, setExpenseFilter] = useState({ type: "", method: "", status: "" });
 
   function toggleIncomeMethodFilter(method: string) {
     setIncomeFilter((f) => ({ ...f, method: f.method === method ? "" : method }));
+    scrollToTable(incomesTableRef);
   }
   function toggleIncomeSourceFilter(source: string) {
     setIncomeFilter((f) => ({ ...f, source: f.source === source ? "" : source }));
+    scrollToTable(incomesTableRef);
   }
-  function toggleExpenseFilter(type: string, method: string) {
-    setExpenseFilter((f) => (f.type === type && f.method === method ? { type: "", method: "" } : { type, method }));
+  function toggleExpenseFilter(type: string, method: string, status = "") {
+    setExpenseFilter((f) =>
+      f.type === type && f.method === method && f.status === status
+        ? { type: "", method: "", status: "" }
+        : { type, method, status }
+    );
+    scrollToTable(expensesTableRef);
+  }
+  function resetExpenseFilter() {
+    setExpenseFilter({ type: "", method: "", status: "" });
+    scrollToTable(expensesTableRef);
   }
 
   const loadFinance = useCallback(async () => {
@@ -272,6 +302,7 @@ export default function IncomePage() {
     return expenses.filter((exp) => {
       if (expenseFilter.type && exp.type !== expenseFilter.type) return false;
       if (expenseFilter.method && exp.method !== expenseFilter.method) return false;
+      if (expenseFilter.status && exp.status !== expenseFilter.status) return false;
       return true;
     });
   }, [expenses, expenseFilter]);
@@ -283,7 +314,7 @@ export default function IncomePage() {
     incomeFilter.search ||
     incomeFilter.source
   );
-  const hasExpenseFilter = !!(expenseFilter.type || expenseFilter.method);
+  const hasExpenseFilter = !!(expenseFilter.type || expenseFilter.method || expenseFilter.status);
 
   // Диапазон камер для фильтра "Последние платежи" — камеры теперь редактируются индивидуально
   // на контейнер (см. models/Container.ts::cellCount): если выбран конкретный контейнер, берём
@@ -332,13 +363,20 @@ export default function IncomePage() {
         кликабельны: фильтруют таблицу платежей или расходов ниже именно под этот блок.
       </p>
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-        <div className="card">
+        <button
+          className="card text-left transition-colors hover:border-brand-300"
+          onClick={() => {
+            setIncomeFilter({ method: "", containerId: "", cellNumber: "", search: "", source: "" });
+            scrollToTable(incomesTableRef);
+          }}
+          title="Показать все платежи без фильтра"
+        >
           <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-brand-50 text-brand-600 mb-3">
             <TrendingUp className="h-4.5 w-4.5" strokeWidth={2} />
           </div>
           <div className="text-2xl font-semibold text-ink-900 tabular-nums">{money(finance?.totalIncome || 0)}</div>
           <div className="text-xs text-ink-400 mt-1">Общий приход, сум</div>
-        </div>
+        </button>
         <button
           className={`card text-left transition-colors ${incomeFilter.method === "cash" ? "ring-2 ring-brand-600" : "hover:border-brand-300"}`}
           onClick={() => toggleIncomeMethodFilter("cash")}
@@ -382,7 +420,7 @@ export default function IncomePage() {
         </button>
         <button
           className="card text-left transition-colors hover:border-brand-300"
-          onClick={() => setExpenseFilter({ type: "", method: "" })}
+          onClick={resetExpenseFilter}
           title="Показать все расходы без фильтра"
         >
           <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-rose-50 text-rose-600 mb-3">
@@ -393,7 +431,8 @@ export default function IncomePage() {
         </button>
         <button
           className={`card text-left transition-colors ${expenseFilter.type === "salary" ? "ring-2 ring-brand-600" : "hover:border-brand-300"}`}
-          onClick={() => toggleExpenseFilter("salary", "")}
+          onClick={() => toggleExpenseFilter("salary", "", "approved")}
+          title="Сумма — только по одобренным заявкам; клик покажет ровно эти строки"
         >
           <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-amber-100 text-amber-700 mb-3">
             <Landmark className="h-4.5 w-4.5" strokeWidth={2} />
@@ -410,7 +449,8 @@ export default function IncomePage() {
         </div>
         <button
           className={`card text-left transition-colors ${expenseFilter.type === "owner_withdrawal" && expenseFilter.method === "cash" ? "ring-2 ring-brand-600" : "hover:border-brand-300"}`}
-          onClick={() => toggleExpenseFilter("owner_withdrawal", "cash")}
+          onClick={() => toggleExpenseFilter("owner_withdrawal", "cash", "approved")}
+          title="Сумма — только по одобренным заявкам; клик покажет ровно эти строки"
         >
           <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-rose-50 text-rose-600 mb-3">
             <Banknote className="h-4.5 w-4.5" strokeWidth={2} />
@@ -431,16 +471,17 @@ export default function IncomePage() {
         </div>
       )}
 
-      <div className="card mb-8 overflow-x-auto">
+      <div ref={expensesTableRef} className="card mb-8 overflow-x-auto scroll-mt-4">
         <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
           <h2 className="card-title mb-0">Расходы</h2>
           {hasExpenseFilter && (
-            <button
-              className="btn-secondary btn-sm"
-              onClick={() => setExpenseFilter({ type: "", method: "" })}
-            >
+            <button className="btn-secondary btn-sm" onClick={resetExpenseFilter}>
               <XCircle className="h-3.5 w-3.5" strokeWidth={2} />
-              Сбросить фильтр ({expenseTypeLabels[expenseFilter.type] || methodLabels[expenseFilter.method] || "активен"})
+              Сбросить фильтр (
+              {[expenseTypeLabels[expenseFilter.type], methodLabels[expenseFilter.method], expenseStatusLabels[expenseFilter.status]]
+                .filter(Boolean)
+                .join(" · ") || "активен"}
+              )
             </button>
           )}
         </div>
@@ -721,7 +762,7 @@ export default function IncomePage() {
         )}
       </div>
 
-      <div className="card overflow-x-auto">
+      <div ref={incomesTableRef} className="card overflow-x-auto scroll-mt-4">
         <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
           <h2 className="card-title mb-0">Последние платежи</h2>
           {hasIncomeFilter && (
