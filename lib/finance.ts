@@ -20,6 +20,10 @@ export interface FinanceSummary {
   kassa: number;
   cardTotal: number; // Income + GeneralIncome, method "card" (П2П) — валовый приход
   transferTotal: number; // Income + GeneralIncome, method "transfer" (банковский счёт) — валовый приход
+  /** Только GeneralIncome ("Приход на холодильник", см. models/GeneralIncome.ts), все способы —
+   * отдельная карточка на странице "Оплаты", чтобы было видно, сколько из totalIncome не
+   * привязано к конкретному арендатору. */
+  externalIncomeTotal: number;
   totalExpenses: number; // Expense со status "approved"
   salaryTotal: number; // Expense type "salary" со status "approved"
   balance: number; // totalIncome - totalExpenses
@@ -129,12 +133,14 @@ export async function getFinanceSummary(): Promise<FinanceSummary> {
   let cashIncome = 0;
   let cardTotal = 0;
   let transferTotal = 0;
+  let externalIncomeTotal = 0;
   for (const row of [...incomeAgg, ...generalIncomeAgg]) {
     totalIncome += row.total;
     if (KASSA_METHODS.includes(row._id as PaymentMethod)) cashIncome += row.total;
     if (row._id === "card") cardTotal += row.total;
     if (row._id === "transfer") transferTotal += row.total;
   }
+  for (const row of generalIncomeAgg) externalIncomeTotal += row.total;
 
   let totalExpenses = 0;
   let salaryTotal = 0;
@@ -153,6 +159,7 @@ export async function getFinanceSummary(): Promise<FinanceSummary> {
     kassa: cashIncome - cashExpenses,
     cardTotal,
     transferTotal,
+    externalIncomeTotal,
     totalExpenses,
     salaryTotal,
     balance: totalIncome - totalExpenses,

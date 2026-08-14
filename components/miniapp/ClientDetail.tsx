@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { miniAppFetch } from "./telegram";
 import BoxSection from "./BoxSection";
+import InventorySection from "./InventorySection";
 import {
   ArrowLeft,
   UserRound,
@@ -49,6 +50,19 @@ interface BoxBalance {
   owedAmount: number;
 }
 
+interface InventoryBalance {
+  itemId: string;
+  itemName: string;
+  containerId: string;
+  outstanding: number;
+}
+
+interface InventoryItemRef {
+  _id: string;
+  name: string;
+  unit: string;
+}
+
 export default function ClientDetail({
   owner,
   onBack,
@@ -58,6 +72,8 @@ export default function ClientDetail({
 }) {
   const [summary, setSummary] = useState<Summary | null>(null);
   const [boxBalances, setBoxBalances] = useState<BoxBalance[]>([]);
+  const [inventoryBalances, setInventoryBalances] = useState<InventoryBalance[]>([]);
+  const [inventoryItems, setInventoryItems] = useState<InventoryItemRef[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -65,9 +81,11 @@ export default function ClientDetail({
     setLoading(true);
     setError(null);
     try {
-      const [summaryRes, boxesRes] = await Promise.all([
+      const [summaryRes, boxesRes, inventoryRes, inventoryItemsRes] = await Promise.all([
         miniAppFetch(`/api/miniapp/clients/${encodeURIComponent(owner.ownerKey)}`),
         miniAppFetch(`/api/miniapp/boxes/${encodeURIComponent(owner.ownerKey)}`),
+        miniAppFetch(`/api/miniapp/inventory/${encodeURIComponent(owner.ownerKey)}`),
+        miniAppFetch(`/api/miniapp/inventory`),
       ]);
       const data = await summaryRes.json().catch(() => ({}));
       if (!summaryRes.ok) {
@@ -77,6 +95,10 @@ export default function ClientDetail({
       setSummary(data.summary);
       const boxData = await boxesRes.json().catch(() => ({}));
       setBoxBalances(boxesRes.ok ? boxData.balances || [] : []);
+      const inventoryData = await inventoryRes.json().catch(() => ({}));
+      setInventoryBalances(inventoryRes.ok ? inventoryData.balances || [] : []);
+      const inventoryItemsData = await inventoryItemsRes.json().catch(() => ({}));
+      setInventoryItems(inventoryItemsRes.ok ? inventoryItemsData.items || [] : []);
     } catch {
       setError("Не удалось связаться с сервером");
     } finally {
@@ -139,6 +161,8 @@ export default function ClientDetail({
               container={c}
               owner={owner}
               boxBalance={boxBalances.find((b) => b.containerId === c.containerId)}
+              inventoryBalances={inventoryBalances.filter((b) => b.containerId === c.containerId)}
+              inventoryItems={inventoryItems}
               onChanged={load}
             />
           ))}
@@ -159,11 +183,15 @@ function ContainerCard({
   container,
   owner,
   boxBalance,
+  inventoryBalances,
+  inventoryItems,
   onChanged,
 }: {
   container: SummaryContainer;
   owner: { ownerKey: string; ownerLabel: string; ownerType: OwnerType };
   boxBalance: BoxBalance | undefined;
+  inventoryBalances: InventoryBalance[];
+  inventoryItems: InventoryItemRef[];
   onChanged: () => void;
 }) {
   return (
@@ -187,6 +215,13 @@ function ContainerCard({
       </div>
 
       <BoxSection owner={owner} containerId={container.containerId} balance={boxBalance} onChanged={onChanged} />
+      <InventorySection
+        owner={owner}
+        containerId={container.containerId}
+        balances={inventoryBalances}
+        items={inventoryItems}
+        onChanged={onChanged}
+      />
     </div>
   );
 }

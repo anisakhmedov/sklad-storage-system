@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { UserRound, Building2, Users, Boxes, Download } from "lucide-react";
+import { UserRound, Building2, Users, Boxes, Download, LayoutList, Table2 } from "lucide-react";
+import TenantMatrixTable from "@/components/dashboard/TenantMatrixTable";
 
 interface TenantRow {
   ownerKey: string;
@@ -23,12 +24,17 @@ export default function TenantsPage() {
   const [tenants, setTenants] = useState<TenantRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState("");
+  const [view, setView] = useState<"list" | "matrix">("list");
+  const [isOwner, setIsOwner] = useState(false);
 
   useEffect(() => {
     fetch("/api/tenants")
       .then((r) => r.json())
       .then((d) => setTenants(d.tenants || []))
       .finally(() => setLoading(false));
+    fetch("/api/auth/me")
+      .then((r) => r.json())
+      .then((d) => setIsOwner(d.user?.role === "owner"));
   }, []);
 
   const filtered = tenants.filter(
@@ -47,12 +53,38 @@ export default function TenantsPage() {
             Полная аналитика по каждому арендатору — онлайн и в Excel.
           </p>
         </div>
-        <a href="/api/tenants/export" className="btn-primary">
-          <Download className="h-4 w-4" strokeWidth={2.1} />
-          Скачать всех (Excel)
-        </a>
+        <div className="flex items-center gap-2">
+          <div className="inline-flex rounded-xl border border-ink-200 bg-white p-1">
+            <button
+              className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
+                view === "list" ? "bg-brand-50 text-brand-700" : "text-ink-500"
+              }`}
+              onClick={() => setView("list")}
+            >
+              <LayoutList className="h-3.5 w-3.5" strokeWidth={2} />
+              Список
+            </button>
+            <button
+              className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
+                view === "matrix" ? "bg-brand-50 text-brand-700" : "text-ink-500"
+              }`}
+              onClick={() => setView("matrix")}
+            >
+              <Table2 className="h-3.5 w-3.5" strokeWidth={2} />
+              Таблица по камерам
+            </button>
+          </div>
+          <a href="/api/tenants/export" className="btn-primary">
+            <Download className="h-4 w-4" strokeWidth={2.1} />
+            Скачать всех (Excel)
+          </a>
+        </div>
       </div>
 
+      {view === "matrix" ? (
+        <TenantMatrixTable isOwner={isOwner} />
+      ) : (
+        <>
       <div className="card mb-6 max-w-md">
         <input
           className="input"
@@ -126,6 +158,8 @@ export default function TenantsPage() {
           </table>
         )}
       </div>
+        </>
+      )}
     </div>
   );
 }

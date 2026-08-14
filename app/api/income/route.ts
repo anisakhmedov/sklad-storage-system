@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { connectDB } from "@/lib/db";
 import { Income } from "@/models/Income";
+import { GeneralIncome } from "@/models/GeneralIncome";
 import { Container } from "@/models/Container";
 import { StorageRecord } from "@/models/StorageRecord";
 import { requireWebUser } from "@/lib/auth";
@@ -26,7 +27,30 @@ export async function GET(req: NextRequest) {
     .populate("containerId", "name")
     .limit(200)
     .lean();
-  return NextResponse.json({ incomes });
+
+  // «Приход на холодильник» (GeneralIncome, см. models/GeneralIncome.ts) не привязан к
+  // арендатору/контейнеру — подмешиваем в общий список платежей только когда запрашивается
+  // весь список без фильтра по конкретному арендатору/контейнеру (страница "Оплаты"), иначе
+  // список платежей конкретного арендатора не должен "видеть" чужие внешние приходы.
+  if (ownerKey || containerId) {
+    return NextResponse.json({ incomes: incomes.map((e) => ({ ...e, source: "tenant" as const })) });
+  }
+
+  const generalEntries = await GeneralIncome.find().sort({ paidAt: -1 }).limit(200).lean();
+  const tagged = [
+    ...incomes.map((e) => ({ ...e, source: "tenant" as const })),
+    ...generalEntries.map((e) => ({
+      ...e,
+      ownerType: "company" as const,
+      ownerKey: "__general__",
+      ownerLabel: "Внешний приход (холодильник)",
+      containerId: null,
+      cellNumber: undefined,
+      source: "general" as const,
+    })),
+  ].sort((a, b) => new Date(b.paidAt).getTime() - new Date(a.paidAt).getTime());
+
+  return NextResponse.json({ incomes: tagged.slice(0, 200) });
 }
 
 export async function POST(req: NextRequest) {

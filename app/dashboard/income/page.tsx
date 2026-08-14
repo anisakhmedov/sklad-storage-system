@@ -56,13 +56,16 @@ interface IncomeEntry {
   ownerType: OwnerType;
   ownerKey: string;
   ownerLabel: string;
-  containerId: { _id: string; name: string } | string;
+  containerId: { _id: string; name: string } | string | null;
   cellNumber?: number;
   amount: number;
   method: string;
   paidAt: string;
   note?: string;
   recordedBy: string;
+  /** "general" — запись из «Приход на холодильник» (GeneralIncome), не привязана к арендатору/
+   * контейнеру и не редактируется через это же модальное окно (см. IncomeEditModal). */
+  source?: "tenant" | "general";
 }
 
 interface FinanceSummary {
@@ -70,6 +73,7 @@ interface FinanceSummary {
   kassa: number;
   cardTotal: number;
   transferTotal: number;
+  externalIncomeTotal: number;
   totalExpenses: number;
   salaryTotal: number;
   balance: number;
@@ -150,13 +154,22 @@ export default function IncomePage() {
   const [editingExpense, setEditingExpense] = useState<ExpenseEntry | null>(null);
 
   // Фильтр таблицы "Последние платежи" — управляется и селектами в панели фильтра, и кликом
-  // по карточкам кассы/П2П/банк.перевода (см. cardClickFilter ниже).
-  const [incomeFilter, setIncomeFilter] = useState({ method: "", containerId: "", cellNumber: "", search: "" });
+  // по карточкам кассы/П2П/банк.перевода/внешнего прихода (см. cardClickFilter ниже).
+  const [incomeFilter, setIncomeFilter] = useState({
+    method: "",
+    containerId: "",
+    cellNumber: "",
+    search: "",
+    source: "",
+  });
   // Фильтр таблицы "Расходы" — управляется кликом по карточкам Расходы/Зарплата/Владелец забрал.
   const [expenseFilter, setExpenseFilter] = useState({ type: "", method: "" });
 
   function toggleIncomeMethodFilter(method: string) {
     setIncomeFilter((f) => ({ ...f, method: f.method === method ? "" : method }));
+  }
+  function toggleIncomeSourceFilter(source: string) {
+    setIncomeFilter((f) => ({ ...f, source: f.source === source ? "" : source }));
   }
   function toggleExpenseFilter(type: string, method: string) {
     setExpenseFilter((f) => (f.type === type && f.method === method ? { type: "", method: "" } : { type, method }));
@@ -246,7 +259,8 @@ export default function IncomePage() {
     const search = incomeFilter.search.trim().toLowerCase();
     return incomes.filter((inc) => {
       if (incomeFilter.method && inc.method !== incomeFilter.method) return false;
-      const containerId = typeof inc.containerId === "object" ? inc.containerId._id : inc.containerId;
+      if (incomeFilter.source && (inc.source || "tenant") !== incomeFilter.source) return false;
+      const containerId = inc.containerId && typeof inc.containerId === "object" ? inc.containerId._id : inc.containerId;
       if (incomeFilter.containerId && containerId !== incomeFilter.containerId) return false;
       if (incomeFilter.cellNumber && String(inc.cellNumber ?? "") !== incomeFilter.cellNumber) return false;
       if (search && !inc.ownerLabel.toLowerCase().includes(search)) return false;
@@ -262,7 +276,13 @@ export default function IncomePage() {
     });
   }, [expenses, expenseFilter]);
 
-  const hasIncomeFilter = !!(incomeFilter.method || incomeFilter.containerId || incomeFilter.cellNumber || incomeFilter.search);
+  const hasIncomeFilter = !!(
+    incomeFilter.method ||
+    incomeFilter.containerId ||
+    incomeFilter.cellNumber ||
+    incomeFilter.search ||
+    incomeFilter.source
+  );
   const hasExpenseFilter = !!(expenseFilter.type || expenseFilter.method);
 
   // Диапазон камер для фильтра "Последние платежи" — камеры теперь редактируются индивидуально
@@ -348,6 +368,17 @@ export default function IncomePage() {
           </div>
           <div className="text-2xl font-semibold text-ink-900 tabular-nums">{money(finance?.transferTotal || 0)}</div>
           <div className="text-xs text-ink-400 mt-1">Банковский счёт (перевод), сум</div>
+        </button>
+        <button
+          className={`card text-left transition-colors ${incomeFilter.source === "general" ? "ring-2 ring-brand-600" : "hover:border-brand-300"}`}
+          onClick={() => toggleIncomeSourceFilter("general")}
+          title="Приход, внесённый через «Приход на холодильник» — не привязан к конкретному арендатору"
+        >
+          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-cyan-100 text-cyan-700 mb-3">
+            <Snowflake className="h-4.5 w-4.5" strokeWidth={2} />
+          </div>
+          <div className="text-2xl font-semibold text-ink-900 tabular-nums">{money(finance?.externalIncomeTotal || 0)}</div>
+          <div className="text-xs text-ink-400 mt-1">Внешний приход (холодильник), сум</div>
         </button>
         <button
           className="card text-left transition-colors hover:border-brand-300"
@@ -696,7 +727,7 @@ export default function IncomePage() {
           {hasIncomeFilter && (
             <button
               className="btn-secondary btn-sm"
-              onClick={() => setIncomeFilter({ method: "", containerId: "", cellNumber: "", search: "" })}
+              onClick={() => setIncomeFilter({ method: "", containerId: "", cellNumber: "", search: "", source: "" })}
             >
               <XCircle className="h-3.5 w-3.5" strokeWidth={2} />
               Сбросить фильтр
@@ -718,6 +749,18 @@ export default function IncomePage() {
                   {m.label}
                 </option>
               ))}
+            </select>
+          </div>
+          <div>
+            <label className="label">Источник</label>
+            <select
+              className="input"
+              value={incomeFilter.source}
+              onChange={(e) => setIncomeFilter({ ...incomeFilter, source: e.target.value })}
+            >
+              <option value="">Все</option>
+              <option value="tenant">Оплата арендатора</option>
+              <option value="general">Внешний приход (холодильник)</option>
             </select>
           </div>
           <div>
@@ -797,15 +840,28 @@ export default function IncomePage() {
                   <tr key={inc._id}>
                     <td className="whitespace-nowrap">{new Date(inc.paidAt).toLocaleDateString("ru-RU")}</td>
                     <td className="text-ink-800">
-                      <Link
-                        href={`/dashboard/tenants/${encodeURIComponent(inc.ownerKey)}`}
-                        className="hover:text-brand-600"
-                      >
-                        {inc.ownerLabel}
-                      </Link>
+                      {inc.source === "general" ? (
+                        <span className="inline-flex items-center gap-1.5 text-cyan-700">
+                          <Snowflake className="h-3.5 w-3.5" strokeWidth={2} />
+                          {inc.ownerLabel}
+                        </span>
+                      ) : (
+                        <Link
+                          href={`/dashboard/tenants/${encodeURIComponent(inc.ownerKey)}`}
+                          className="hover:text-brand-600"
+                        >
+                          {inc.ownerLabel}
+                        </Link>
+                      )}
                     </td>
-                    <td>{typeof inc.containerId === "object" ? inc.containerId.name : inc.containerId}</td>
-                    <td className="text-ink-600">{inc.cellNumber ?? "—"}</td>
+                    <td>
+                      {inc.source === "general"
+                        ? "—"
+                        : typeof inc.containerId === "object"
+                          ? inc.containerId?.name
+                          : inc.containerId}
+                    </td>
+                    <td className="text-ink-600">{inc.source === "general" ? "—" : (inc.cellNumber ?? "—")}</td>
                     <td className="whitespace-nowrap font-medium text-ink-800 tabular-nums">{money(inc.amount)} сум</td>
                     <td>
                       <span className="inline-flex items-center gap-1.5 text-ink-600">
@@ -817,14 +873,18 @@ export default function IncomePage() {
                     <td className="text-ink-400">{inc.note || "—"}</td>
                     <td className="whitespace-nowrap">
                       {/* Полное редактирование — независимо от способа оплаты (см.
-                          app/api/income/[id]/route.ts). */}
-                      <button
-                        className="btn-icon btn-secondary"
-                        title="Изменить"
-                        onClick={() => setEditingIncome(inc)}
-                      >
-                        <Pencil className="h-3.5 w-3.5" strokeWidth={2} />
-                      </button>
+                          app/api/income/[id]/route.ts). Записи "Приход на холодильник" здесь не
+                          редактируются — у них нет своего PATCH-эндпоинта, править/удалять такую
+                          запись пока можно только напрямую в БД. */}
+                      {inc.source !== "general" && (
+                        <button
+                          className="btn-icon btn-secondary"
+                          title="Изменить"
+                          onClick={() => setEditingIncome(inc)}
+                        >
+                          <Pencil className="h-3.5 w-3.5" strokeWidth={2} />
+                        </button>
+                      )}
                     </td>
                   </tr>
                 );
@@ -1328,7 +1388,8 @@ function IncomeEditModal({
   onClose: () => void;
   onSaved: () => void;
 }) {
-  const initialContainerId = typeof income.containerId === "object" ? income.containerId._id : income.containerId;
+  const initialContainerId =
+    income.containerId && typeof income.containerId === "object" ? income.containerId._id : income.containerId || "";
   const [ownerLabel, setOwnerLabel] = useState(income.ownerLabel);
   const [containerId, setContainerId] = useState(initialContainerId);
   const [cellNumber, setCellNumber] = useState(income.cellNumber ? String(income.cellNumber) : "");
