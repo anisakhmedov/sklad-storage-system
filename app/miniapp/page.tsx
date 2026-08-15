@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback, Children } from "react";
 import { initTelegramWebApp, miniAppFetch, haptic } from "@/components/miniapp/telegram";
 import { useI18n } from "@/components/miniapp/i18n";
+import LanguageSwitcher from "@/components/miniapp/LanguageSwitcher";
 import RegisterForm from "@/components/miniapp/RegisterForm";
 import PendingScreen from "@/components/miniapp/PendingScreen";
 import NewRecordWizard from "@/components/miniapp/NewRecordWizard";
@@ -135,6 +136,9 @@ export default function MiniAppPage() {
 
   return (
     <div className="pt-2">
+      {/* Переключатель языка — только здесь, на главном экране (по просьбе владельца):
+          на остальных экранах отвлекал и не нужен так часто. */}
+      <LanguageSwitcher />
       <div className="flex items-center gap-3 mb-8">
         <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-brand-gradient text-white shadow-sm shadow-brand-600/25">
           <Boxes className="h-6 w-6" strokeWidth={2.1} />

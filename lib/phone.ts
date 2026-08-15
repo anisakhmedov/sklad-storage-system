@@ -29,3 +29,13 @@ export function normalizePhone(raw: string): string {
 
   return s;
 }
+
+/**
+ * Фильтр ввода для полей номера телефона (Mini App) — оставляет только цифры и один
+ * ведущий "+", остальное отбрасывается по мере набора. Не путать с normalizePhone() выше:
+ * та приводит УЖЕ введённый номер к сравнимому виду, эта — не даёт напечатать в поле ничего,
+ * кроме цифр, пока пользователь ещё набирает номер.
+ */
+export function onlyPhoneChars(value: string): string {
+  return (value.startsWith("+") ? "+" : "") + value.replace(/\D/g, "");
+}

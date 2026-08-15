@@ -7,7 +7,7 @@ import CellGrid, { CellGridCell } from "./CellGrid";
 import ContractPreview from "./ContractPreview";
 import SignaturePad from "./SignaturePad";
 import { buildContractFillData, placeholderMap } from "@/lib/contract/placeholders";
-import { normalizePhone } from "@/lib/phone";
+import { normalizePhone, onlyPhoneChars } from "@/lib/phone";
 import {
   TARIFF_TYPES,
   DEFAULT_TARIFF_RATES,
@@ -74,6 +74,27 @@ type OwnerSearchResult = {
 /** Date -> "yyyy-mm-dd" для value <input type="date">. */
 function toDateInputValue(date: Date): string {
   return date.toISOString().slice(0, 10);
+}
+
+/**
+ * Дата выдачи паспорта хранится в form/на записи строкой "12.05.2020" (как в самом паспорте,
+ * см. lib/contract/placeholders.ts — подставляется в договор как есть), а не ISO-датой — но
+ * поле должно быть настоящим календарём (<input type="date">), а не текстом "введи вручную".
+ * Эти две функции переводят туда-обратно между форматом хранения и форматом value календаря.
+ */
+function ddmmyyyyToDateInputValue(value: string): string {
+  const m = value.match(/^(\d{2})\.(\d{2})\.(\d{4})$/);
+  return m ? `${m[3]}-${m[2]}-${m[1]}` : "";
+}
+
+function dateInputValueToDdmmyyyy(value: string): string {
+  const m = value.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  return m ? `${m[3]}.${m[2]}.${m[1]}` : "";
+}
+
+/** Только цифры — для ПИНФЛ/ИНН, где буквы физически невозможны. */
+function onlyDigits(value: string): string {
+  return value.replace(/\D/g, "");
 }
 
 const emptyForm = {
@@ -674,9 +695,12 @@ export default function NewRecordWizard({ onExit }: { onExit: () => void }) {
                 <label className="label">{t("newRecord.phoneLabel")}</label>
                 <input
                   className="input"
+                  type="tel"
+                  inputMode="tel"
                   value={form.ownerPhone}
-                  onChange={(e) => setForm({ ...form, ownerPhone: e.target.value })}
+                  onChange={(e) => setForm({ ...form, ownerPhone: onlyPhoneChars(e.target.value) })}
                   placeholder="+998901234567"
+                  maxLength={13}
                 />
               </div>
               <div>
@@ -692,17 +716,20 @@ export default function NewRecordWizard({ onExit }: { onExit: () => void }) {
                 <label className="label">{t("newRecord.pinflLabel")}</label>
                 <input
                   className="input"
+                  inputMode="numeric"
+                  pattern="[0-9]*"
                   value={form.ownerPinfl}
-                  onChange={(e) => setForm({ ...form, ownerPinfl: e.target.value })}
+                  onChange={(e) => setForm({ ...form, ownerPinfl: onlyDigits(e.target.value) })}
+                  maxLength={14}
                 />
               </div>
               <div>
                 <label className="label">{t("newRecord.passportIssueDateLabel")}</label>
                 <input
                   className="input"
-                  value={form.ownerPassportIssueDate}
-                  onChange={(e) => setForm({ ...form, ownerPassportIssueDate: e.target.value })}
-                  placeholder="12.05.2020"
+                  type="date"
+                  value={ddmmyyyyToDateInputValue(form.ownerPassportIssueDate)}
+                  onChange={(e) => setForm({ ...form, ownerPassportIssueDate: dateInputValueToDdmmyyyy(e.target.value) })}
                 />
               </div>
               <div>
@@ -729,8 +756,11 @@ export default function NewRecordWizard({ onExit }: { onExit: () => void }) {
                 <label className="label">{t("newRecord.innLabel")}</label>
                 <input
                   className="input"
+                  inputMode="numeric"
+                  pattern="[0-9]*"
                   value={form.companyInn}
-                  onChange={(e) => setForm({ ...form, companyInn: e.target.value })}
+                  onChange={(e) => setForm({ ...form, companyInn: onlyDigits(e.target.value) })}
+                  maxLength={9}
                 />
               </div>
               <div>

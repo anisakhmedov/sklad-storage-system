@@ -51,6 +51,19 @@ body {
   border-radius: 0.5rem;
 }
 
+/* Mini App (.miniapp-shell, см. app/miniapp/layout.tsx): iOS Safari/WKWebView зумит всю
+   страницу при фокусе на любом текстовом поле с font-size меньше 16px — так работает даже
+   при maximumScale/userScalable=no в viewport (сам зум это отключает, но не сам триггер
+   такого поведения на некоторых версиях WebView), поэтому дублируем фикс здесь. Селектор с
+   типом элемента специфичнее одиночного Tailwind-класса (напр. text-xs/text-sm), поэтому
+   переопределяет мелкий шрифт компактных полей без !important. Дашборд (десктоп) не задет —
+   класс есть только на обёртке Mini App. */
+.miniapp-shell input,
+.miniapp-shell select,
+.miniapp-shell textarea {
+  font-size: 16px;
+}
+
 @layer components {
   /* ---------- Surfaces ---------- */
   .card {

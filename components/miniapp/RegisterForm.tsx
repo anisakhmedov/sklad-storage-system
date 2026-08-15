@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { miniAppFetch, haptic } from "./telegram";
 import { useI18n } from "./i18n";
+import { onlyPhoneChars } from "@/lib/phone";
 import { UserRound, Phone, AlertCircle, ArrowRight } from "lucide-react";
 
 export default function RegisterForm({ onRegistered }: { onRegistered: () => void }) {
@@ -55,9 +56,12 @@ export default function RegisterForm({ onRegistered }: { onRegistered: () => voi
             <Phone className="input-icon h-4 w-4" strokeWidth={2} />
             <input
               className="input"
+              type="tel"
+              inputMode="tel"
               value={phone}
-              onChange={(e) => setPhone(e.target.value)}
+              onChange={(e) => setPhone(onlyPhoneChars(e.target.value))}
               placeholder="+998901234567"
+              maxLength={13}
             />
           </div>
         </div>
