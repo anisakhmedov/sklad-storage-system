@@ -25,6 +25,11 @@ interface InventoryRow {
  * "Контейнеры для перевозки". Банковский перевод недоступен сотруднику (см.
  * lib/validation.ts::employeePaymentMethodEnum — тот же принцип, что и в AddIncomeWizard: перевод
  * идёт мимо сотрудника, он физически не может его подтвердить).
+ *
+ * «Ящики» (см. lib/inventoryPricing.ts::isPricelessItemName) сюда вообще не попадают — ни
+ * продажа, ни списание для них не имеют смысла, это тара, которую только выдают клиенту и
+ * принимают обратно (components/miniapp/InventorySection.tsx внутри карточки клиента), а не
+ * расходуют/списывают со склада.
  */
 export default function InventoryDisposalsScreen({ onExit }: { onExit: () => void }) {
   const { t } = useI18n();
@@ -60,7 +65,7 @@ export default function InventoryDisposalsScreen({ onExit }: { onExit: () => voi
           setError(data.error || t("disposals.loadError"));
           return;
         }
-        setItems(data.items || []);
+        setItems((data.items || []).filter((it: InventoryRow) => !isPricelessItemName(it.name)));
       } catch {
         setError(t("common.networkError"));
       } finally {
@@ -120,19 +125,17 @@ export default function InventoryDisposalsScreen({ onExit }: { onExit: () => voi
                 </span>
               </div>
               <div className="flex gap-1.5">
-                {!isPricelessItemName(item.name) && (
-                  <button
-                    className="btn-secondary flex-1"
-                    disabled={item.available <= 0}
-                    onClick={() => {
-                      haptic.selection();
-                      setActing({ item, kind: "sale" });
-                    }}
-                  >
-                    <DollarSign className="h-3.5 w-3.5" strokeWidth={2.1} />
-                    {t("disposals.sell")}
-                  </button>
-                )}
+                <button
+                  className="btn-secondary flex-1"
+                  disabled={item.available <= 0}
+                  onClick={() => {
+                    haptic.selection();
+                    setActing({ item, kind: "sale" });
+                  }}
+                >
+                  <DollarSign className="h-3.5 w-3.5" strokeWidth={2.1} />
+                  {t("disposals.sell")}
+                </button>
                 <button
                   className="btn-secondary flex-1"
                   disabled={item.available <= 0}
@@ -145,9 +148,6 @@ export default function InventoryDisposalsScreen({ onExit }: { onExit: () => voi
                   {t("disposals.writeoff")}
                 </button>
               </div>
-              {isPricelessItemName(item.name) && (
-                <p className="text-[11px] text-ink-400 mt-1.5">{t("disposals.pricelessHint")}</p>
-              )}
             </div>
           ))}
         </div>
