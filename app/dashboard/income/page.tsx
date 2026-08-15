@@ -22,6 +22,7 @@ import {
   Search,
   XCircle,
   Pencil,
+  Trash2,
 } from "lucide-react";
 import { DEFAULT_CELL_COUNT, cellNumbersForCount } from "@/lib/cells";
 
@@ -280,6 +281,12 @@ export default function IncomePage() {
       body: JSON.stringify({ status }),
     });
     await Promise.all([loadExpenses(), loadFinance()]);
+  }
+
+  async function handleDeleteIncome(inc: IncomeEntry) {
+    if (!confirm(`Удалить платёж «${inc.ownerLabel}» на сумму ${money(inc.amount)} сум? Это действие необратимо.`)) return;
+    await fetch(`/api/income/${inc._id}`, { method: "DELETE" });
+    await refreshAll();
   }
 
   // Общий фильтр по контейнерам (incomeFilter.containerId) — применяется и к задолженности
@@ -942,13 +949,22 @@ export default function IncomePage() {
                           редактируются — у них нет своего PATCH-эндпоинта, править/удалять такую
                           запись пока можно только напрямую в БД. */}
                       {inc.source !== "general" && (
-                        <button
-                          className="btn-icon btn-secondary"
-                          title="Изменить"
-                          onClick={() => setEditingIncome(inc)}
-                        >
-                          <Pencil className="h-3.5 w-3.5" strokeWidth={2} />
-                        </button>
+                        <div className="flex justify-end gap-1.5">
+                          <button
+                            className="btn-icon btn-secondary"
+                            title="Изменить"
+                            onClick={() => setEditingIncome(inc)}
+                          >
+                            <Pencil className="h-3.5 w-3.5" strokeWidth={2} />
+                          </button>
+                          <button
+                            className="btn-icon btn-danger-ghost"
+                            title="Удалить платёж"
+                            onClick={() => handleDeleteIncome(inc)}
+                          >
+                            <Trash2 className="h-3.5 w-3.5" strokeWidth={2} />
+                          </button>
+                        </div>
                       )}
                     </td>
                   </tr>
