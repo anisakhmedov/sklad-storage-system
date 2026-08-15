@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { miniAppFetch } from "./telegram";
+import { useI18n } from "./i18n";
 import { PackagePlus, PackageMinus, Package } from "lucide-react";
 
 type OwnerType = "individual" | "company";
@@ -43,6 +44,7 @@ export default function InventorySection({
   items: InventoryItemRef[];
   onChanged: () => void;
 }) {
+  const { t } = useI18n();
   const [open, setOpen] = useState(false);
   const [itemId, setItemId] = useState("");
   const [quantity, setQuantity] = useState("");
@@ -51,18 +53,18 @@ export default function InventorySection({
 
   async function submit(direction: "given" | "returned") {
     if (!itemId) {
-      setError("Выберите позицию инвентаря");
+      setError(t("inventorySection.selectItemRequired"));
       return;
     }
     const qty = Number(quantity);
     if (!quantity || Number.isNaN(qty) || qty <= 0) {
-      setError("Укажите количество");
+      setError(t("inventorySection.quantityRequired"));
       return;
     }
     if (direction === "returned") {
       const outstanding = balances.find((b) => b.itemId === itemId)?.outstanding || 0;
       if (qty > outstanding) {
-        setError(`У клиента сейчас только ${outstanding} — нельзя принять больше`);
+        setError(t("inventorySection.notEnoughStock", { outstanding }));
         return;
       }
     }
@@ -84,14 +86,14 @@ export default function InventorySection({
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        setError(data.error || "Ошибка");
+        setError(data.error || t("common.error"));
         return;
       }
       setQuantity("");
       setOpen(false);
       onChanged();
     } catch {
-      setError("Не удалось связаться с сервером");
+      setError(t("common.networkError"));
     } finally {
       setBusy(false);
     }
@@ -102,15 +104,15 @@ export default function InventorySection({
       <button className="w-full flex items-center justify-between text-xs" onClick={() => setOpen((v) => !v)}>
         <span className="text-ink-400 inline-flex items-center gap-1">
           <Package className="h-3.5 w-3.5" strokeWidth={2} />
-          Инвентарь на руках
+          {t("inventorySection.balanceTitle")}
         </span>
-        <span className="text-ink-500 font-medium">{open ? "Скрыть" : "Показать"}</span>
+        <span className="text-ink-500 font-medium">{open ? t("inventorySection.hide") : t("inventorySection.show")}</span>
       </button>
 
       {open && (
         <div className="mt-2.5 space-y-2.5">
           {balances.length === 0 ? (
-            <p className="text-xs text-ink-400 text-center py-1">ПУСТО</p>
+            <p className="text-xs text-ink-400 text-center py-1">{t("inventorySection.empty")}</p>
           ) : (
             <div className="space-y-1">
               {balances.map((b) => (
@@ -124,7 +126,7 @@ export default function InventorySection({
 
           <div className="rounded-xl bg-ink-50/60 px-3 py-2.5 space-y-1.5">
             <select className="input h-8 text-sm" value={itemId} onChange={(e) => setItemId(e.target.value)} disabled={busy}>
-              <option value="">Выберите позицию</option>
+              <option value="">{t("inventorySection.selectItem")}</option>
               {items.map((it) => (
                 <option key={it._id} value={it._id}>
                   {it.name}
@@ -136,7 +138,7 @@ export default function InventorySection({
               min="0"
               step="any"
               className="input h-8 text-sm"
-              placeholder="Количество"
+              placeholder={t("clientDetail.quantityPlaceholder")}
               value={quantity}
               onChange={(e) => setQuantity(e.target.value)}
               disabled={busy}
@@ -144,11 +146,11 @@ export default function InventorySection({
             <div className="flex items-center gap-1.5">
               <button className="btn-secondary btn-sm flex-1" disabled={busy} onClick={() => submit("given")}>
                 <PackagePlus className="h-3.5 w-3.5" strokeWidth={2} />
-                Выдал
+                {t("inventorySection.given")}
               </button>
               <button className="btn-secondary btn-sm flex-1" disabled={busy} onClick={() => submit("returned")}>
                 <PackageMinus className="h-3.5 w-3.5" strokeWidth={2} />
-                Принял
+                {t("inventorySection.returned")}
               </button>
             </div>
             {error && <p className="text-xs text-rose-600">{error}</p>}

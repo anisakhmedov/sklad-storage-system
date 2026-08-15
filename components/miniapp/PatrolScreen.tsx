@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { miniAppFetch } from "./telegram";
+import { useI18n } from "./i18n";
 import { ArrowLeft, Thermometer, Zap, Sun, Moon, CheckCircle2, TriangleAlert, ChevronRight } from "lucide-react";
 
 type Period = "morning" | "evening";
@@ -28,10 +29,11 @@ function isWindowPassed(period: Period): boolean {
   return tashkentHour >= WINDOWS[period].endHour;
 }
 
-const PERIOD_LABELS: Record<Period, string> = { morning: "Обход дневной", evening: "Обход вечерний" };
 const PERIOD_WINDOW_TEXT: Record<Period, string> = { morning: "≈ 8:00–10:00", evening: "≈ 18:00–20:00" };
 
 export default function PatrolScreen({ onExit }: { onExit: () => void }) {
+  const { t } = useI18n();
+  const PERIOD_LABELS: Record<Period, string> = { morning: t("patrol.morning"), evening: t("patrol.evening") };
   const [status, setStatus] = useState<StatusRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -44,15 +46,16 @@ export default function PatrolScreen({ onExit }: { onExit: () => void }) {
       const res = await miniAppFetch("/api/miniapp/patrols");
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        setError(data.error || "Не удалось загрузить статус обхода");
+        setError(data.error || t("patrol.loadError"));
         return;
       }
       setStatus(data.status || []);
     } catch {
-      setError("Не удалось связаться с сервером");
+      setError(t("common.networkError"));
     } finally {
       setLoading(false);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -66,10 +69,10 @@ export default function PatrolScreen({ onExit }: { onExit: () => void }) {
   return (
     <div className="pt-4 pb-8">
       <div className="flex items-center gap-2 mb-5">
-        <button className="btn-icon btn-ghost -ml-2" onClick={onExit} aria-label="Назад">
+        <button className="btn-icon btn-ghost -ml-2" onClick={onExit} aria-label={t("common.back")}>
           <ArrowLeft className="h-4.5 w-4.5" strokeWidth={2.1} />
         </button>
-        <h1 className="text-lg font-semibold text-ink-900 tracking-tight">Обход</h1>
+        <h1 className="text-lg font-semibold text-ink-900 tracking-tight">{t("patrol.title")}</h1>
       </div>
 
       {loading ? (
@@ -113,7 +116,11 @@ export default function PatrolScreen({ onExit }: { onExit: () => void }) {
                 <div className="flex-1 min-w-0">
                   <div className={`font-medium ${overdue ? "text-rose-700" : "text-ink-900"}`}>{PERIOD_LABELS[p]}</div>
                   <div className={`text-xs mt-0.5 ${overdue ? "text-rose-500" : "text-ink-400"}`}>
-                    {allDone ? "Сделано" : overdue ? `Просрочено · окно ${PERIOD_WINDOW_TEXT[p]}` : `Окно ${PERIOD_WINDOW_TEXT[p]}`}
+                    {allDone
+                      ? t("patrol.done")
+                      : overdue
+                        ? t("patrol.overdue", { window: PERIOD_WINDOW_TEXT[p] })
+                        : t("patrol.window", { window: PERIOD_WINDOW_TEXT[p] })}
                   </div>
                 </div>
               </button>
@@ -136,6 +143,8 @@ function PeriodChecklist({
   onBack: () => void;
   onChanged: () => void;
 }) {
+  const { t } = useI18n();
+  const PERIOD_LABELS: Record<Period, string> = { morning: t("patrol.morning"), evening: t("patrol.evening") };
   const [containerId, setContainerId] = useState<string | null>(null);
   const container = rows.find((r) => r.containerId === containerId) || null;
 
@@ -153,7 +162,7 @@ function PeriodChecklist({
   return (
     <div className="pt-4 pb-8">
       <div className="flex items-center gap-2 mb-5">
-        <button className="btn-icon btn-ghost -ml-2" onClick={onBack} aria-label="Назад">
+        <button className="btn-icon btn-ghost -ml-2" onClick={onBack} aria-label={t("common.back")}>
           <ArrowLeft className="h-4.5 w-4.5" strokeWidth={2.1} />
         </button>
         <h1 className="text-lg font-semibold text-ink-900 tracking-tight">{PERIOD_LABELS[period]}</h1>
@@ -161,7 +170,7 @@ function PeriodChecklist({
 
       {rows.length === 0 ? (
         <div className="empty-state">
-          <p className="text-sm text-ink-500">Нет доступных контейнеров.</p>
+          <p className="text-sm text-ink-500">{t("patrol.noContainers")}</p>
         </div>
       ) : (
         <div className="space-y-2.5">
@@ -179,7 +188,7 @@ function PeriodChecklist({
                 <div>
                   <div className="font-medium text-ink-900">{r.containerName}</div>
                   <div className={`text-xs mt-0.5 ${allDone ? "text-emerald-600" : "text-ink-400"}`}>
-                    {allDone ? "Все камеры сделаны" : `Камер сделано: ${doneCount}/${r.cells.length}`}
+                    {allDone ? t("patrol.allCellsDone") : t("patrol.cellsDoneCount", { done: doneCount, total: r.cells.length })}
                   </div>
                 </div>
                 <ChevronRight className="h-4.5 w-4.5 text-ink-300 shrink-0" strokeWidth={2} />
@@ -203,19 +212,20 @@ function ContainerCellsPatrol({
   onBack: () => void;
   onChanged: () => void;
 }) {
+  const { t } = useI18n();
   const [picked, setPicked] = useState<number | null>(null);
   const sortedCells = [...row.cells].sort((a, b) => a.number - b.number);
 
   return (
     <div className="pt-4 pb-8">
       <div className="flex items-center gap-2 mb-5">
-        <button className="btn-icon btn-ghost -ml-2" onClick={onBack} aria-label="Назад">
+        <button className="btn-icon btn-ghost -ml-2" onClick={onBack} aria-label={t("common.back")}>
           <ArrowLeft className="h-4.5 w-4.5" strokeWidth={2.1} />
         </button>
         <h1 className="text-lg font-semibold text-ink-900 tracking-tight truncate">{row.containerName}</h1>
       </div>
 
-      <p className="text-xs text-ink-400 mb-3">Нажмите на камеру, чтобы внести температуру и ампер.</p>
+      <p className="text-xs text-ink-400 mb-3">{t("patrol.cellHint")}</p>
 
       <div className="grid grid-cols-4 gap-2">
         {sortedCells.map((cell) => {
@@ -266,6 +276,7 @@ function CellPatrolModal({
   onClose: () => void;
   onSaved: () => void;
 }) {
+  const { t } = useI18n();
   const [temperature, setTemperature] = useState("");
   const [amperage, setAmperage] = useState("");
   const [busy, setBusy] = useState(false);
@@ -273,11 +284,11 @@ function CellPatrolModal({
 
   async function submit() {
     if (!temperature || Number.isNaN(Number(temperature))) {
-      setError("Укажите температуру");
+      setError(t("patrol.temperatureRequired"));
       return;
     }
     if (!amperage || Number.isNaN(Number(amperage))) {
-      setError("Укажите силу тока (ампер)");
+      setError(t("patrol.amperageRequired"));
       return;
     }
     setBusy(true);
@@ -289,12 +300,12 @@ function CellPatrolModal({
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        setError(data.error || "Ошибка");
+        setError(data.error || t("patrol.saveError"));
         return;
       }
       onSaved();
     } catch {
-      setError("Не удалось связаться с сервером");
+      setError(t("common.networkError"));
     } finally {
       setBusy(false);
     }
@@ -303,7 +314,7 @@ function CellPatrolModal({
   return (
     <div className="modal-backdrop" onClick={() => !busy && onClose()}>
       <div className="modal-panel max-w-sm" onClick={(e) => e.stopPropagation()}>
-        <h3 className="card-title mb-4">Камера №{cellNumber}</h3>
+        <h3 className="card-title mb-4">{t("patrol.cellNumber", { n: cellNumber })}</h3>
         <div className="space-y-3">
           <div className="input-icon-wrap">
             <Thermometer className="input-icon h-4 w-4" strokeWidth={2} />
@@ -311,7 +322,7 @@ function CellPatrolModal({
               type="number"
               step="any"
               className="input"
-              placeholder="Температура, °C"
+              placeholder={t("patrol.temperaturePlaceholder")}
               value={temperature}
               onChange={(e) => setTemperature(e.target.value)}
               disabled={busy}
@@ -324,7 +335,7 @@ function CellPatrolModal({
               type="number"
               step="any"
               className="input"
-              placeholder="Ампер"
+              placeholder={t("patrol.amperagePlaceholder")}
               value={amperage}
               onChange={(e) => setAmperage(e.target.value)}
               disabled={busy}
@@ -333,10 +344,10 @@ function CellPatrolModal({
           {error && <p className="text-xs text-rose-600">{error}</p>}
           <div className="flex gap-2 pt-1">
             <button className="btn-primary flex-1" disabled={busy} onClick={submit}>
-              {busy ? "Сохранение…" : "Сохранить"}
+              {busy ? t("common.saving") : t("common.save")}
             </button>
             <button className="btn-secondary" disabled={busy} onClick={onClose}>
-              Отмена
+              {t("common.cancel")}
             </button>
           </div>
         </div>

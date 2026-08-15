@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { miniAppFetch } from "./telegram";
+import { useI18n } from "./i18n";
 import CellGrid, { CellGridCell } from "./CellGrid";
 import { ArrowLeft, LayoutGrid, Lock, LockOpen } from "lucide-react";
 
@@ -18,6 +19,7 @@ interface Container {
  * NewRecordWizard при размещении нового товара.
  */
 export default function CellsScreen({ onExit }: { onExit: () => void }) {
+  const { t } = useI18n();
   const [containers, setContainers] = useState<Container[]>([]);
   const [containerId, setContainerId] = useState<string | null>(null);
   const [cells, setCells] = useState<CellGridCell[]>([]);
@@ -34,23 +36,27 @@ export default function CellsScreen({ onExit }: { onExit: () => void }) {
       .finally(() => setLoading(false));
   }, []);
 
-  const loadCells = useCallback(async (id: string) => {
-    setCellsLoading(true);
-    setError(null);
-    try {
-      const res = await miniAppFetch(`/api/miniapp/containers/${id}/cells`);
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        setError(data.error || "Не удалось загрузить камеры");
-        return;
+  const loadCells = useCallback(
+    async (id: string) => {
+      setCellsLoading(true);
+      setError(null);
+      try {
+        const res = await miniAppFetch(`/api/miniapp/containers/${id}/cells`);
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          setError(data.error || t("cells.loadError"));
+          return;
+        }
+        setCells(data.cells || []);
+      } catch {
+        setError(t("common.networkError"));
+      } finally {
+        setCellsLoading(false);
       }
-      setCells(data.cells || []);
-    } catch {
-      setError("Не удалось связаться с сервером");
-    } finally {
-      setCellsLoading(false);
-    }
-  }, []);
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    []
+  );
 
   useEffect(() => {
     if (containerId) loadCells(containerId);
@@ -66,7 +72,7 @@ export default function CellsScreen({ onExit }: { onExit: () => void }) {
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        setError(data.error || "Ошибка сохранения");
+        setError(data.error || t("cells.saveError"));
         return;
       }
       setPicked(null);
@@ -81,7 +87,14 @@ export default function CellsScreen({ onExit }: { onExit: () => void }) {
     return (
       <div className="pt-4 pb-8">
         <div className="flex items-center gap-2 mb-5">
-          <button className="btn-icon btn-ghost -ml-2" onClick={() => { setContainerId(null); setPicked(null); }} aria-label="Назад">
+          <button
+            className="btn-icon btn-ghost -ml-2"
+            onClick={() => {
+              setContainerId(null);
+              setPicked(null);
+            }}
+            aria-label={t("common.back")}
+          >
             <ArrowLeft className="h-4.5 w-4.5" strokeWidth={2.1} />
           </button>
           <h1 className="text-lg font-semibold text-ink-900 tracking-tight truncate">{container?.name}</h1>
@@ -95,11 +108,12 @@ export default function CellsScreen({ onExit }: { onExit: () => void }) {
           </div>
         ) : (
           <>
-            <CellGrid cells={cells} onSelect={(n) => setPicked(cells.find((c) => c.number === n) || { number: n, occupants: [], isFull: false })} allowSelectFull />
-            <p className="text-xs text-ink-400 mt-3 leading-relaxed">
-              Нажмите на камеру, чтобы отметить её как заполненную (нельзя разместить больше
-              груза) или снять эту отметку.
-            </p>
+            <CellGrid
+              cells={cells}
+              onSelect={(n) => setPicked(cells.find((c) => c.number === n) || { number: n, occupants: [], isFull: false })}
+              allowSelectFull
+            />
+            <p className="text-xs text-ink-400 mt-3 leading-relaxed">{t("cells.hint")}</p>
           </>
         )}
 
@@ -112,26 +126,29 @@ export default function CellsScreen({ onExit }: { onExit: () => void }) {
         {picked && (
           <div className="modal-backdrop" onClick={() => !busy && setPicked(null)}>
             <div className="modal-panel max-w-sm" onClick={(e) => e.stopPropagation()}>
-              <h3 className="card-title mb-1">Камера №{picked.number}</h3>
+              <h3 className="card-title mb-1">{t("cells.cellNumber", { n: picked.number })}</h3>
               <p className="text-sm text-ink-400 mb-4">
                 {picked.occupants.length === 0
-                  ? "Пусто"
-                  : `Арендаторов: ${picked.occupants.length} — ${picked.occupants.map((o) => o.ownerLabel).join(", ")}`}
+                  ? t("cells.empty")
+                  : t("cells.occupantsCount", {
+                      count: picked.occupants.length,
+                      names: picked.occupants.map((o) => o.ownerLabel).join(", "),
+                    })}
               </p>
               <div className="space-y-2">
                 {picked.isFull ? (
                   <button className="btn-primary w-full py-3 rounded-2xl" disabled={busy} onClick={() => toggleFull(false)}>
                     <LockOpen className="h-4 w-4" strokeWidth={2.1} />
-                    Снять отметку "заполнена"
+                    {t("cells.unmarkFull")}
                   </button>
                 ) : (
                   <button className="btn-primary w-full py-3 rounded-2xl" disabled={busy} onClick={() => toggleFull(true)}>
                     <Lock className="h-4 w-4" strokeWidth={2.1} />
-                    Отметить как заполненную
+                    {t("cells.markFull")}
                   </button>
                 )}
                 <button className="btn-ghost w-full py-3 rounded-2xl" disabled={busy} onClick={() => setPicked(null)}>
-                  Отмена
+                  {t("common.cancel")}
                 </button>
               </div>
             </div>
@@ -144,10 +161,10 @@ export default function CellsScreen({ onExit }: { onExit: () => void }) {
   return (
     <div className="pt-4 pb-8">
       <div className="flex items-center gap-2 mb-5">
-        <button className="btn-icon btn-ghost -ml-2" onClick={onExit} aria-label="Назад">
+        <button className="btn-icon btn-ghost -ml-2" onClick={onExit} aria-label={t("common.back")}>
           <ArrowLeft className="h-4.5 w-4.5" strokeWidth={2.1} />
         </button>
-        <h1 className="text-lg font-semibold text-ink-900 tracking-tight">Камеры контейнеров</h1>
+        <h1 className="text-lg font-semibold text-ink-900 tracking-tight">{t("cells.title")}</h1>
       </div>
 
       {loading ? (
@@ -161,7 +178,7 @@ export default function CellsScreen({ onExit }: { onExit: () => void }) {
           <div className="empty-state-icon">
             <LayoutGrid className="h-5 w-5" strokeWidth={1.8} />
           </div>
-          <p className="text-sm text-ink-500">Контейнеры ещё не созданы владельцем.</p>
+          <p className="text-sm text-ink-500">{t("cells.noContainers")}</p>
         </div>
       ) : (
         <div className="space-y-2">

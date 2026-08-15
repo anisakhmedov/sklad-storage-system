@@ -2,9 +2,11 @@
 
 import { useState } from "react";
 import { miniAppFetch } from "./telegram";
+import { useI18n } from "./i18n";
 import { UserRound, Phone, AlertCircle, ArrowRight } from "lucide-react";
 
 export default function RegisterForm({ onRegistered }: { onRegistered: () => void }) {
+  const { t } = useI18n();
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -21,7 +23,7 @@ export default function RegisterForm({ onRegistered }: { onRegistered: () => voi
       });
       const data = await res.json();
       if (!res.ok) {
-        setError(data.error || "Ошибка регистрации");
+        setError(data.error || t("register.error"));
         return;
       }
       onRegistered();
@@ -35,20 +37,18 @@ export default function RegisterForm({ onRegistered }: { onRegistered: () => voi
       <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-brand-gradient text-white shadow-sm shadow-brand-600/25 mb-5">
         <UserRound className="h-6 w-6" strokeWidth={2.1} />
       </div>
-      <h1 className="text-xl font-semibold text-ink-900 tracking-tight mb-1">Регистрация</h1>
-      <p className="text-sm text-ink-400 mb-7 leading-relaxed">
-        Укажите имя и номер телефона — заявка будет отправлена владельцу на подтверждение.
-      </p>
+      <h1 className="text-xl font-semibold text-ink-900 tracking-tight mb-1">{t("register.title")}</h1>
+      <p className="text-sm text-ink-400 mb-7 leading-relaxed">{t("register.subtitle")}</p>
       <form onSubmit={handleSubmit} className="space-y-4">
         <div>
-          <label className="label">Имя</label>
+          <label className="label">{t("register.nameLabel")}</label>
           <div className="input-icon-wrap">
             <UserRound className="input-icon h-4 w-4" strokeWidth={2} />
             <input className="input" value={name} onChange={(e) => setName(e.target.value)} autoFocus />
           </div>
         </div>
         <div>
-          <label className="label">Номер телефона</label>
+          <label className="label">{t("register.phoneLabel")}</label>
           <div className="input-icon-wrap">
             <Phone className="input-icon h-4 w-4" strokeWidth={2} />
             <input
@@ -67,10 +67,10 @@ export default function RegisterForm({ onRegistered }: { onRegistered: () => voi
         )}
         <button className="btn-primary w-full py-3 rounded-2xl" disabled={busy || !name || !phone}>
           {busy ? (
-            "Отправка…"
+            t("common.sending")
           ) : (
             <>
-              Отправить заявку
+              {t("register.submit")}
               <ArrowRight className="h-4 w-4" strokeWidth={2.25} />
             </>
           )}

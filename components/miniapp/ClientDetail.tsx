@@ -2,11 +2,10 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { miniAppFetch } from "./telegram";
+import { useI18n } from "./i18n";
 import InventorySection from "./InventorySection";
 import {
   TARIFF_TYPES,
-  TARIFF_LABELS,
-  formatTariffText,
   isTariffCompatibleWithUnit,
   suggestedEndDate,
   TariffType,
@@ -30,8 +29,6 @@ import {
 type OwnerType = "individual" | "company";
 type Unit = "tonne" | "kg" | "box" | "piece";
 
-const UNIT_LABELS: Record<Unit, string> = { tonne: "т", kg: "кг", box: "ящ.", piece: "шт." };
-const money = (n: number) => Math.round(n).toLocaleString("ru-RU");
 const toDateInputValue = (iso: string) => iso.slice(0, 10);
 
 interface HistoryEvent {
@@ -45,15 +42,6 @@ interface HistoryEvent {
   method?: string;
   createdBy: string;
 }
-
-const METHOD_LABELS: Record<string, string> = { cash: "Наличные", terminal: "Терминал", transfer: "Перевод", card: "Карта (П2П)" };
-const HISTORY_KIND_LABELS: Record<string, string> = {
-  goods_given: "Приём товара",
-  goods_returned: "Отдача товара",
-  inventory_given: "Выдача инвентаря",
-  inventory_returned: "Возврат инвентаря",
-  payment: "Оплата",
-};
 
 interface SummaryItem {
   recordId: string;
@@ -101,6 +89,9 @@ export default function ClientDetail({
   owner: { ownerKey: string; ownerLabel: string; ownerType: OwnerType };
   onBack: () => void;
 }) {
+  const { t } = useI18n();
+  const money = (n: number) => Math.round(n).toLocaleString("ru-RU");
+
   const [summary, setSummary] = useState<Summary | null>(null);
   const [inventoryBalances, setInventoryBalances] = useState<InventoryBalance[]>([]);
   // У каждого контейнера свой инвентарь (см. models/InventoryItem.ts::containerId) — карточка
@@ -119,7 +110,7 @@ export default function ClientDetail({
       ]);
       const data = await summaryRes.json().catch(() => ({}));
       if (!summaryRes.ok) {
-        setError(data.error || "Не удалось загрузить данные клиента");
+        setError(data.error || t("clientDetail.loadError"));
         return;
       }
       setSummary(data.summary);
@@ -136,10 +127,11 @@ export default function ClientDetail({
       containerIds.forEach((id, i) => map.set(id, itemLists[i]?.items || []));
       setInventoryItemsByContainer(map);
     } catch {
-      setError("Не удалось связаться с сервером");
+      setError(t("common.networkError"));
     } finally {
       setLoading(false);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [owner.ownerKey]);
 
   useEffect(() => {
@@ -151,10 +143,10 @@ export default function ClientDetail({
   return (
     <div className="pt-4 pb-8">
       <div className="flex items-center justify-between mb-3">
-        <button className="btn-icon btn-ghost -ml-2" onClick={onBack} aria-label="Назад">
+        <button className="btn-icon btn-ghost -ml-2" onClick={onBack} aria-label={t("common.back")}>
           <ArrowLeft className="h-4.5 w-4.5" strokeWidth={2.1} />
         </button>
-        <button className="btn-icon btn-ghost" onClick={load} aria-label="Обновить">
+        <button className="btn-icon btn-ghost" onClick={load} aria-label={t("clientDetail.refreshAria")}>
           <RefreshCw className="h-4 w-4" strokeWidth={2} />
         </button>
       </div>
@@ -165,7 +157,7 @@ export default function ClientDetail({
         </div>
         <div className="min-w-0">
           <h1 className="text-lg font-semibold text-ink-900 tracking-tight truncate">{owner.ownerLabel}</h1>
-          <p className="text-xs text-ink-400">{owner.ownerType === "individual" ? "Физ. лицо" : "Юр. лицо"}</p>
+          <p className="text-xs text-ink-400">{owner.ownerType === "individual" ? t("common.individual") : t("common.company")}</p>
         </div>
       </div>
 
@@ -189,7 +181,7 @@ export default function ClientDetail({
           <div className="empty-state-icon">
             <Boxes className="h-5 w-5" strokeWidth={1.8} />
           </div>
-          <p className="text-sm text-ink-500">Нет доступных записей по этому клиенту.</p>
+          <p className="text-sm text-ink-500">{t("clientDetail.noRecords")}</p>
         </div>
       ) : (
         <div className="space-y-4">
@@ -205,9 +197,9 @@ export default function ClientDetail({
           ))}
 
           <div className="rounded-2xl bg-ink-50 px-4 py-3.5 flex items-center justify-between">
-            <span className="text-sm font-medium text-ink-700">Итого задолженность</span>
+            <span className="text-sm font-medium text-ink-700">{t("clientDetail.totalDebt")}</span>
             <span className={`text-sm font-semibold ${summary.totalBalance > 0 ? "text-rose-600" : "text-emerald-600"}`}>
-              {money(summary.totalBalance)} сум
+              {money(summary.totalBalance)} {t("common.sum")}
             </span>
           </div>
         </div>
@@ -223,6 +215,14 @@ export default function ClientDetail({
  * не грузим историю, пока сотрудник её явно не запросил.
  */
 function HistorySection({ ownerKey }: { ownerKey: string }) {
+  const { t } = useI18n();
+  const money = (n: number) => Math.round(n).toLocaleString("ru-RU");
+  const METHOD_LABELS: Record<string, string> = {
+    cash: t("method.cash"),
+    terminal: t("method.terminal"),
+    transfer: t("method.transfer"),
+    card: t("method.card"),
+  };
   const [open, setOpen] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -249,9 +249,9 @@ function HistorySection({ ownerKey }: { ownerKey: string }) {
       <button className="w-full flex items-center justify-between px-4 py-3" onClick={toggle}>
         <span className="text-sm font-medium text-ink-800 inline-flex items-center gap-1.5">
           <History className="h-4 w-4 text-ink-400" strokeWidth={2} />
-          История операций
+          {t("clientDetail.historyTitle")}
         </span>
-        <span className="text-xs text-ink-400">{open ? "Скрыть" : "Показать"}</span>
+        <span className="text-xs text-ink-400">{open ? t("clientDetail.historyHide") : t("clientDetail.historyShow")}</span>
       </button>
       {open && (
         <div className="px-4 pb-4 space-y-2">
@@ -262,22 +262,22 @@ function HistorySection({ ownerKey }: { ownerKey: string }) {
               ))}
             </div>
           ) : events.length === 0 ? (
-            <p className="text-xs text-ink-400 text-center py-2">Операций пока не было.</p>
+            <p className="text-xs text-ink-400 text-center py-2">{t("clientDetail.historyEmpty")}</p>
           ) : (
             events.map((h, idx) => (
               <div key={idx} className="rounded-xl bg-ink-50/60 px-3 py-2.5 text-xs">
                 <div className="flex items-center justify-between mb-1">
-                  <span className="font-medium text-ink-800">{HISTORY_KIND_LABELS[h.kind] || h.kind}</span>
+                  <span className="font-medium text-ink-800">{t(`historyKind.${h.kind}`)}</span>
                   <span className="text-ink-400">{new Date(h.date).toLocaleString("ru-RU")}</span>
                 </div>
                 <div className="text-ink-500">
                   {h.containerName}
-                  {h.cellNumber ? ` · камера ${h.cellNumber}` : ""} · {h.itemLabel}
+                  {h.cellNumber ? ` · ${h.cellNumber}` : ""} · {h.itemLabel}
                 </div>
                 <div className="flex items-center justify-between mt-1">
                   <span className="text-ink-600 font-medium">
                     {h.kind === "payment"
-                      ? `${money(h.amount || 0)} сум${h.method ? ` · ${METHOD_LABELS[h.method] || h.method}` : ""}`
+                      ? `${money(h.amount || 0)} ${t("common.sum")}${h.method ? ` · ${METHOD_LABELS[h.method] || h.method}` : ""}`
                       : h.quantityText || ""}
                   </span>
                   <span className="text-ink-400">{h.createdBy}</span>
@@ -304,6 +304,8 @@ function ContainerCard({
   inventoryItems: InventoryItemRef[];
   onChanged: () => void;
 }) {
+  const { t } = useI18n();
+  const money = (n: number) => Math.round(n).toLocaleString("ru-RU");
   return (
     <div className="rounded-2xl border border-ink-200 bg-white p-4">
       <div className="flex items-center gap-2 mb-3">
@@ -318,9 +320,9 @@ function ContainerCard({
       </div>
 
       <div className="mt-3 pt-3 border-t border-ink-100 flex items-center justify-between text-xs">
-        <span className="text-ink-400">Остаток по контейнеру</span>
+        <span className="text-ink-400">{t("clientDetail.balanceByContainer")}</span>
         <span className={container.balance > 0 ? "text-rose-600 font-medium" : "text-emerald-600 font-medium"}>
-          {money(container.balance)} сум
+          {money(container.balance)} {t("common.sum")}
         </span>
       </div>
 
@@ -336,6 +338,18 @@ function ContainerCard({
 }
 
 function ItemRow({ item, onChanged }: { item: SummaryItem; onChanged: () => void }) {
+  const { t } = useI18n();
+  const UNIT_LABELS: Record<Unit, string> = {
+    tonne: t("unitShort.tonne"),
+    kg: t("unitShort.kg"),
+    box: t("unitShort.box"),
+    piece: t("unitShort.piece"),
+  };
+  const formatTariffTextLocalized = (tariff: { type: TariffType; rate: number }) => {
+    const rate = new Intl.NumberFormat("ru-RU").format(tariff.rate);
+    return `${rate} ${t(`tariff.${tariff.type}_short`)}`;
+  };
+
   const [amount, setAmount] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -361,11 +375,11 @@ function ItemRow({ item, onChanged }: { item: SummaryItem; onChanged: () => void
   async function adjust(sign: 1 | -1) {
     const value = Number(amount);
     if (!amount || Number.isNaN(value) || value <= 0) {
-      setError("Укажите количество");
+      setError(t("clientDetail.quantityRequired"));
       return;
     }
     if (sign === -1 && value > item.quantity) {
-      setError(`На хранении только ${item.quantity} ${UNIT_LABELS[item.unit]} — нельзя списать больше`);
+      setError(t("clientDetail.notEnoughStock", { quantity: item.quantity, unit: UNIT_LABELS[item.unit] }));
       return;
     }
     setBusy(true);
@@ -377,13 +391,13 @@ function ItemRow({ item, onChanged }: { item: SummaryItem; onChanged: () => void
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        setError(data.error || "Ошибка");
+        setError(data.error || t("common.error"));
         return;
       }
       setAmount("");
       onChanged();
     } catch {
-      setError("Не удалось связаться с сервером");
+      setError(t("common.networkError"));
     } finally {
       setBusy(false);
     }
@@ -412,13 +426,13 @@ function ItemRow({ item, onChanged }: { item: SummaryItem; onChanged: () => void
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        setEditError(data.error || "Не удалось сохранить");
+        setEditError(data.error || t("clientDetail.saveError"));
         return;
       }
       setEditing(false);
       onChanged();
     } catch {
-      setEditError("Не удалось связаться с сервером");
+      setEditError(t("common.networkError"));
     } finally {
       setEditBusy(false);
     }
@@ -434,13 +448,13 @@ function ItemRow({ item, onChanged }: { item: SummaryItem; onChanged: () => void
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        setCloseError(data.error || "Не удалось закрыть запись");
+        setCloseError(data.error || t("clientDetail.closeError"));
         return;
       }
       setClosing(false);
       onChanged();
     } catch {
-      setCloseError("Не удалось связаться с сервером");
+      setCloseError(t("common.networkError"));
     } finally {
       setCloseBusy(false);
     }
@@ -470,13 +484,13 @@ function ItemRow({ item, onChanged }: { item: SummaryItem; onChanged: () => void
 
       <div className="flex items-center justify-between gap-2 mb-1.5">
         <div className="text-xs text-ink-400 truncate">
-          {item.tariff ? formatTariffText(item.tariff) : "—"}
+          {item.tariff ? formatTariffTextLocalized(item.tariff) : "—"}
           {item.expectedEndDate && !item.closedAt && (
-            <> · до {new Date(item.expectedEndDate).toLocaleDateString("ru-RU")}</>
+            <> · {new Date(item.expectedEndDate).toLocaleDateString("ru-RU")}</>
           )}
           {item.closedAt && (
             <span className="badge bg-rose-100 text-rose-700 ml-1.5">
-              закрыта {new Date(item.closedAt).toLocaleDateString("ru-RU")}
+              {t("clientDetail.closedBadge", { date: new Date(item.closedAt).toLocaleDateString("ru-RU") })}
             </span>
           )}
         </div>
@@ -484,8 +498,8 @@ function ItemRow({ item, onChanged }: { item: SummaryItem; onChanged: () => void
           <button
             className="btn-icon btn-secondary h-7 w-7"
             onClick={() => (editing ? setEditing(false) : openEdit())}
-            aria-label="Изменить"
-            title="Изменить даты/тариф"
+            aria-label={t("clientDetail.editAria")}
+            title={t("clientDetail.editTitle")}
           >
             <Pencil className="h-3.5 w-3.5" strokeWidth={2} />
           </button>
@@ -494,8 +508,8 @@ function ItemRow({ item, onChanged }: { item: SummaryItem; onChanged: () => void
               className="btn-icon btn-secondary h-7 w-7"
               disabled={closeBusy}
               onClick={reopen}
-              aria-label="Открыть заново"
-              title="Открыть заново"
+              aria-label={t("clientDetail.reopenAria")}
+              title={t("clientDetail.reopenAria")}
             >
               <Unlock className="h-3.5 w-3.5" strokeWidth={2} />
             </button>
@@ -507,8 +521,8 @@ function ItemRow({ item, onChanged }: { item: SummaryItem; onChanged: () => void
                 setCloseDate(toDateInputValue(new Date().toISOString()));
                 setClosing((v) => !v);
               }}
-              aria-label="Закрыть (товар забран)"
-              title="Закрыть (товар забран)"
+              aria-label={t("clientDetail.closeAria")}
+              title={t("clientDetail.closeAria")}
             >
               <Lock className="h-3.5 w-3.5" strokeWidth={2} />
             </button>
@@ -520,7 +534,7 @@ function ItemRow({ item, onChanged }: { item: SummaryItem; onChanged: () => void
         <div className="rounded-lg border border-ink-200 bg-white p-2.5 mb-2 space-y-2">
           <div className="grid grid-cols-2 gap-2">
             <div>
-              <label className="label">Дата договора</label>
+              <label className="label">{t("clientDetail.contractDateLabel")}</label>
               <input
                 type="date"
                 className="input h-8 text-sm"
@@ -529,7 +543,7 @@ function ItemRow({ item, onChanged }: { item: SummaryItem; onChanged: () => void
               />
             </div>
             <div>
-              <label className="label">Окончание</label>
+              <label className="label">{t("clientDetail.endDateLabel")}</label>
               <input
                 type="date"
                 className="input h-8 text-sm"
@@ -543,22 +557,22 @@ function ItemRow({ item, onChanged }: { item: SummaryItem; onChanged: () => void
               className="input h-8 text-sm"
               value={editTariffType}
               onChange={(e) => {
-                const t = e.target.value as TariffType;
-                setEditTariffType(t);
-                const suggestion = suggestedEndDate(t, new Date(editCreatedAt || Date.now()));
+                const tt = e.target.value as TariffType;
+                setEditTariffType(tt);
+                const suggestion = suggestedEndDate(tt, new Date(editCreatedAt || Date.now()));
                 if (suggestion) setEditEndDate(toDateInputValue(suggestion.toISOString()));
               }}
             >
-              {TARIFF_TYPES.filter((t) => isTariffCompatibleWithUnit(t, item.unit)).map((t) => (
-                <option key={t} value={t}>
-                  {TARIFF_LABELS[t]}
+              {TARIFF_TYPES.filter((tt) => isTariffCompatibleWithUnit(tt, item.unit)).map((tt) => (
+                <option key={tt} value={tt}>
+                  {t(`tariff.${tt}`)}
                 </option>
               ))}
             </select>
             <input
               type="number"
               className="input h-8 text-sm"
-              placeholder="Ставка"
+              placeholder={t("clientDetail.rateLabel")}
               value={editTariffRate}
               onChange={(e) => setEditTariffRate(e.target.value)}
             />
@@ -566,9 +580,9 @@ function ItemRow({ item, onChanged }: { item: SummaryItem; onChanged: () => void
           {editError && <p className="text-xs text-rose-600">{editError}</p>}
           <div className="flex gap-1.5">
             <button className="btn-primary h-8 text-xs flex-1" disabled={editBusy} onClick={saveEdit}>
-              {editBusy ? "Сохранение…" : "Сохранить"}
+              {editBusy ? t("common.saving") : t("common.save")}
             </button>
-            <button className="btn-icon btn-ghost h-8 w-8" onClick={() => setEditing(false)} aria-label="Отмена">
+            <button className="btn-icon btn-ghost h-8 w-8" onClick={() => setEditing(false)} aria-label={t("common.cancel")}>
               <X className="h-3.5 w-3.5" strokeWidth={2} />
             </button>
           </div>
@@ -577,9 +591,7 @@ function ItemRow({ item, onChanged }: { item: SummaryItem; onChanged: () => void
 
       {closing && (
         <div className="rounded-lg border border-ink-200 bg-white p-2.5 mb-2 space-y-2">
-          <p className="text-xs text-ink-500">
-            Начисление тарифа остановится на эту дату, товар считается забранным.
-          </p>
+          <p className="text-xs text-ink-500">{t("clientDetail.closeHint")}</p>
           <input
             type="date"
             className="input h-8 text-sm"
@@ -589,9 +601,9 @@ function ItemRow({ item, onChanged }: { item: SummaryItem; onChanged: () => void
           {closeError && <p className="text-xs text-rose-600">{closeError}</p>}
           <div className="flex gap-1.5">
             <button className="btn-primary h-8 text-xs flex-1" disabled={closeBusy} onClick={saveClose}>
-              {closeBusy ? "Сохранение…" : "Закрыть запись"}
+              {closeBusy ? t("common.saving") : t("clientDetail.closeSubmit")}
             </button>
-            <button className="btn-icon btn-ghost h-8 w-8" onClick={() => setClosing(false)} aria-label="Отмена">
+            <button className="btn-icon btn-ghost h-8 w-8" onClick={() => setClosing(false)} aria-label={t("common.cancel")}>
               <X className="h-3.5 w-3.5" strokeWidth={2} />
             </button>
           </div>
@@ -604,7 +616,7 @@ function ItemRow({ item, onChanged }: { item: SummaryItem; onChanged: () => void
           min="0"
           step="any"
           className="input h-8 text-sm flex-1"
-          placeholder="Кол-во"
+          placeholder={t("clientDetail.quantityPlaceholder")}
           value={amount}
           onChange={(e) => setAmount(e.target.value)}
           disabled={busy}
@@ -613,8 +625,8 @@ function ItemRow({ item, onChanged }: { item: SummaryItem; onChanged: () => void
           className="btn-icon btn-secondary h-8 w-8"
           disabled={busy}
           onClick={() => adjust(1)}
-          aria-label="Добавить"
-          title="Добавить"
+          aria-label={t("clientDetail.addAria")}
+          title={t("clientDetail.addAria")}
         >
           <Plus className="h-3.5 w-3.5" strokeWidth={2.25} />
         </button>
@@ -622,8 +634,8 @@ function ItemRow({ item, onChanged }: { item: SummaryItem; onChanged: () => void
           className="btn-icon btn-danger-ghost h-8 w-8"
           disabled={busy}
           onClick={() => adjust(-1)}
-          aria-label="Убавить"
-          title="Убавить"
+          aria-label={t("clientDetail.subtractAria")}
+          title={t("clientDetail.subtractAria")}
         >
           <Minus className="h-3.5 w-3.5" strokeWidth={2.25} />
         </button>

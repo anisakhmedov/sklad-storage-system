@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { initTelegramWebApp, miniAppFetch } from "@/components/miniapp/telegram";
+import { useI18n } from "@/components/miniapp/i18n";
 import RegisterForm from "@/components/miniapp/RegisterForm";
 import PendingScreen from "@/components/miniapp/PendingScreen";
 import NewRecordWizard from "@/components/miniapp/NewRecordWizard";
@@ -22,6 +23,7 @@ interface MeResponse {
 }
 
 export default function MiniAppPage() {
+  const { t } = useI18n();
   const [me, setMe] = useState<MeResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -34,15 +36,16 @@ export default function MiniAppPage() {
       const res = await miniAppFetch("/api/miniapp/me");
       const data = await res.json();
       if (!res.ok) {
-        setError(data.error || "Ошибка");
+        setError(data.error || t("common.error"));
         return;
       }
       setMe(data);
     } catch {
-      setError("Не удалось связаться с сервером");
+      setError(t("common.networkError"));
     } finally {
       setLoading(false);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -54,7 +57,7 @@ export default function MiniAppPage() {
     return (
       <div className="pt-20 flex flex-col items-center justify-center gap-3">
         <div className="h-9 w-9 rounded-full border-[3px] border-brand-200 border-t-brand-600 animate-spin" />
-        <p className="text-sm text-ink-400">Загрузка…</p>
+        <p className="text-sm text-ink-400">{t("common.loading")}</p>
       </div>
     );
   }
@@ -65,9 +68,7 @@ export default function MiniAppPage() {
         <div className="empty-state-icon bg-rose-100 text-rose-600 mx-auto">
           <TriangleAlert className="h-5 w-5" strokeWidth={1.8} />
         </div>
-        <p className="text-sm text-rose-600 mt-1">
-          {error || "Не удалось получить данные Telegram. Откройте приложение через бота."}
-        </p>
+        <p className="text-sm text-rose-600 mt-1">{error || t("home.loadError")}</p>
       </div>
     );
   }
@@ -109,14 +110,14 @@ export default function MiniAppPage() {
   }
 
   return (
-    <div className="pt-8">
+    <div className="pt-4">
       <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-brand-gradient text-white shadow-sm shadow-brand-600/25 mb-5">
         <Boxes className="h-6 w-6" strokeWidth={2.1} />
       </div>
       <h1 className="text-xl font-semibold text-ink-900 tracking-tight mb-1">
-        Здравствуйте, {me.employee.name}!
+        {t("home.greeting", { name: me.employee.name })}
       </h1>
-      <p className="text-sm text-ink-400 mb-8">Учёт хранения продукции в контейнерах</p>
+      <p className="text-sm text-ink-400 mb-8">{t("home.subtitle")}</p>
 
       <div className="space-y-3">
         <button
@@ -127,8 +128,8 @@ export default function MiniAppPage() {
             <Plus className="h-5 w-5" strokeWidth={2.1} />
           </div>
           <div className="flex-1 min-w-0">
-            <div className="font-medium text-ink-900">Новая запись</div>
-            <div className="text-xs text-ink-400 mt-0.5">Разместить товар в контейнере</div>
+            <div className="font-medium text-ink-900">{t("home.newRecordTitle")}</div>
+            <div className="text-xs text-ink-400 mt-0.5">{t("home.newRecordDesc")}</div>
           </div>
           <ChevronRight className="h-4.5 w-4.5 text-ink-300 shrink-0" strokeWidth={2} />
         </button>
@@ -141,8 +142,8 @@ export default function MiniAppPage() {
             <Wallet className="h-5 w-5" strokeWidth={2.1} />
           </div>
           <div className="flex-1 min-w-0">
-            <div className="font-medium text-ink-900">Записать оплату</div>
-            <div className="text-xs text-ink-400 mt-0.5">Клиент оплатил хранение</div>
+            <div className="font-medium text-ink-900">{t("home.incomeTitle")}</div>
+            <div className="text-xs text-ink-400 mt-0.5">{t("home.incomeDesc")}</div>
           </div>
           <ChevronRight className="h-4.5 w-4.5 text-ink-300 shrink-0" strokeWidth={2} />
         </button>
@@ -155,8 +156,8 @@ export default function MiniAppPage() {
             <Users className="h-5 w-5" strokeWidth={2.1} />
           </div>
           <div className="flex-1 min-w-0">
-            <div className="font-medium text-ink-900">Клиенты</div>
-            <div className="text-xs text-ink-400 mt-0.5">Товары клиента, задолженность, +/- груз</div>
+            <div className="font-medium text-ink-900">{t("home.clientsTitle")}</div>
+            <div className="text-xs text-ink-400 mt-0.5">{t("home.clientsDesc")}</div>
           </div>
           <ChevronRight className="h-4.5 w-4.5 text-ink-300 shrink-0" strokeWidth={2} />
         </button>
@@ -169,8 +170,8 @@ export default function MiniAppPage() {
             <MinusCircle className="h-5 w-5" strokeWidth={2.1} />
           </div>
           <div className="flex-1 min-w-0">
-            <div className="font-medium text-ink-900">Расходы</div>
-            <div className="text-xs text-ink-400 mt-0.5">Заявка на расход — уйдёт владельцу на одобрение</div>
+            <div className="font-medium text-ink-900">{t("home.expensesTitle")}</div>
+            <div className="text-xs text-ink-400 mt-0.5">{t("home.expensesDesc")}</div>
           </div>
           <ChevronRight className="h-4.5 w-4.5 text-ink-300 shrink-0" strokeWidth={2} />
         </button>
@@ -183,8 +184,8 @@ export default function MiniAppPage() {
             <Thermometer className="h-5 w-5" strokeWidth={2.1} />
           </div>
           <div className="flex-1 min-w-0">
-            <div className="font-medium text-ink-900">Обход</div>
-            <div className="text-xs text-ink-400 mt-0.5">Температура холодильных камер, 2 раза в день</div>
+            <div className="font-medium text-ink-900">{t("home.patrolTitle")}</div>
+            <div className="text-xs text-ink-400 mt-0.5">{t("home.patrolDesc")}</div>
           </div>
           <ChevronRight className="h-4.5 w-4.5 text-ink-300 shrink-0" strokeWidth={2} />
         </button>
@@ -197,8 +198,8 @@ export default function MiniAppPage() {
             <LayoutGrid className="h-5 w-5" strokeWidth={2.1} />
           </div>
           <div className="flex-1 min-w-0">
-            <div className="font-medium text-ink-900">Камеры контейнеров</div>
-            <div className="text-xs text-ink-400 mt-0.5">Отметить камеру как заполненную</div>
+            <div className="font-medium text-ink-900">{t("home.cellsTitle")}</div>
+            <div className="text-xs text-ink-400 mt-0.5">{t("home.cellsDesc")}</div>
           </div>
           <ChevronRight className="h-4.5 w-4.5 text-ink-300 shrink-0" strokeWidth={2} />
         </button>
@@ -211,8 +212,8 @@ export default function MiniAppPage() {
             <PackageMinus className="h-5 w-5" strokeWidth={2.1} />
           </div>
           <div className="flex-1 min-w-0">
-            <div className="font-medium text-ink-900">Продажа / списание инвентаря</div>
-            <div className="text-xs text-ink-400 mt-0.5">Продать инвентарь клиенту или списать</div>
+            <div className="font-medium text-ink-900">{t("home.disposalsTitle")}</div>
+            <div className="text-xs text-ink-400 mt-0.5">{t("home.disposalsDesc")}</div>
           </div>
           <ChevronRight className="h-4.5 w-4.5 text-ink-300 shrink-0" strokeWidth={2} />
         </button>

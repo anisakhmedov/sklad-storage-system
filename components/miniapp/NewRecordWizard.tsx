@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { miniAppFetch } from "./telegram";
+import { useI18n } from "./i18n";
 import CellGrid, { CellGridCell } from "./CellGrid";
 import ContractPreview from "./ContractPreview";
 import SignaturePad from "./SignaturePad";
@@ -9,12 +10,10 @@ import { buildContractFillData, placeholderMap } from "@/lib/contract/placeholde
 import { normalizePhone } from "@/lib/phone";
 import {
   TARIFF_TYPES,
-  TARIFF_LABELS,
   DEFAULT_TARIFF_RATES,
   isTariffCompatibleWithUnit,
   suggestedEndDate,
   TariffType,
-  formatTariffText,
 } from "@/lib/tariff";
 import {
   ArrowLeft,
@@ -129,19 +128,20 @@ function stepsFor(ownerType: OwnerType, firmsCount: number): StepKind[] {
   return steps;
 }
 
-const STEP_META: Record<StepKind, { label: string; icon: typeof Boxes }> = {
-  container: { label: "Контейнер", icon: Boxes },
-  cell: { label: "Камера", icon: LayoutGrid },
-  product: { label: "Товар", icon: Package },
-  owner: { label: "Владелец груза", icon: UserRound },
-  tariff: { label: "Тариф", icon: Wallet },
-  firm: { label: "Фирма", icon: Landmark },
-  contract: { label: "Договор", icon: FileText },
-  signature: { label: "Подпись", icon: PenLine },
-  review: { label: "Проверка", icon: ClipboardCheck },
-};
-
 export default function NewRecordWizard({ onExit }: { onExit: () => void }) {
+  const { t } = useI18n();
+  const STEP_META: Record<StepKind, { label: string; icon: typeof Boxes }> = {
+    container: { label: t("newRecord.stepContainer"), icon: Boxes },
+    cell: { label: t("newRecord.stepCell"), icon: LayoutGrid },
+    product: { label: t("newRecord.stepProduct"), icon: Package },
+    owner: { label: t("newRecord.stepOwner"), icon: UserRound },
+    tariff: { label: t("newRecord.stepTariff"), icon: Wallet },
+    firm: { label: t("newRecord.stepFirm"), icon: Landmark },
+    contract: { label: t("newRecord.stepContract"), icon: FileText },
+    signature: { label: t("newRecord.stepSignature"), icon: PenLine },
+    review: { label: t("newRecord.stepReview"), icon: ClipboardCheck },
+  };
+
   const [containers, setContainers] = useState<Container[]>([]);
   const [cells, setCells] = useState<CellGridCell[]>([]);
   const [cellsLoading, setCellsLoading] = useState(false);
@@ -172,14 +172,14 @@ export default function NewRecordWizard({ onExit }: { onExit: () => void }) {
       return;
     }
     setOwnerSearching(true);
-    const t = setTimeout(() => {
+    const timer = setTimeout(() => {
       miniAppFetch(`/api/miniapp/owners/search?q=${encodeURIComponent(ownerQuery.trim())}`)
         .then((r) => r.json())
         .then((d) => setOwnerResults(d.owners || []))
         .catch(() => setOwnerResults([]))
         .finally(() => setOwnerSearching(false));
     }, 300);
-    return () => clearTimeout(t);
+    return () => clearTimeout(timer);
   }, [ownerQuery]);
 
   function pickOwner(picked: OwnerSearchResult) {
@@ -239,13 +239,13 @@ export default function NewRecordWizard({ onExit }: { onExit: () => void }) {
 
   function next() {
     setError(null);
-    if (kind === "container" && !form.containerId) return setError("Выберите контейнер");
-    if (kind === "cell" && !form.cellNumber) return setError("Выберите камеру");
+    if (kind === "container" && !form.containerId) return setError(t("newRecord.selectContainer"));
+    if (kind === "cell" && !form.cellNumber) return setError(t("newRecord.selectCell"));
     if (kind === "product") {
-      if (!form.productName.trim()) return setError("Укажите наименование товара");
+      if (!form.productName.trim()) return setError(t("newRecord.productNameRequired"));
       const qty = Number(form.quantity);
       if (!form.quantity || Number.isNaN(qty) || qty <= 0) {
-        return setError("Количество должно быть больше 0");
+        return setError(t("newRecord.quantityPositive"));
       }
     }
     if (kind === "owner") {
@@ -253,38 +253,38 @@ export default function NewRecordWizard({ onExit }: { onExit: () => void }) {
         // Собираем ВСЕ незаполненные поля разом — иначе сотрудник видит общую фразу
         // "заполните всё", жмёт "Далее" снова, находит следующее пустое поле и так по кругу.
         const missing: string[] = [];
-        if (!form.ownerFullName.trim()) missing.push("ФИО");
-        if (!form.ownerPhone.trim()) missing.push("телефон");
-        if (!form.ownerPassport.trim()) missing.push("номер паспорта");
-        if (!form.ownerPinfl.trim()) missing.push("ПИНФЛ");
-        if (!form.ownerPassportIssueDate.trim()) missing.push("дата выдачи паспорта");
-        if (!form.ownerPassportIssuedBy.trim()) missing.push("кем выдан паспорт");
-        if (missing.length > 0) return setError(`Заполните: ${missing.join(", ")}`);
+        if (!form.ownerFullName.trim()) missing.push(t("newRecord.missingFullName"));
+        if (!form.ownerPhone.trim()) missing.push(t("newRecord.missingPhone"));
+        if (!form.ownerPassport.trim()) missing.push(t("newRecord.missingPassport"));
+        if (!form.ownerPinfl.trim()) missing.push(t("newRecord.missingPinfl"));
+        if (!form.ownerPassportIssueDate.trim()) missing.push(t("newRecord.missingPassportIssueDate"));
+        if (!form.ownerPassportIssuedBy.trim()) missing.push(t("newRecord.missingPassportIssuedBy"));
+        if (missing.length > 0) return setError(t("newRecord.fillFields", { fields: missing.join(", ") }));
 
         // Формат — только когда поле уже заполнено (пустое поле уже отловлено выше).
         const normalizedPhone = normalizePhone(form.ownerPhone);
         if (!/^\+998\d{9}$/.test(normalizedPhone)) {
-          return setError("Некорректный номер телефона — проверьте код страны и количество цифр");
+          return setError(t("newRecord.invalidPhone"));
         }
         if (!/^\d{14}$/.test(form.ownerPinfl.trim())) {
-          return setError("ПИНФЛ должен состоять ровно из 14 цифр");
+          return setError(t("newRecord.invalidPinfl"));
         }
       } else {
         const missing: string[] = [];
-        if (!form.companyName.trim()) missing.push("наименование фирмы");
-        if (!form.companyInn.trim()) missing.push("ИНН");
-        if (!form.companyDirector.trim()) missing.push("ФИО директора");
-        if (missing.length > 0) return setError(`Заполните: ${missing.join(", ")}`);
+        if (!form.companyName.trim()) missing.push(t("newRecord.missingCompanyName"));
+        if (!form.companyInn.trim()) missing.push(t("newRecord.missingInn"));
+        if (!form.companyDirector.trim()) missing.push(t("newRecord.missingCompanyDirector"));
+        if (missing.length > 0) return setError(t("newRecord.fillFields", { fields: missing.join(", ") }));
       }
     }
     if (kind === "tariff") {
       const rate = Number(form.tariffRate);
       if (!form.tariffRate || Number.isNaN(rate) || rate < 0) {
-        return setError("Укажите корректную ставку тарифа");
+        return setError(t("newRecord.invalidRate"));
       }
     }
-    if (kind === "firm" && !form.firmId) return setError("Выберите, от какой фирмы оформляется договор");
-    if (kind === "signature" && !form.clientSignaturePng) return setError("Клиент должен расписаться");
+    if (kind === "firm" && !form.firmId) return setError(t("newRecord.selectFirm"));
+    if (kind === "signature" && !form.clientSignaturePng) return setError(t("newRecord.signatureRequired"));
     setStep((s) => s + 1);
   }
 
@@ -336,7 +336,7 @@ export default function NewRecordWizard({ onExit }: { onExit: () => void }) {
       });
       const data = await res.json();
       if (!res.ok) {
-        setError(data.error || "Ошибка сохранения");
+        setError(data.error || t("newRecord.saveError"));
         return;
       }
       setSavedScreen(true);
@@ -357,22 +357,20 @@ export default function NewRecordWizard({ onExit }: { onExit: () => void }) {
         <div className="mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-full bg-emerald-100 text-emerald-600">
           <CheckCircle2 className="h-8 w-8" strokeWidth={1.8} />
         </div>
-        <h1 className="text-lg font-semibold text-ink-900 mb-2">Запись сохранена</h1>
+        <h1 className="text-lg font-semibold text-ink-900 mb-2">{t("newRecord.savedTitle")}</h1>
         <p className="text-sm text-ink-400 mb-2 leading-relaxed px-2">
-          {form.ownerType === "individual"
-            ? "PDF договора отправлен вам в этот чат."
-            : "Данные юридического лица сохранены. Договор для юрлиц не формируется."}
+          {form.ownerType === "individual" ? t("newRecord.savedIndividual") : t("newRecord.savedCompany")}
         </p>
-        <p className="text-sm text-ink-400 mb-6">Хотите добавить ещё одну позицию?</p>
+        <p className="text-sm text-ink-400 mb-6">{t("newRecord.addAnotherQ")}</p>
         <div className="space-y-2">
           <button className="btn-primary w-full py-3 rounded-2xl" onClick={() => startAnother(true)}>
-            Да, тот же контейнер
+            {t("newRecord.sameContainer")}
           </button>
           <button className="btn-secondary w-full py-3 rounded-2xl" onClick={() => startAnother(false)}>
-            Да, другой контейнер
+            {t("newRecord.otherContainer")}
           </button>
           <button className="btn-ghost w-full py-3 rounded-2xl" onClick={onExit}>
-            Нет, завершить
+            {t("newRecord.finish")}
           </button>
         </div>
       </div>
@@ -414,12 +412,12 @@ export default function NewRecordWizard({ onExit }: { onExit: () => void }) {
         <button
           className="btn-icon btn-ghost -ml-2"
           onClick={step === 0 ? onExit : back}
-          aria-label="Назад"
+          aria-label={t("common.back")}
         >
           <ArrowLeft className="h-4.5 w-4.5" strokeWidth={2.1} />
         </button>
         <span className="text-xs font-medium text-ink-400">
-          Шаг {step + 1} из {steps.length}
+          {t("newRecord.stepCounter", { current: step + 1, total: steps.length })}
         </span>
       </div>
 
@@ -449,7 +447,7 @@ export default function NewRecordWizard({ onExit }: { onExit: () => void }) {
               <div className="empty-state-icon">
                 <Boxes className="h-5 w-5" strokeWidth={1.8} />
               </div>
-              <p className="text-sm text-ink-500">Контейнеры ещё не созданы владельцем.</p>
+              <p className="text-sm text-ink-500">{t("newRecord.noContainers")}</p>
             </div>
           ) : (
             <div className="space-y-2">
@@ -496,13 +494,13 @@ export default function NewRecordWizard({ onExit }: { onExit: () => void }) {
               />
               <div className="flex items-center gap-4 text-xs text-ink-400 pt-1">
                 <span className="flex items-center gap-1.5">
-                  <span className="h-2.5 w-2.5 rounded-full bg-emerald-500" /> свободна
+                  <span className="h-2.5 w-2.5 rounded-full bg-emerald-500" /> {t("newRecord.cellLegendFree")}
                 </span>
                 <span className="flex items-center gap-1.5">
-                  <span className="h-2.5 w-2.5 rounded-full bg-amber-500" /> есть груз
+                  <span className="h-2.5 w-2.5 rounded-full bg-amber-500" /> {t("newRecord.cellLegendOccupied")}
                 </span>
                 <span className="flex items-center gap-1.5">
-                  <span className="h-2.5 w-2.5 rounded-full bg-rose-500" /> заполнена
+                  <span className="h-2.5 w-2.5 rounded-full bg-rose-500" /> {t("newRecord.cellLegendFull")}
                 </span>
               </div>
             </>
@@ -513,7 +511,7 @@ export default function NewRecordWizard({ onExit }: { onExit: () => void }) {
       {kind === "product" && (
         <div className="space-y-3">
           <div>
-            <label className="label">Наименование товара</label>
+            <label className="label">{t("newRecord.productNameLabel")}</label>
             <input
               className="input"
               value={form.productName}
@@ -523,7 +521,7 @@ export default function NewRecordWizard({ onExit }: { onExit: () => void }) {
           </div>
           <div className="flex gap-3">
             <div className="flex-1">
-              <label className="label">Количество</label>
+              <label className="label">{t("newRecord.quantityLabel")}</label>
               <input
                 type="number"
                 inputMode="decimal"
@@ -533,7 +531,7 @@ export default function NewRecordWizard({ onExit }: { onExit: () => void }) {
               />
             </div>
             <div className="flex-1">
-              <label className="label">Ед. изм.</label>
+              <label className="label">{t("newRecord.unitLabel")}</label>
               <select
                 className="input"
                 value={form.unit}
@@ -547,10 +545,10 @@ export default function NewRecordWizard({ onExit }: { onExit: () => void }) {
                   });
                 }}
               >
-                <option value="kg">кг</option>
-                <option value="tonne">тонны</option>
-                <option value="box">ящики</option>
-                <option value="piece">штуки</option>
+                <option value="kg">{t("unit.kg")}</option>
+                <option value="tonne">{t("unit.tonne")}</option>
+                <option value="box">{t("unit.box")}</option>
+                <option value="piece">{t("unit.piece")}</option>
               </select>
             </div>
           </div>
@@ -560,14 +558,14 @@ export default function NewRecordWizard({ onExit }: { onExit: () => void }) {
       {kind === "owner" && (
         <div className="space-y-3">
           <div>
-            <label className="label">Клиент уже был?</label>
+            <label className="label">{t("newRecord.ownerAlreadyLabel")}</label>
             <div className="input-icon-wrap relative">
               <Search className="input-icon h-4 w-4" strokeWidth={2} />
               <input
                 className="input"
                 value={ownerQuery}
                 onChange={(e) => setOwnerQuery(e.target.value)}
-                placeholder="Поиск по имени, телефону, ИНН…"
+                placeholder={t("newRecord.ownerSearchPlaceholder")}
               />
               {ownerQuery && (
                 <button
@@ -577,13 +575,13 @@ export default function NewRecordWizard({ onExit }: { onExit: () => void }) {
                     setOwnerQuery("");
                     setOwnerResults([]);
                   }}
-                  aria-label="Очистить"
+                  aria-label={t("newRecord.clearAria")}
                 >
                   <X className="h-4 w-4" strokeWidth={2} />
                 </button>
               )}
             </div>
-            {ownerSearching && <p className="text-xs text-ink-400 mt-1.5">Ищем…</p>}
+            {ownerSearching && <p className="text-xs text-ink-400 mt-1.5">{t("newRecord.searching")}</p>}
             {!ownerSearching && ownerResults.length > 0 && (
               <div className="mt-1.5 space-y-1.5">
                 {ownerResults.map((o) => (
@@ -597,23 +595,23 @@ export default function NewRecordWizard({ onExit }: { onExit: () => void }) {
                       {o.goodsOwner.type === "individual" ? o.goodsOwner.fullName : o.goodsOwner.companyName}
                     </div>
                     <div className="text-xs text-ink-400">
-                      {o.goodsOwner.type === "individual" ? o.goodsOwner.phone : `ИНН ${o.goodsOwner.inn}`}
+                      {o.goodsOwner.type === "individual" ? o.goodsOwner.phone : `${t("newRecord.innPrefix")} ${o.goodsOwner.inn}`}
                     </div>
                   </button>
                 ))}
               </div>
             )}
             {!ownerSearching && ownerQuery.trim().length >= 2 && ownerResults.length === 0 && !ownerPicked && (
-              <p className="text-xs text-ink-400 mt-1.5">Никого не нашли — заполните данные вручную ниже.</p>
+              <p className="text-xs text-ink-400 mt-1.5">{t("newRecord.noOwnersFound")}</p>
             )}
             {ownerPicked && (
               <p className="text-xs text-emerald-600 mt-1.5 flex items-center gap-1">
-                <CheckCircle2 className="h-3.5 w-3.5" strokeWidth={2} /> Данные подставлены — можно поправить ниже.
+                <CheckCircle2 className="h-3.5 w-3.5" strokeWidth={2} /> {t("newRecord.ownerFilled")}
               </p>
             )}
           </div>
 
-          <label className="label">Тип арендатора</label>
+          <label className="label">{t("newRecord.tenantTypeLabel")}</label>
           <div className="flex gap-2">
             <button
               type="button"
@@ -625,7 +623,7 @@ export default function NewRecordWizard({ onExit }: { onExit: () => void }) {
               onClick={() => setForm({ ...form, ownerType: "individual" })}
             >
               <UserRound className="h-4 w-4" strokeWidth={2} />
-              Физическое лицо
+              {t("newRecord.individualFull")}
             </button>
             <button
               type="button"
@@ -637,19 +635,15 @@ export default function NewRecordWizard({ onExit }: { onExit: () => void }) {
               onClick={() => setForm({ ...form, ownerType: "company" })}
             >
               <Building2 className="h-4 w-4" strokeWidth={2} />
-              Юридическое лицо
+              {t("newRecord.companyFull")}
             </button>
           </div>
 
           {form.ownerType === "individual" ? (
             <>
-              <p className="text-xs text-ink-400 leading-relaxed">
-                Для физлиц автоматически формируется договор — паспортные данные и ПИНФЛ
-                подставляются в его текст, а на следующих шагах клиент читает договор и
-                расписывается.
-              </p>
+              <p className="text-xs text-ink-400 leading-relaxed">{t("newRecord.individualHint")}</p>
               <div>
-                <label className="label">ФИО владельца груза</label>
+                <label className="label">{t("newRecord.fullNameLabel")}</label>
                 <input
                   className="input"
                   value={form.ownerFullName}
@@ -657,7 +651,7 @@ export default function NewRecordWizard({ onExit }: { onExit: () => void }) {
                 />
               </div>
               <div>
-                <label className="label">Телефон</label>
+                <label className="label">{t("newRecord.phoneLabel")}</label>
                 <input
                   className="input"
                   value={form.ownerPhone}
@@ -666,7 +660,7 @@ export default function NewRecordWizard({ onExit }: { onExit: () => void }) {
                 />
               </div>
               <div>
-                <label className="label">Номер паспорта</label>
+                <label className="label">{t("newRecord.passportLabel")}</label>
                 <input
                   className="input"
                   value={form.ownerPassport}
@@ -675,7 +669,7 @@ export default function NewRecordWizard({ onExit }: { onExit: () => void }) {
                 />
               </div>
               <div>
-                <label className="label">ПИНФЛ</label>
+                <label className="label">{t("newRecord.pinflLabel")}</label>
                 <input
                   className="input"
                   value={form.ownerPinfl}
@@ -683,7 +677,7 @@ export default function NewRecordWizard({ onExit }: { onExit: () => void }) {
                 />
               </div>
               <div>
-                <label className="label">Дата выдачи паспорта</label>
+                <label className="label">{t("newRecord.passportIssueDateLabel")}</label>
                 <input
                   className="input"
                   value={form.ownerPassportIssueDate}
@@ -692,7 +686,7 @@ export default function NewRecordWizard({ onExit }: { onExit: () => void }) {
                 />
               </div>
               <div>
-                <label className="label">Кем выдан паспорт</label>
+                <label className="label">{t("newRecord.passportIssuedByLabel")}</label>
                 <input
                   className="input"
                   value={form.ownerPassportIssuedBy}
@@ -702,11 +696,9 @@ export default function NewRecordWizard({ onExit }: { onExit: () => void }) {
             </>
           ) : (
             <>
-              <p className="text-xs text-ink-400 leading-relaxed">
-                Для юрлиц договор не формируется — данные только сохраняются.
-              </p>
+              <p className="text-xs text-ink-400 leading-relaxed">{t("newRecord.companyHint")}</p>
               <div>
-                <label className="label">Наименование фирмы</label>
+                <label className="label">{t("newRecord.companyNameLabel")}</label>
                 <input
                   className="input"
                   value={form.companyName}
@@ -714,7 +706,7 @@ export default function NewRecordWizard({ onExit }: { onExit: () => void }) {
                 />
               </div>
               <div>
-                <label className="label">ИНН</label>
+                <label className="label">{t("newRecord.innLabel")}</label>
                 <input
                   className="input"
                   value={form.companyInn}
@@ -722,7 +714,7 @@ export default function NewRecordWizard({ onExit }: { onExit: () => void }) {
                 />
               </div>
               <div>
-                <label className="label">Имя и фамилия директора</label>
+                <label className="label">{t("newRecord.companyDirectorLabel")}</label>
                 <input
                   className="input"
                   value={form.companyDirector}
@@ -736,45 +728,42 @@ export default function NewRecordWizard({ onExit }: { onExit: () => void }) {
 
       {kind === "tariff" && (
         <div className="space-y-3">
-          <p className="text-xs text-ink-400 leading-relaxed">
-            Это договорённые условия оплаты за хранение, а не сама оплата — фактические
-            платежи вносятся позже на веб-панели (арендатор может заплатить не сразу).
-          </p>
+          <p className="text-xs text-ink-400 leading-relaxed">{t("newRecord.tariffHint")}</p>
           <div>
-            <label className="label">Тип тарифа</label>
+            <label className="label">{t("newRecord.tariffTypeLabel")}</label>
             <div className="space-y-2">
-              {TARIFF_TYPES.filter((t) => isTariffCompatibleWithUnit(t, form.unit)).map((t) => (
+              {TARIFF_TYPES.filter((tt) => isTariffCompatibleWithUnit(tt, form.unit)).map((tt) => (
                 <button
-                  key={t}
+                  key={tt}
                   type="button"
                   onClick={() => {
-                    const suggestion = suggestedEndDate(t, new Date());
+                    const suggestion = suggestedEndDate(tt, new Date());
                     setForm({
                       ...form,
-                      tariffType: t,
-                      tariffRate: String(DEFAULT_TARIFF_RATES[t]),
+                      tariffType: tt,
+                      tariffRate: String(DEFAULT_TARIFF_RATES[tt]),
                       expectedEndDate: suggestion ? toDateInputValue(suggestion) : "",
                     });
                   }}
                   className={`w-full flex items-center justify-between rounded-xl border px-3.5 py-2.5 text-sm transition-colors ${
-                    form.tariffType === t
+                    form.tariffType === tt
                       ? "border-brand-600 bg-brand-50 text-brand-700 font-medium"
                       : "border-ink-200 bg-white text-ink-600"
                   }`}
                 >
-                  {TARIFF_LABELS[t]}
-                  {form.tariffType === t && <CheckCircle2 className="h-4 w-4" strokeWidth={2} />}
+                  {t(`tariff.${tt}`)}
+                  {form.tariffType === tt && <CheckCircle2 className="h-4 w-4" strokeWidth={2} />}
                 </button>
               ))}
             </div>
             {(form.unit === "box" || form.unit === "piece") && (
               <p className="text-xs text-ink-400 mt-1.5">
-                Тарифы «за кг» недоступны для единицы «{form.unit === "box" ? "ящики" : "штуки"}» — вес неизвестен.
+                {t("newRecord.tariffUnavailableForUnit", { unit: t(`unit.${form.unit}`) })}
               </p>
             )}
           </div>
           <div>
-            <label className="label">Ставка, сум</label>
+            <label className="label">{t("newRecord.rateLabel")}</label>
             <input
               type="number"
               inputMode="decimal"
@@ -784,26 +773,21 @@ export default function NewRecordWizard({ onExit }: { onExit: () => void }) {
             />
           </div>
           <div>
-            <label className="label">Дата окончания (когда заберут)</label>
+            <label className="label">{t("newRecord.expectedEndDateLabel")}</label>
             <input
               type="date"
               className="input"
               value={form.expectedEndDate}
               onChange={(e) => setForm({ ...form, expectedEndDate: e.target.value })}
             />
-            <p className="text-xs text-ink-400 mt-1">
-              Ориентир, не сама оплата — на начисление тарифа не влияет, можно поправить или
-              оставить пустым.
-            </p>
+            <p className="text-xs text-ink-400 mt-1">{t("newRecord.expectedEndDateHint")}</p>
           </div>
         </div>
       )}
 
       {kind === "firm" && (
         <div className="space-y-3">
-          <p className="text-xs text-ink-400 leading-relaxed">
-            От чьего имени (какая ваша фирма) оформляется договор/акт по этой записи.
-          </p>
+          <p className="text-xs text-ink-400 leading-relaxed">{t("newRecord.firmHint")}</p>
           <div className="space-y-2">
             {firms.map((f) => (
               <button
@@ -817,7 +801,10 @@ export default function NewRecordWizard({ onExit }: { onExit: () => void }) {
                 <div className="flex items-center justify-between">
                   <div>
                     <div className="font-medium text-ink-900">{f.name}</div>
-                    <div className="text-xs text-ink-400 mt-0.5">Директор: {f.directorFullName}</div>
+                    <div className="text-xs text-ink-400 mt-0.5">
+                      {t("newRecord.firmDirectorPrefix")}
+                      {f.directorFullName}
+                    </div>
                   </div>
                   {form.firmId === f.id && <CheckCircle2 className="h-5 w-5 text-brand-600 shrink-0" strokeWidth={2} />}
                 </div>
@@ -829,10 +816,7 @@ export default function NewRecordWizard({ onExit }: { onExit: () => void }) {
 
       {kind === "contract" && (
         <div className="space-y-3">
-          <p className="text-xs text-ink-400 leading-relaxed">
-            Передайте телефон клиенту — пусть прочитает договор до конца, затем нажмите
-            «Ознакомлен».
-          </p>
+          <p className="text-xs text-ink-400 leading-relaxed">{t("newRecord.contractHint")}</p>
           <div className="max-h-[55vh] overflow-y-auto rounded-2xl border border-ink-200 bg-white p-3.5">
             <ContractPreview map={contractPreviewMap} />
           </div>
@@ -841,9 +825,7 @@ export default function NewRecordWizard({ onExit }: { onExit: () => void }) {
 
       {kind === "signature" && (
         <div className="space-y-3">
-          <p className="text-xs text-ink-400 leading-relaxed">
-            Клиент расписывается сам — передайте ему телефон.
-          </p>
+          <p className="text-xs text-ink-400 leading-relaxed">{t("newRecord.signatureHint")}</p>
           <SignaturePad
             value={form.clientSignaturePng}
             onChange={(dataUrl) => setForm({ ...form, clientSignaturePng: dataUrl })}
@@ -854,41 +836,41 @@ export default function NewRecordWizard({ onExit }: { onExit: () => void }) {
       {kind === "review" && (
         <div className="space-y-2 text-sm">
           <div className="card">
-            <Row label="Контейнер" value={containers.find((c) => c.id === form.containerId)?.name} />
-            <Row label="Камера" value={form.cellNumber ? String(form.cellNumber) : undefined} />
-            {firms.length > 0 && <Row label="Фирма" value={selectedFirm?.name || "По умолчанию"} />}
-            <Row label="Товар" value={form.productName} />
-            <Row label="Количество" value={`${form.quantity} ${form.unit}`} />
-            <Row label="Тип арендатора" value={form.ownerType === "individual" ? "Физ. лицо" : "Юр. лицо"} />
+            <Row label={t("newRecord.reviewContainer")} value={containers.find((c) => c.id === form.containerId)?.name} />
+            <Row label={t("newRecord.reviewCell")} value={form.cellNumber ? String(form.cellNumber) : undefined} />
+            {firms.length > 0 && <Row label={t("newRecord.reviewFirm")} value={selectedFirm?.name || t("newRecord.reviewDefaultFirm")} />}
+            <Row label={t("newRecord.reviewProduct")} value={form.productName} />
+            <Row label={t("newRecord.reviewQuantity")} value={`${form.quantity} ${form.unit}`} />
+            <Row label={t("newRecord.reviewTenantType")} value={form.ownerType === "individual" ? t("common.individual") : t("common.company")} />
             {form.ownerType === "individual" ? (
               <>
-                <Row label="Владелец груза" value={form.ownerFullName} />
-                <Row label="Телефон владельца" value={form.ownerPhone} />
-                <Row label="Паспорт" value={form.ownerPassport} />
-                <Row label="ПИНФЛ" value={form.ownerPinfl} />
-                <Row label="Дата выдачи" value={form.ownerPassportIssueDate} />
-                <Row label="Кем выдан" value={form.ownerPassportIssuedBy} />
+                <Row label={t("newRecord.reviewOwner")} value={form.ownerFullName} />
+                <Row label={t("newRecord.reviewOwnerPhone")} value={form.ownerPhone} />
+                <Row label={t("newRecord.reviewPassport")} value={form.ownerPassport} />
+                <Row label={t("newRecord.reviewPinfl")} value={form.ownerPinfl} />
+                <Row label={t("newRecord.reviewIssueDate")} value={form.ownerPassportIssueDate} />
+                <Row label={t("newRecord.reviewIssuedBy")} value={form.ownerPassportIssuedBy} />
               </>
             ) : (
               <>
-                <Row label="Фирма" value={form.companyName} />
-                <Row label="ИНН" value={form.companyInn} />
-                <Row label="Директор" value={form.companyDirector} />
+                <Row label={t("newRecord.reviewCompany")} value={form.companyName} />
+                <Row label={t("newRecord.reviewInn")} value={form.companyInn} />
+                <Row label={t("newRecord.reviewDirector")} value={form.companyDirector} />
               </>
             )}
             <Row
-              label="Тариф"
-              value={formatTariffText({ type: form.tariffType, rate: Number(form.tariffRate) || 0 })}
+              label={t("newRecord.reviewTariff")}
+              value={`${new Intl.NumberFormat("ru-RU").format(Number(form.tariffRate) || 0)} ${t(`tariff.${form.tariffType}_short`)}`}
               last
             />
           </div>
           {form.ownerType === "individual" && form.clientSignaturePng && (
             <div className="card">
-              <p className="text-xs text-ink-400 mb-1.5">Подпись клиента</p>
+              <p className="text-xs text-ink-400 mb-1.5">{t("newRecord.signatureCaption")}</p>
               {/* eslint-disable-next-line @next/next/no-img-element -- data URL, не файл из /public */}
               <img
                 src={form.clientSignaturePng}
-                alt="Подпись клиента"
+                alt={t("newRecord.signatureCaption")}
                 className="h-16 rounded-lg border border-ink-200 bg-white"
               />
             </div>
@@ -905,12 +887,12 @@ export default function NewRecordWizard({ onExit }: { onExit: () => void }) {
       <div className="mt-6">
         {step < steps.length - 1 ? (
           <button className="btn-primary w-full py-3 rounded-2xl" onClick={next}>
-            {kind === "contract" ? "Ознакомлен" : "Далее"}
+            {kind === "contract" ? t("newRecord.acknowledged") : t("newRecord.next")}
             <ChevronRight className="h-4 w-4" strokeWidth={2.25} />
           </button>
         ) : (
           <button className="btn-primary w-full py-3 rounded-2xl" onClick={handleSubmit} disabled={busy}>
-            {busy ? "Сохранение…" : "Сохранить запись"}
+            {busy ? t("common.saving") : t("newRecord.saveRecord")}
           </button>
         )}
       </div>

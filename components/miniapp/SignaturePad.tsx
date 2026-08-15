@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Eraser } from "lucide-react";
+import { useI18n } from "./i18n";
 
 /**
  * Холст для подписи клиента от руки (шаг "Подпись" в
@@ -18,6 +19,7 @@ export default function SignaturePad({
   value: string | null;
   onChange: (dataUrl: string | null) => void;
 }) {
+  const { t } = useI18n();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const drawingRef = useRef(false);
   const emptyRef = useRef(!value);
@@ -100,10 +102,10 @@ export default function SignaturePad({
         onPointerLeave={end}
       />
       <div className="mt-2 flex items-center justify-between">
-        <p className="text-xs text-ink-400">Распишитесь пальцем или стилусом в поле выше.</p>
+        <p className="text-xs text-ink-400">{t("signature.hint")}</p>
         <button type="button" className="btn-secondary btn-sm shrink-0" onClick={clear} disabled={empty}>
           <Eraser className="h-3.5 w-3.5" strokeWidth={2} />
-          Очистить
+          {t("signature.clear")}
         </button>
       </div>
     </div>

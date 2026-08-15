@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { miniAppFetch } from "./telegram";
+import { useI18n } from "./i18n";
 import ClientDetail from "./ClientDetail";
 import { ArrowLeft, Search, UserRound, Building2, ChevronRight, Users, TriangleAlert } from "lucide-react";
 
@@ -27,6 +28,7 @@ interface OwnerRow {
  * и группирует по ownerKey, как это уже делает AddIncomeWizard.tsx.
  */
 export default function ClientsList({ onExit }: { onExit: () => void }) {
+  const { t } = useI18n();
   const [debts, setDebts] = useState<OwnerContainerDebt[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -38,13 +40,14 @@ export default function ClientsList({ onExit }: { onExit: () => void }) {
       .then(async (r) => {
         const d = await r.json().catch(() => ({}));
         if (!r.ok) {
-          setLoadError(d.error || "Не удалось загрузить список клиентов");
+          setLoadError(d.error || t("clients.loadError"));
           return;
         }
         setDebts(d.debts || []);
       })
-      .catch(() => setLoadError("Не удалось связаться с сервером"))
+      .catch(() => setLoadError(t("common.networkError")))
       .finally(() => setLoading(false));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const owners = useMemo(() => {
@@ -66,17 +69,17 @@ export default function ClientsList({ onExit }: { onExit: () => void }) {
   return (
     <div className="pt-4 pb-8">
       <div className="flex items-center gap-2 mb-5">
-        <button className="btn-icon btn-ghost -ml-2" onClick={onExit} aria-label="Назад">
+        <button className="btn-icon btn-ghost -ml-2" onClick={onExit} aria-label={t("common.back")}>
           <ArrowLeft className="h-4.5 w-4.5" strokeWidth={2.1} />
         </button>
-        <h1 className="text-lg font-semibold text-ink-900 tracking-tight">Клиенты</h1>
+        <h1 className="text-lg font-semibold text-ink-900 tracking-tight">{t("clients.title")}</h1>
       </div>
 
       <div className="relative mb-4">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-ink-300" strokeWidth={2} />
         <input
           className="input pl-9"
-          placeholder="Поиск по имени"
+          placeholder={t("clients.searchPlaceholder")}
           value={query}
           onChange={(e) => setQuery(e.target.value)}
         />
@@ -100,9 +103,7 @@ export default function ClientsList({ onExit }: { onExit: () => void }) {
           <div className="empty-state-icon">
             <Users className="h-5 w-5" strokeWidth={1.8} />
           </div>
-          <p className="text-sm text-ink-500">
-            {owners.length === 0 ? "Клиентов пока нет." : "Ничего не найдено."}
-          </p>
+          <p className="text-sm text-ink-500">{owners.length === 0 ? t("clients.empty") : t("common.notFound")}</p>
         </div>
       ) : (
         <div className="space-y-2">
@@ -120,7 +121,9 @@ export default function ClientsList({ onExit }: { onExit: () => void }) {
                 <div className="flex-1 min-w-0">
                   <div className="font-medium text-ink-900 truncate">{o.ownerLabel}</div>
                   <div className={`text-xs mt-0.5 ${o.balance > 0 ? "text-rose-500" : "text-ink-400"}`}>
-                    {o.balance > 0 ? `Долг: ${Math.round(o.balance).toLocaleString("ru-RU")} сум` : "Задолженности нет"}
+                    {o.balance > 0
+                      ? t("clients.debt", { amount: Math.round(o.balance).toLocaleString("ru-RU") })
+                      : t("clients.noDebt")}
                   </div>
                 </div>
                 <ChevronRight className="h-4 w-4 text-ink-300 shrink-0" strokeWidth={2} />

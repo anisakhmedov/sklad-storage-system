@@ -1,6 +1,7 @@
 "use client";
 
 import { Lock } from "lucide-react";
+import { useI18n } from "./i18n";
 
 export interface CellGridCell {
   number: number;
@@ -28,6 +29,7 @@ export default function CellGrid({
   onSelect?: (n: number) => void;
   allowSelectFull?: boolean;
 }) {
+  const { t } = useI18n();
   const sortedCells = [...cells].sort((a, b) => a.number - b.number);
 
   return (
@@ -57,7 +59,9 @@ export default function CellGrid({
           >
             <span>{n}</span>
             {occupants.length > 0 && (
-              <span className="text-[10px] font-normal leading-none">{occupants.length} чел.</span>
+              <span className="text-[10px] font-normal leading-none">
+                {occupants.length} {t("cells.peopleShort")}
+              </span>
             )}
             {full && <Lock className="absolute top-1.5 right-1.5 h-3 w-3" strokeWidth={2.2} />}
           </button>

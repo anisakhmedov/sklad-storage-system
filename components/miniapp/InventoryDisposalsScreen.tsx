@@ -2,8 +2,9 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { miniAppFetch } from "./telegram";
-import { ArrowLeft, DollarSign, PackageMinus, TriangleAlert, Package } from "lucide-react";
+import { useI18n } from "./i18n";
 import { isPricelessItemName } from "@/lib/inventoryPricing";
+import { ArrowLeft, DollarSign, PackageMinus, TriangleAlert, Package } from "lucide-react";
 
 interface ContainerRef {
   id: string;
@@ -17,8 +18,6 @@ interface InventoryRow {
   available: number;
 }
 
-const methodLabels: Record<string, string> = { cash: "Наличные", card: "Карта (П2П)" };
-
 /**
  * Продажа/списание инвентаря — Mini App, тот же смысл, что и app/dashboard/inventory-disposals
  * на веб-панели (см. models/InventoryDisposalEntry.ts). Заменяет собой прежний экран
@@ -27,6 +26,7 @@ const methodLabels: Record<string, string> = { cash: "Наличные", card: "
  * идёт мимо сотрудника, он физически не может его подтвердить).
  */
 export default function InventoryDisposalsScreen({ onExit }: { onExit: () => void }) {
+  const { t } = useI18n();
   const [containers, setContainers] = useState<ContainerRef[]>([]);
   const [containerId, setContainerId] = useState("");
   const [items, setItems] = useState<InventoryRow[]>([]);
@@ -44,27 +44,31 @@ export default function InventoryDisposalsScreen({ onExit }: { onExit: () => voi
       });
   }, []);
 
-  const load = useCallback(async () => {
-    if (!containerId) {
-      setLoading(false);
-      return;
-    }
-    setLoading(true);
-    setError(null);
-    try {
-      const res = await miniAppFetch(`/api/miniapp/inventory?containerId=${containerId}`);
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        setError(data.error || "Не удалось загрузить инвентарь");
+  const load = useCallback(
+    async () => {
+      if (!containerId) {
+        setLoading(false);
         return;
       }
-      setItems(data.items || []);
-    } catch {
-      setError("Не удалось связаться с сервером");
-    } finally {
-      setLoading(false);
-    }
-  }, [containerId]);
+      setLoading(true);
+      setError(null);
+      try {
+        const res = await miniAppFetch(`/api/miniapp/inventory?containerId=${containerId}`);
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          setError(data.error || t("disposals.loadError"));
+          return;
+        }
+        setItems(data.items || []);
+      } catch {
+        setError(t("common.networkError"));
+      } finally {
+        setLoading(false);
+      }
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [containerId]
+  );
 
   useEffect(() => {
     load();
@@ -73,10 +77,10 @@ export default function InventoryDisposalsScreen({ onExit }: { onExit: () => voi
   return (
     <div className="pt-4 pb-8">
       <div className="flex items-center gap-2 mb-5">
-        <button className="btn-icon btn-ghost -ml-2" onClick={onExit} aria-label="Назад">
+        <button className="btn-icon btn-ghost -ml-2" onClick={onExit} aria-label={t("common.back")}>
           <ArrowLeft className="h-4.5 w-4.5" strokeWidth={2.1} />
         </button>
-        <h1 className="text-lg font-semibold text-ink-900 tracking-tight">Продажа / списание инвентаря</h1>
+        <h1 className="text-lg font-semibold text-ink-900 tracking-tight">{t("disposals.title")}</h1>
       </div>
 
       {containers.length > 1 && (
@@ -107,7 +111,7 @@ export default function InventoryDisposalsScreen({ onExit }: { onExit: () => voi
           <div className="empty-state-icon">
             <Package className="h-5 w-5" strokeWidth={1.8} />
           </div>
-          <p className="text-sm text-ink-500">В этом контейнере пока нет позиций инвентаря.</p>
+          <p className="text-sm text-ink-500">{t("disposals.noItems")}</p>
         </div>
       ) : (
         <div className="space-y-2.5">
@@ -116,7 +120,7 @@ export default function InventoryDisposalsScreen({ onExit }: { onExit: () => voi
               <div className="flex items-center justify-between mb-2.5">
                 <span className="font-medium text-ink-900">{item.name}</span>
                 <span className="text-sm text-ink-500 tabular-nums">
-                  свободно {item.available} {item.unit}
+                  {t("disposals.available", { n: item.available, unit: item.unit })}
                 </span>
               </div>
               <div className="flex gap-1.5">
@@ -127,7 +131,7 @@ export default function InventoryDisposalsScreen({ onExit }: { onExit: () => voi
                     onClick={() => setActing({ item, kind: "sale" })}
                   >
                     <DollarSign className="h-3.5 w-3.5" strokeWidth={2.1} />
-                    Продать
+                    {t("disposals.sell")}
                   </button>
                 )}
                 <button
@@ -136,11 +140,11 @@ export default function InventoryDisposalsScreen({ onExit }: { onExit: () => voi
                   onClick={() => setActing({ item, kind: "writeoff" })}
                 >
                   <PackageMinus className="h-3.5 w-3.5" strokeWidth={2.1} />
-                  Списать
+                  {t("disposals.writeoff")}
                 </button>
               </div>
               {isPricelessItemName(item.name) && (
-                <p className="text-[11px] text-ink-400 mt-1.5">У ящиков нет цены — доступно только списание.</p>
+                <p className="text-[11px] text-ink-400 mt-1.5">{t("disposals.pricelessHint")}</p>
               )}
             </div>
           ))}
@@ -176,6 +180,8 @@ function DisposalModal({
   onClose: () => void;
   onSaved: () => void;
 }) {
+  const { t } = useI18n();
+  const methodLabels: Record<string, string> = { cash: t("method.cash"), card: t("method.card") };
   const [quantity, setQuantity] = useState("");
   const [amount, setAmount] = useState("");
   const [method, setMethod] = useState("cash");
@@ -185,15 +191,15 @@ function DisposalModal({
   async function submit() {
     const qty = Number(quantity);
     if (!quantity || Number.isNaN(qty) || qty <= 0) {
-      setError("Укажите количество");
+      setError(t("disposals.quantityRequired"));
       return;
     }
     if (qty > item.available) {
-      setError(`Свободно только ${item.available} ${item.unit} — нельзя больше`);
+      setError(t("disposals.notEnoughAvailable", { available: item.available, unit: item.unit }));
       return;
     }
     if (kind === "sale" && (!amount || Number(amount) <= 0)) {
-      setError("Укажите сумму продажи");
+      setError(t("disposals.amountRequired"));
       return;
     }
     setBusy(true);
@@ -211,12 +217,12 @@ function DisposalModal({
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        setError(data.error || "Ошибка сохранения");
+        setError(data.error || t("disposals.saveError"));
         return;
       }
       onSaved();
     } catch {
-      setError("Не удалось связаться с сервером");
+      setError(t("common.networkError"));
     } finally {
       setBusy(false);
     }
@@ -226,7 +232,7 @@ function DisposalModal({
     <div className="modal-backdrop" onClick={onClose}>
       <div className="modal-panel max-w-sm" onClick={(e) => e.stopPropagation()}>
         <h3 className="card-title mb-4">
-          {kind === "sale" ? "Продать" : "Списать"} «{item.name}»
+          {kind === "sale" ? t("disposals.sellTitle", { name: item.name }) : t("disposals.writeoffTitle", { name: item.name })}
         </h3>
         <div className="space-y-3">
           <input
@@ -234,7 +240,7 @@ function DisposalModal({
             min="0"
             step="any"
             className="input"
-            placeholder={`Количество, ${item.unit} (свободно ${item.available})`}
+            placeholder={t("disposals.quantityWithAvailable", { unit: item.unit, available: item.available })}
             value={quantity}
             onChange={(e) => setQuantity(e.target.value)}
             disabled={busy}
@@ -247,7 +253,7 @@ function DisposalModal({
                 min="0"
                 step="any"
                 className="input flex-1"
-                placeholder="Сумма, сум"
+                placeholder={t("disposals.amountPlaceholder")}
                 value={amount}
                 onChange={(e) => setAmount(e.target.value)}
                 disabled={busy}
@@ -264,10 +270,10 @@ function DisposalModal({
           {error && <p className="text-sm text-rose-600">{error}</p>}
           <div className="flex gap-2 pt-1">
             <button className="btn-primary flex-1" disabled={busy} onClick={submit}>
-              {busy ? "Сохранение…" : kind === "sale" ? "Продать" : "Списать"}
+              {busy ? t("common.saving") : kind === "sale" ? t("disposals.sell") : t("disposals.writeoff")}
             </button>
             <button className="btn-secondary" onClick={onClose}>
-              Отмена
+              {t("common.cancel")}
             </button>
           </div>
         </div>

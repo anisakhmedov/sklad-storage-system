@@ -1,6 +1,10 @@
+"use client";
+
 import { Clock, Ban } from "lucide-react";
+import { useI18n } from "./i18n";
 
 export default function PendingScreen({ status }: { status: "pending" | "rejected" }) {
+  const { t } = useI18n();
   const isPending = status === "pending";
   return (
     <div className="pt-20 text-center">
@@ -12,12 +16,10 @@ export default function PendingScreen({ status }: { status: "pending" | "rejecte
         {isPending ? <Clock className="h-7 w-7" strokeWidth={1.8} /> : <Ban className="h-7 w-7" strokeWidth={1.8} />}
       </div>
       <h1 className="text-lg font-semibold text-ink-900 mb-2">
-        {isPending ? "Ожидайте подтверждения" : "Заявка отклонена"}
+        {isPending ? t("pending.pendingTitle") : t("pending.rejectedTitle")}
       </h1>
       <p className="text-sm text-ink-400 px-4 leading-relaxed">
-        {isPending
-          ? "Ваша заявка отправлена владельцу и ожидает подтверждения. Как только доступ будет одобрен, откройте приложение снова."
-          : "Ваша заявка на регистрацию была отклонена. Свяжитесь с владельцем склада для уточнения."}
+        {isPending ? t("pending.pendingText") : t("pending.rejectedText")}
       </p>
     </div>
   );

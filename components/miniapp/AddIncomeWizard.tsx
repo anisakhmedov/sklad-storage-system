@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { miniAppFetch } from "./telegram";
-import { PAYMENT_METHOD_LABELS } from "@/lib/labels";
+import { useI18n } from "./i18n";
 import { DEFAULT_CELL_COUNT, cellNumbersForCount } from "@/lib/cells";
 import {
   ArrowLeft,
@@ -26,15 +26,6 @@ interface HistoryEvent {
   amount?: number;
   method?: string;
 }
-
-const METHOD_LABELS_SHORT: Record<string, string> = { cash: "нал.", card: "карта", transfer: "перевод", terminal: "терминал" };
-const HISTORY_KIND_LABELS: Record<string, string> = {
-  goods_given: "Приём товара",
-  goods_returned: "Отдача товара",
-  inventory_given: "Выдача инвентаря",
-  inventory_returned: "Возврат инвентаря",
-  payment: "Оплата",
-};
 
 type OwnerType = "individual" | "company";
 // Банковский счёт (перевод) намеренно исключён — сотрудник принимает оплату лично только
@@ -67,10 +58,17 @@ const METHODS: Array<{ value: Method; icon: typeof Banknote }> = [
   { value: "card", icon: CreditCard },
 ];
 
-const STEP_LABELS = ["Владелец", "Контейнер", "Оплата", "Проверка"];
-const STEP_ICONS = [UserRound, Boxes, Wallet, ClipboardCheck];
-
 export default function AddIncomeWizard({ onExit }: { onExit: () => void }) {
+  const { t } = useI18n();
+  const STEP_LABELS = [t("income.stepOwner"), t("income.stepContainer"), t("income.stepPayment"), t("income.stepReview")];
+  const STEP_ICONS = [UserRound, Boxes, Wallet, ClipboardCheck];
+  const METHOD_LABELS_SHORT: Record<string, string> = {
+    cash: t("methodShort.cash"),
+    card: t("methodShort.card"),
+    transfer: t("methodShort.transfer"),
+    terminal: t("methodShort.terminal"),
+  };
+
   const [debts, setDebts] = useState<OwnerContainerDebt[]>([]);
   const [containers, setContainers] = useState<ContainerRef[]>([]);
   const [loadingDebts, setLoadingDebts] = useState(true);
@@ -112,12 +110,12 @@ export default function AddIncomeWizard({ onExit }: { onExit: () => void }) {
         // Не путать серверную ошибку с "записей нет" — раньше оба случая выглядели
         // одинаково для пользователя (см. баг с r.tariff в lib/debt.ts).
         if (!r.ok) {
-          setLoadError(d.error || "Не удалось загрузить список владельцев");
+          setLoadError(d.error || t("income.loadError"));
           return;
         }
         setDebts(d.debts || []);
       })
-      .catch(() => setLoadError("Не удалось связаться с сервером"))
+      .catch(() => setLoadError(t("common.networkError")))
       .finally(() => setLoadingDebts(false));
     // Нужно только для количества камер в выпадающем списке ниже (см. models/Container.ts::cellCount) —
     // ошибку загрузки этого списка отдельно не показываем, дропдаун просто останется на 8 по умолчанию.
@@ -125,6 +123,7 @@ export default function AddIncomeWizard({ onExit }: { onExit: () => void }) {
       .then((r) => r.json())
       .then((d) => setContainers(d.containers || []))
       .catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const owners = useMemo(() => {
@@ -147,9 +146,9 @@ export default function AddIncomeWizard({ onExit }: { onExit: () => void }) {
 
   function next() {
     setError(null);
-    if (step === 0 && !ownerKey) return setError("Выберите владельца груза");
-    if (step === 1 && !containerId) return setError("Выберите контейнер");
-    if (step === 2 && !amount) return setError("Укажите сумму оплаты");
+    if (step === 0 && !ownerKey) return setError(t("income.selectOwner"));
+    if (step === 1 && !containerId) return setError(t("income.selectContainer"));
+    if (step === 2 && !amount) return setError(t("income.amountRequired"));
     setStep((s) => s + 1);
   }
 
@@ -179,7 +178,7 @@ export default function AddIncomeWizard({ onExit }: { onExit: () => void }) {
       });
       const data = await res.json();
       if (!res.ok) {
-        setError(data.error || "Ошибка сохранения");
+        setError(data.error || t("income.saveError"));
         return;
       }
       setSavedScreen(true);
@@ -206,14 +205,14 @@ export default function AddIncomeWizard({ onExit }: { onExit: () => void }) {
         <div className="mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-full bg-emerald-100 text-emerald-600">
           <CheckCircle2 className="h-8 w-8" strokeWidth={1.8} />
         </div>
-        <h1 className="text-lg font-semibold text-ink-900 mb-2">Оплата записана</h1>
-        <p className="text-sm text-ink-400 mb-6">Хотите добавить ещё один платёж?</p>
+        <h1 className="text-lg font-semibold text-ink-900 mb-2">{t("income.savedTitle")}</h1>
+        <p className="text-sm text-ink-400 mb-6">{t("income.addAnotherQ")}</p>
         <div className="space-y-2">
           <button className="btn-primary w-full py-3 rounded-2xl" onClick={startAnother}>
-            Да, добавить ещё
+            {t("income.yesAddMore")}
           </button>
           <button className="btn-ghost w-full py-3 rounded-2xl" onClick={onExit}>
-            Нет, завершить
+            {t("income.noFinish")}
           </button>
         </div>
       </div>
@@ -225,11 +224,11 @@ export default function AddIncomeWizard({ onExit }: { onExit: () => void }) {
   return (
     <div className="pt-4">
       <div className="flex items-center justify-between mb-3">
-        <button className="btn-icon btn-ghost -ml-2" onClick={step === 0 ? onExit : back} aria-label="Назад">
+        <button className="btn-icon btn-ghost -ml-2" onClick={step === 0 ? onExit : back} aria-label={t("common.back")}>
           <ArrowLeft className="h-4.5 w-4.5" strokeWidth={2.1} />
         </button>
         <span className="text-xs font-medium text-ink-400">
-          Шаг {step + 1} из {STEP_LABELS.length}
+          {t("newRecord.stepCounter", { current: step + 1, total: STEP_LABELS.length })}
         </span>
       </div>
 
@@ -264,7 +263,7 @@ export default function AddIncomeWizard({ onExit }: { onExit: () => void }) {
               <div className="empty-state-icon">
                 <UserRound className="h-5 w-5" strokeWidth={1.8} />
               </div>
-              <p className="text-sm text-ink-500">Пока нет ни одной записи о размещении товара.</p>
+              <p className="text-sm text-ink-500">{t("income.noRecords")}</p>
             </div>
           ) : (
             owners.map((o) => (
@@ -289,7 +288,9 @@ export default function AddIncomeWizard({ onExit }: { onExit: () => void }) {
                     </div>
                     <div className="min-w-0">
                       <div className="font-medium text-ink-900 truncate">{o.ownerLabel}</div>
-                      <div className="text-xs text-ink-400">{o.ownerType === "individual" ? "физ. лицо" : "юр. лицо"}</div>
+                      <div className="text-xs text-ink-400">
+                        {o.ownerType === "individual" ? t("income.individualLower") : t("income.companyLower")}
+                      </div>
                     </div>
                   </div>
                   {ownerKey === o.ownerKey && <CheckCircle2 className="h-5 w-5 text-brand-600 shrink-0" strokeWidth={2} />}
@@ -315,9 +316,9 @@ export default function AddIncomeWizard({ onExit }: { onExit: () => void }) {
                   <div className="font-medium text-ink-900">{d.containerName}</div>
                   <div className="text-xs mt-0.5">
                     {d.balance > 0 ? (
-                      <span className="text-rose-600">долг {money(d.balance)} сум</span>
+                      <span className="text-rose-600">{t("income.debtText", { amount: money(d.balance) })}</span>
                     ) : (
-                      <span className="text-emerald-600">задолженности нет</span>
+                      <span className="text-emerald-600">{t("income.noDebtText")}</span>
                     )}
                   </div>
                 </div>
@@ -332,11 +333,11 @@ export default function AddIncomeWizard({ onExit }: { onExit: () => void }) {
         <div className="space-y-3">
           {selectedDebt && (
             <p className="text-xs text-ink-500 bg-ink-50 rounded-xl px-3.5 py-2.5 leading-relaxed">
-              Начислено {money(selectedDebt.accrued)} сум, оплачено {money(selectedDebt.paid)} сум —{" "}
+              {t("income.accruedPaidText", { accrued: money(selectedDebt.accrued), paid: money(selectedDebt.paid) })}{" "}
               {selectedDebt.balance > 0 ? (
-                <span className="text-rose-600 font-medium">долг {money(selectedDebt.balance)} сум</span>
+                <span className="text-rose-600 font-medium">{t("income.debtText", { amount: money(selectedDebt.balance) })}</span>
               ) : (
-                <span className="text-emerald-600 font-medium">задолженности нет</span>
+                <span className="text-emerald-600 font-medium">{t("income.noDebtText")}</span>
               )}
               .
             </p>
@@ -345,7 +346,7 @@ export default function AddIncomeWizard({ onExit }: { onExit: () => void }) {
             <div className="rounded-xl border border-ink-200 px-3.5 py-2.5">
               <p className="text-xs font-medium text-ink-600 mb-1.5 inline-flex items-center gap-1">
                 <History className="h-3.5 w-3.5" strokeWidth={2} />
-                Последние операции
+                {t("income.recentOps")}
               </p>
               {historyLoading ? (
                 <div className="skeleton h-10 w-full rounded-lg" />
@@ -354,11 +355,11 @@ export default function AddIncomeWizard({ onExit }: { onExit: () => void }) {
                   {history.map((h, idx) => (
                     <div key={idx} className="flex items-center justify-between text-xs">
                       <span className="text-ink-500">
-                        {HISTORY_KIND_LABELS[h.kind] || h.kind} · {new Date(h.date).toLocaleDateString("ru-RU")}
+                        {t(`historyKind.${h.kind}`)} · {new Date(h.date).toLocaleDateString("ru-RU")}
                       </span>
                       <span className="text-ink-700 font-medium">
                         {h.kind === "payment"
-                          ? `${money(h.amount || 0)} сум${h.method ? ` · ${METHOD_LABELS_SHORT[h.method] || h.method}` : ""}`
+                          ? `${money(h.amount || 0)} ${t("common.sum")}${h.method ? ` · ${METHOD_LABELS_SHORT[h.method] || h.method}` : ""}`
                           : h.quantityText || ""}
                       </span>
                     </div>
@@ -368,7 +369,7 @@ export default function AddIncomeWizard({ onExit }: { onExit: () => void }) {
             </div>
           )}
           <div>
-            <label className="label">Сумма, сум</label>
+            <label className="label">{t("income.amountLabel")}</label>
             <input
               type="number"
               inputMode="decimal"
@@ -379,20 +380,20 @@ export default function AddIncomeWizard({ onExit }: { onExit: () => void }) {
             />
           </div>
           <div>
-            <label className="label">Камера (необязательно)</label>
+            <label className="label">{t("income.cellOptionalLabel")}</label>
             <select className="input" value={cellNumber} onChange={(e) => setCellNumber(e.target.value)}>
-              <option value="">За контейнер в целом</option>
+              <option value="">{t("income.wholeContainer")}</option>
               {cellNumbersForCount(containers.find((c) => c.id === containerId)?.cellCount || DEFAULT_CELL_COUNT).map(
                 (n) => (
                   <option key={n} value={n}>
-                    Камера {n}
+                    {t("income.cellOption", { n })}
                   </option>
                 )
               )}
             </select>
           </div>
           <div>
-            <label className="label">Способ оплаты</label>
+            <label className="label">{t("income.paymentMethodLabel")}</label>
             <div className="flex gap-2">
               {METHODS.map((m) => (
                 <button
@@ -404,17 +405,17 @@ export default function AddIncomeWizard({ onExit }: { onExit: () => void }) {
                   }`}
                 >
                   <m.icon className="h-4 w-4" strokeWidth={2} />
-                  {PAYMENT_METHOD_LABELS[m.value]}
+                  {t(`method.${m.value}`)}
                 </button>
               ))}
             </div>
           </div>
           <div>
-            <label className="label">Дата оплаты</label>
+            <label className="label">{t("income.paidDateLabel")}</label>
             <input type="date" className="input" value={paidAt} onChange={(e) => setPaidAt(e.target.value)} />
           </div>
           <div>
-            <label className="label">Примечание</label>
+            <label className="label">{t("income.noteLabel")}</label>
             <input className="input" value={note} onChange={(e) => setNote(e.target.value)} />
           </div>
         </div>
@@ -422,12 +423,12 @@ export default function AddIncomeWizard({ onExit }: { onExit: () => void }) {
 
       {step === 3 && (
         <div className="card space-y-0 text-sm">
-          <Row label="Владелец" value={selectedOwner?.ownerLabel} />
-          <Row label="Контейнер" value={selectedDebt?.containerName} />
-          <Row label="Сумма" value={`${money(Number(amount) || 0)} сум`} />
-          <Row label="Способ оплаты" value={PAYMENT_METHOD_LABELS[method]} />
-          <Row label="Дата" value={new Date(paidAt).toLocaleDateString("ru-RU")} />
-          <Row label="Примечание" value={note || "—"} last />
+          <Row label={t("income.reviewOwner")} value={selectedOwner?.ownerLabel} />
+          <Row label={t("income.reviewContainer")} value={selectedDebt?.containerName} />
+          <Row label={t("income.reviewAmount")} value={`${money(Number(amount) || 0)} ${t("common.sum")}`} />
+          <Row label={t("income.reviewMethod")} value={t(`method.${method}`)} />
+          <Row label={t("income.reviewDate")} value={new Date(paidAt).toLocaleDateString("ru-RU")} />
+          <Row label={t("income.reviewNote")} value={note || "—"} last />
         </div>
       )}
 
@@ -436,12 +437,12 @@ export default function AddIncomeWizard({ onExit }: { onExit: () => void }) {
       <div className="mt-6">
         {step < STEP_LABELS.length - 1 ? (
           <button className="btn-primary w-full py-3 rounded-2xl" onClick={next}>
-            Далее
+            {t("newRecord.next")}
             <ChevronRight className="h-4 w-4" strokeWidth={2.25} />
           </button>
         ) : (
           <button className="btn-primary w-full py-3 rounded-2xl" onClick={handleSubmit} disabled={busy}>
-            {busy ? "Сохранение…" : "Записать оплату"}
+            {busy ? t("common.saving") : t("income.recordPayment")}
           </button>
         )}
       </div>
