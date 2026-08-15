@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import { Package, Plus, Minus, Trash2, PackagePlus } from "lucide-react";
+import { Package, Plus, Minus, Trash2, PackagePlus, Pencil, X, Check } from "lucide-react";
 
 interface InventoryRow {
   _id: string;
@@ -36,6 +36,11 @@ export default function InventoryPanel() {
   const [loading, setLoading] = useState(true);
   const [newName, setNewName] = useState("");
   const [busyId, setBusyId] = useState<string | null>(null);
+  // Ввод количества для пополнения/списания (по позиции, применяется кнопками "Добавить"/"Списать")
+  const [amounts, setAmounts] = useState<Record<string, string>>({});
+  // Прямое редактирование количества по карандашу — id позиции, которая сейчас редактируется
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editValue, setEditValue] = useState("");
 
   useEffect(() => {
     fetch("/api/containers")
@@ -79,8 +84,7 @@ export default function InventoryPanel() {
     }
   }
 
-  async function adjust(item: InventoryRow, delta: number) {
-    const next = Math.max(0, item.quantity + delta);
+  async function setQuantity(item: InventoryRow, next: number) {
     setBusyId(item._id);
     try {
       await fetch(`/api/inventory/${item._id}`, {
@@ -92,6 +96,33 @@ export default function InventoryPanel() {
     } finally {
       setBusyId(null);
     }
+  }
+
+  // Пополнение/списание на введённое в поле количество (а не всегда на 1)
+  async function applyAmount(item: InventoryRow, sign: 1 | -1) {
+    const raw = amounts[item._id];
+    const amount = Number(raw);
+    if (!raw || Number.isNaN(amount) || amount <= 0) return;
+    await setQuantity(item, Math.max(0, item.quantity + sign * amount));
+    setAmounts((prev) => ({ ...prev, [item._id]: "" }));
+  }
+
+  function startEdit(item: InventoryRow) {
+    setEditingId(item._id);
+    setEditValue(String(item.quantity));
+  }
+
+  function cancelEdit() {
+    setEditingId(null);
+    setEditValue("");
+  }
+
+  async function saveEdit(item: InventoryRow) {
+    const next = Number(editValue);
+    if (editValue === "" || Number.isNaN(next) || next < 0) return;
+    await setQuantity(item, next);
+    setEditingId(null);
+    setEditValue("");
   }
 
   async function remove(id: string) {
@@ -151,9 +182,9 @@ export default function InventoryPanel() {
               {items.map((item) => (
                 <div
                   key={item._id}
-                  className="flex items-center justify-between rounded-xl border border-ink-200 px-3 py-2.5"
+                  className="flex flex-wrap items-center justify-between gap-y-2 rounded-xl border border-ink-200 px-3 py-2.5"
                 >
-                  <div className="min-w-0">
+                  <div className="min-w-0 flex-1 pr-2">
                     <span className="font-medium text-ink-800 truncate block">{item.name}</span>
                     {!!item.outstanding && (
                       <span className="text-[11px] text-ink-400">
@@ -161,34 +192,87 @@ export default function InventoryPanel() {
                       </span>
                     )}
                   </div>
-                  <div className="flex items-center gap-2 shrink-0">
-                    <button
-                      className="btn-icon btn-secondary h-7 w-7"
-                      disabled={busyId === item._id}
-                      onClick={() => adjust(item, -1)}
-                      aria-label="Убавить"
-                    >
-                      <Minus className="h-3.5 w-3.5" strokeWidth={2.25} />
-                    </button>
-                    <span className="tabular-nums text-sm font-medium text-ink-900 w-10 text-center">
-                      {item.quantity}
-                    </span>
-                    <button
-                      className="btn-icon btn-secondary h-7 w-7"
-                      disabled={busyId === item._id}
-                      onClick={() => adjust(item, 1)}
-                      aria-label="Добавить"
-                    >
-                      <Plus className="h-3.5 w-3.5" strokeWidth={2.25} />
-                    </button>
-                    <button
-                      className="btn-icon btn-danger-ghost h-7 w-7"
-                      disabled={busyId === item._id}
-                      onClick={() => remove(item._id)}
-                      aria-label="Удалить"
-                    >
-                      <Trash2 className="h-3.5 w-3.5" strokeWidth={2} />
-                    </button>
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    {editingId === item._id ? (
+                      <>
+                        <input
+                          type="number"
+                          min="0"
+                          step="any"
+                          className="input h-7 w-20 text-sm text-center"
+                          value={editValue}
+                          onChange={(e) => setEditValue(e.target.value)}
+                          disabled={busyId === item._id}
+                          autoFocus
+                        />
+                        <button
+                          className="btn-icon btn-secondary h-7 w-7"
+                          disabled={busyId === item._id}
+                          onClick={() => saveEdit(item)}
+                          aria-label="Сохранить"
+                        >
+                          <Check className="h-3.5 w-3.5" strokeWidth={2.25} />
+                        </button>
+                        <button
+                          className="btn-icon btn-secondary h-7 w-7"
+                          disabled={busyId === item._id}
+                          onClick={cancelEdit}
+                          aria-label="Отменить"
+                        >
+                          <X className="h-3.5 w-3.5" strokeWidth={2.25} />
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        <span className="tabular-nums text-sm font-medium text-ink-900 w-8 text-center">
+                          {item.quantity}
+                        </span>
+                        <button
+                          className="btn-icon btn-secondary h-7 w-7"
+                          disabled={busyId === item._id}
+                          onClick={() => startEdit(item)}
+                          aria-label="Редактировать количество"
+                        >
+                          <Pencil className="h-3.5 w-3.5" strokeWidth={2.25} />
+                        </button>
+                        <input
+                          type="number"
+                          min="0"
+                          step="any"
+                          placeholder="Кол-во"
+                          className="input h-7 w-16 text-sm text-center"
+                          value={amounts[item._id] || ""}
+                          onChange={(e) => setAmounts((prev) => ({ ...prev, [item._id]: e.target.value }))}
+                          disabled={busyId === item._id}
+                        />
+                        <button
+                          className="btn-icon btn-secondary h-7 w-7"
+                          disabled={busyId === item._id}
+                          onClick={() => applyAmount(item, 1)}
+                          aria-label="Добавить"
+                          title="Добавить"
+                        >
+                          <Plus className="h-3.5 w-3.5" strokeWidth={2.25} />
+                        </button>
+                        <button
+                          className="btn-icon btn-secondary h-7 w-7"
+                          disabled={busyId === item._id}
+                          onClick={() => applyAmount(item, -1)}
+                          aria-label="Списать"
+                          title="Списать"
+                        >
+                          <Minus className="h-3.5 w-3.5" strokeWidth={2.25} />
+                        </button>
+                        <button
+                          className="btn-icon btn-danger-ghost h-7 w-7"
+                          disabled={busyId === item._id}
+                          onClick={() => remove(item._id)}
+                          aria-label="Удалить"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" strokeWidth={2} />
+                        </button>
+                      </>
+                    )}
                   </div>
                 </div>
               ))}
