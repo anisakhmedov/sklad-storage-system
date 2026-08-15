@@ -1,292 +1,179 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { miniAppFetch, haptic } from "./telegram";
 import { useI18n } from "./i18n";
-import { isPricelessItemName } from "@/lib/inventoryPricing";
 import MiniAppHeader from "./MiniAppHeader";
-import { DollarSign, PackageMinus, TriangleAlert, Package } from "lucide-react";
+import ClientDetail from "./ClientDetail";
+import CellGrid, { CellGridCell } from "./CellGrid";
+import { LayoutGrid, UserRound, Building2, ChevronRight, Users } from "lucide-react";
+
+type OwnerType = "individual" | "company";
 
 interface ContainerRef {
   id: string;
   name: string;
 }
 
-interface InventoryRow {
-  _id: string;
-  name: string;
-  unit: string;
-  available: number;
+interface Occupant {
+  ownerKey: string;
+  ownerLabel: string;
+  ownerType: OwnerType;
+  productSummary: string;
 }
 
 /**
- * Продажа/списание инвентаря — Mini App, тот же смысл, что и app/dashboard/inventory-disposals
- * на веб-панели (см. models/InventoryDisposalEntry.ts). Заменяет собой прежний экран
- * "Контейнеры для перевозки". Банковский перевод недоступен сотруднику (см.
- * lib/validation.ts::employeePaymentMethodEnum — тот же принцип, что и в AddIncomeWizard: перевод
- * идёт мимо сотрудника, он физически не может его подтвердить).
- *
- * «Ящики» (см. lib/inventoryPricing.ts::isPricelessItemName) сюда вообще не попадают — ни
- * продажа, ни списание для них не имеют смысла, это тара, которую только выдают клиенту и
- * принимают обратно (components/miniapp/InventorySection.tsx внутри карточки клиента), а не
- * расходуют/списывают со склада.
+ * Раньше это была продажа/списание общего складского инвентаря (безотносительно клиента) —
+ * упразднено по решению владельца в пользу того, что реально нужно каждый день: быстро найти
+ * конкретного клиента по контейнеру и камере, где физически лежит его груз, и оттуда
+ * выдать/принять инвентарь или оформить выдачу товара после хранения. Навигация: контейнер →
+ * камера → клиент → карточка клиента (components/miniapp/ClientDetail.tsx — там уже есть все
+ * три действия: «Инвентарь на руках» выдать/принять и +/- количества товара с закрытием
+ * записи). Список камер и арендаторов в них — тот же эндпоинт и тот же CellGrid, что и на
+ * экране "Камеры контейнеров" (components/miniapp/CellsScreen.tsx), просто с другой целью тапа
+ * по камере: тут не отмечаем "заполнена", а смотрим, кто в ней лежит.
  */
 export default function InventoryDisposalsScreen({ onExit }: { onExit: () => void }) {
   const { t } = useI18n();
   const [containers, setContainers] = useState<ContainerRef[]>([]);
-  const [containerId, setContainerId] = useState("");
-  const [items, setItems] = useState<InventoryRow[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [acting, setActing] = useState<{ item: InventoryRow; kind: "sale" | "writeoff" } | null>(null);
+  const [containersLoading, setContainersLoading] = useState(true);
+  const [containerId, setContainerId] = useState<string | null>(null);
+  const [cells, setCells] = useState<CellGridCell[]>([]);
+  const [cellsLoading, setCellsLoading] = useState(false);
+  const [cellNumber, setCellNumber] = useState<number | null>(null);
+  const [owner, setOwner] = useState<{ ownerKey: string; ownerLabel: string; ownerType: OwnerType } | null>(null);
 
   useEffect(() => {
     miniAppFetch("/api/miniapp/containers")
       .then((r) => r.json())
-      .then((d) => {
-        const list: ContainerRef[] = d.containers || [];
-        setContainers(list);
-        setContainerId((prev) => prev || list[0]?.id || "");
-      });
+      .then((d) => setContainers(d.containers || []))
+      .finally(() => setContainersLoading(false));
   }, []);
 
-  const load = useCallback(
-    async () => {
-      if (!containerId) {
-        setLoading(false);
-        return;
-      }
-      setLoading(true);
-      setError(null);
-      try {
-        const res = await miniAppFetch(`/api/miniapp/inventory?containerId=${containerId}`);
-        const data = await res.json().catch(() => ({}));
-        if (!res.ok) {
-          setError(data.error || t("disposals.loadError"));
-          return;
-        }
-        setItems((data.items || []).filter((it: InventoryRow) => !isPricelessItemName(it.name)));
-      } catch {
-        setError(t("common.networkError"));
-      } finally {
-        setLoading(false);
-      }
-    },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [containerId]
-  );
-
   useEffect(() => {
-    load();
-  }, [load]);
+    if (!containerId) {
+      setCells([]);
+      return;
+    }
+    setCellsLoading(true);
+    miniAppFetch(`/api/miniapp/containers/${containerId}/cells`)
+      .then((r) => r.json())
+      .then((d) => setCells(d.cells || []))
+      .finally(() => setCellsLoading(false));
+  }, [containerId]);
 
+  // Карточка клиента сама владеет кнопкой "Назад" (через собственный MiniAppHeader) — конфликта
+  // с шапками ниже нет, т.к. при выбранном owner этот компонент рендерит только ClientDetail.
+  if (owner) {
+    return <ClientDetail owner={owner} onBack={() => setOwner(null)} />;
+  }
+
+  // Шаг 3: люди в выбранной камере.
+  if (containerId && cellNumber !== null) {
+    const occupants = cells.find((c) => c.number === cellNumber)?.occupants || [];
+    return (
+      <div className="pt-4 pb-8">
+        <MiniAppHeader title={t("disposals.cellTitle", { n: cellNumber })} onBack={() => setCellNumber(null)} />
+        {occupants.length === 0 ? (
+          <div className="empty-state">
+            <div className="empty-state-icon">
+              <Users className="h-5 w-5" strokeWidth={1.8} />
+            </div>
+            <p className="text-sm text-ink-500">{t("disposals.noPeopleInCell")}</p>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {occupants.map((o) => {
+              const Icon = o.ownerType === "individual" ? UserRound : Building2;
+              return (
+                <button
+                  key={o.ownerKey}
+                  onClick={() => {
+                    haptic.selection();
+                    setOwner(o);
+                  }}
+                  className="w-full flex items-center gap-3 rounded-2xl border border-ink-200 bg-white px-4 py-3.5 text-left transition-colors hover:border-brand-300 hover:bg-brand-50/40 active:scale-[0.99]"
+                >
+                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-brand-50 text-brand-600">
+                    <Icon className="h-4.5 w-4.5" strokeWidth={2.1} />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="font-medium text-ink-900 truncate">{o.ownerLabel}</div>
+                    <div className="text-xs text-ink-400 truncate">{o.productSummary}</div>
+                  </div>
+                  <ChevronRight className="h-4 w-4 text-ink-300 shrink-0" strokeWidth={2} />
+                </button>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // Шаг 2: камеры выбранного контейнера.
+  if (containerId) {
+    const container = containers.find((c) => c.id === containerId);
+    return (
+      <div className="pt-4 pb-8">
+        <MiniAppHeader title={container?.name} truncate onBack={() => setContainerId(null)} />
+        {cellsLoading ? (
+          <div className="grid grid-cols-4 gap-2">
+            {[...Array(8)].map((_, i) => (
+              <div key={i} className="skeleton h-16 w-full rounded-xl" />
+            ))}
+          </div>
+        ) : (
+          <>
+            <CellGrid
+              cells={cells}
+              onSelect={(n) => {
+                haptic.selection();
+                setCellNumber(n);
+              }}
+              allowSelectFull
+            />
+            <p className="text-xs text-ink-400 mt-3 leading-relaxed">{t("disposals.chooseCellHint")}</p>
+          </>
+        )}
+      </div>
+    );
+  }
+
+  // Шаг 1: контейнеры.
   return (
     <div className="pt-4 pb-8">
       <MiniAppHeader title={t("disposals.title")} onBack={onExit} />
-
-      {containers.length > 1 && (
-        <select className="input mb-4" value={containerId} onChange={(e) => setContainerId(e.target.value)}>
-          {containers.map((c) => (
-            <option key={c.id} value={c.id}>
-              {c.name}
-            </option>
-          ))}
-        </select>
-      )}
-
-      {loading ? (
+      {containersLoading ? (
         <div className="space-y-2.5">
           {[...Array(3)].map((_, i) => (
-            <div key={i} className="skeleton h-20 w-full rounded-2xl" />
+            <div key={i} className="skeleton h-14 w-full rounded-2xl" />
           ))}
         </div>
-      ) : error ? (
-        <div className="empty-state">
-          <div className="empty-state-icon bg-rose-100 text-rose-600">
-            <TriangleAlert className="h-5 w-5" strokeWidth={1.8} />
-          </div>
-          <p className="text-sm text-rose-600">{error}</p>
-        </div>
-      ) : items.length === 0 ? (
+      ) : containers.length === 0 ? (
         <div className="empty-state">
           <div className="empty-state-icon">
-            <Package className="h-5 w-5" strokeWidth={1.8} />
+            <LayoutGrid className="h-5 w-5" strokeWidth={1.8} />
           </div>
-          <p className="text-sm text-ink-500">{t("disposals.noItems")}</p>
+          <p className="text-sm text-ink-500">{t("cells.noContainers")}</p>
         </div>
       ) : (
-        <div className="space-y-2.5">
-          {items.map((item) => (
-            <div key={item._id} className="rounded-2xl border border-ink-200 bg-white px-4 py-3.5">
-              <div className="flex items-center justify-between mb-2.5">
-                <span className="font-medium text-ink-900">{item.name}</span>
-                <span className="text-sm text-ink-500 tabular-nums">
-                  {t("disposals.available", { n: item.available, unit: item.unit })}
-                </span>
-              </div>
-              <div className="flex gap-1.5">
-                <button
-                  className="btn-secondary flex-1"
-                  disabled={item.available <= 0}
-                  onClick={() => {
-                    haptic.selection();
-                    setActing({ item, kind: "sale" });
-                  }}
-                >
-                  <DollarSign className="h-3.5 w-3.5" strokeWidth={2.1} />
-                  {t("disposals.sell")}
-                </button>
-                <button
-                  className="btn-secondary flex-1"
-                  disabled={item.available <= 0}
-                  onClick={() => {
-                    haptic.selection();
-                    setActing({ item, kind: "writeoff" });
-                  }}
-                >
-                  <PackageMinus className="h-3.5 w-3.5" strokeWidth={2.1} />
-                  {t("disposals.writeoff")}
-                </button>
-              </div>
-            </div>
+        <div className="space-y-2">
+          {containers.map((c) => (
+            <button
+              key={c.id}
+              onClick={() => {
+                haptic.selection();
+                setContainerId(c.id);
+              }}
+              className="w-full flex items-center justify-between gap-3 rounded-2xl border border-ink-200 bg-white px-4 py-3.5 text-left transition-colors hover:border-brand-300 hover:bg-brand-50/40 active:scale-[0.99]"
+            >
+              <span className="font-medium text-ink-900">{c.name}</span>
+              <ChevronRight className="h-4.5 w-4.5 text-ink-300 shrink-0" strokeWidth={2} />
+            </button>
           ))}
         </div>
       )}
-
-      {acting && (
-        <DisposalModal
-          item={acting.item}
-          kind={acting.kind}
-          containerId={containerId}
-          onClose={() => setActing(null)}
-          onSaved={() => {
-            setActing(null);
-            load();
-          }}
-        />
-      )}
-    </div>
-  );
-}
-
-function DisposalModal({
-  item,
-  kind,
-  containerId,
-  onClose,
-  onSaved,
-}: {
-  item: InventoryRow;
-  kind: "sale" | "writeoff";
-  containerId: string;
-  onClose: () => void;
-  onSaved: () => void;
-}) {
-  const { t } = useI18n();
-  const methodLabels: Record<string, string> = { cash: t("method.cash"), card: t("method.card") };
-  const [quantity, setQuantity] = useState("");
-  const [amount, setAmount] = useState("");
-  const [method, setMethod] = useState("cash");
-  const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-
-  async function submit() {
-    const qty = Number(quantity);
-    if (!quantity || Number.isNaN(qty) || qty <= 0) {
-      haptic.error();
-      setError(t("disposals.quantityRequired"));
-      return;
-    }
-    if (qty > item.available) {
-      haptic.error();
-      setError(t("disposals.notEnoughAvailable", { available: item.available, unit: item.unit }));
-      return;
-    }
-    if (kind === "sale" && (!amount || Number(amount) <= 0)) {
-      haptic.error();
-      setError(t("disposals.amountRequired"));
-      return;
-    }
-    setBusy(true);
-    setError(null);
-    try {
-      const res = await miniAppFetch("/api/miniapp/inventory/disposals", {
-        method: "POST",
-        body: JSON.stringify({
-          itemId: item._id,
-          containerId,
-          kind,
-          quantity,
-          ...(kind === "sale" ? { amount, method } : {}),
-        }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        haptic.error();
-        setError(data.error || t("disposals.saveError"));
-        return;
-      }
-      haptic.success();
-      onSaved();
-    } catch {
-      haptic.error();
-      setError(t("common.networkError"));
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  return (
-    <div className="sheet-backdrop" onClick={onClose}>
-      <div className="sheet-panel" onClick={(e) => e.stopPropagation()}>
-        <div className="sheet-grabber" />
-        <h3 className="card-title mb-4">
-          {kind === "sale" ? t("disposals.sellTitle", { name: item.name }) : t("disposals.writeoffTitle", { name: item.name })}
-        </h3>
-        <div className="space-y-3">
-          <input
-            type="number"
-            min="0"
-            step="any"
-            className="input"
-            placeholder={t("disposals.quantityWithAvailable", { unit: item.unit, available: item.available })}
-            value={quantity}
-            onChange={(e) => setQuantity(e.target.value)}
-            disabled={busy}
-            autoFocus
-          />
-          {kind === "sale" && (
-            <div className="flex gap-2">
-              <input
-                type="number"
-                min="0"
-                step="any"
-                className="input flex-1"
-                placeholder={t("disposals.amountPlaceholder")}
-                value={amount}
-                onChange={(e) => setAmount(e.target.value)}
-                disabled={busy}
-              />
-              <select className="input flex-1" value={method} onChange={(e) => setMethod(e.target.value)} disabled={busy}>
-                {Object.entries(methodLabels).map(([v, label]) => (
-                  <option key={v} value={v}>
-                    {label}
-                  </option>
-                ))}
-              </select>
-            </div>
-          )}
-          {error && <p className="text-sm text-rose-600">{error}</p>}
-          <div className="flex gap-2 pt-1">
-            <button className="btn-primary flex-1" disabled={busy} onClick={submit}>
-              {busy ? t("common.saving") : kind === "sale" ? t("disposals.sell") : t("disposals.writeoff")}
-            </button>
-            <button className="btn-secondary" onClick={onClose}>
-              {t("common.cancel")}
-            </button>
-          </div>
-        </div>
-      </div>
     </div>
   );
 }

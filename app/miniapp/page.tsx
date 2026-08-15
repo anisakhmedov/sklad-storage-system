@@ -23,7 +23,7 @@ import {
   MinusCircle,
   Thermometer,
   LayoutGrid,
-  PackageMinus,
+  PackageSearch,
   type LucideIcon,
 } from "lucide-react";
 
@@ -161,7 +161,7 @@ export default function MiniAppPage() {
         <MenuSection label={t("home.sectionFacility")} startDelay={3}>
           <MenuItem icon={LayoutGrid} tone="teal" title={t("home.cellsTitle")} desc={t("home.cellsDesc")} onClick={() => open("cells")} />
           <MenuItem icon={Thermometer} tone="sky" title={t("home.patrolTitle")} desc={t("home.patrolDesc")} onClick={() => open("patrol")} />
-          <MenuItem icon={PackageMinus} tone="indigo" title={t("home.disposalsTitle")} desc={t("home.disposalsDesc")} onClick={() => open("disposals")} />
+          <MenuItem icon={PackageSearch} tone="indigo" title={t("home.disposalsTitle")} desc={t("home.disposalsDesc")} onClick={() => open("disposals")} />
         </MenuSection>
 
         <MenuSection label={t("home.sectionOther")} startDelay={6}>
