@@ -139,17 +139,7 @@ export default function MiniAppPage() {
       {/* Переключатель языка — только здесь, на главном экране (по просьбе владельца):
           на остальных экранах отвлекал и не нужен так часто. */}
       <LanguageSwitcher />
-      <div className="flex items-center gap-3 mb-8">
-        <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-brand-gradient text-white shadow-sm shadow-brand-600/25">
-          <Boxes className="h-6 w-6" strokeWidth={2.1} />
-        </div>
-        <div className="min-w-0">
-          <h1 className="text-lg font-semibold text-ink-900 tracking-tight truncate">
-            {t("home.greeting", { name: me.employee.name })}
-          </h1>
-          <p className="text-xs text-ink-400 mt-0.5">{t("home.subtitle")}</p>
-        </div>
-      </div>
+      
 
       <div className="space-y-6">
         <MenuSection label={t("home.sectionDaily")} startDelay={0}>
