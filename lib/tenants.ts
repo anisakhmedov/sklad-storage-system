@@ -129,8 +129,14 @@ export async function getAllTenantDetails(): Promise<TenantDetail[]> {
   return details.filter((d): d is TenantDetail => d !== null);
 }
 
-/** Полная карточка арендатора — источник и для онлайн-страницы, и для Excel-выгрузки. */
-export async function getTenantDetail(clientId: string): Promise<TenantDetail | null> {
+/**
+ * Полная карточка арендатора — источник и для онлайн-страницы, и для Excel-выгрузки.
+ * `to` — на какую дату считать начисление/задолженность (см. lib/debt.ts) — по умолчанию
+ * сегодня; страница «Арендаторы» даёт выбрать другую дату, чтобы посмотреть, сколько клиент
+ * должен был НА ТОТ момент (см. GET /api/tenants/[clientId]?to=...). На список платежей и
+ * записей (records/incomes ниже) не влияет — это исторический журнал целиком, а не снимок.
+ */
+export async function getTenantDetail(clientId: string, to?: Date): Promise<TenantDetail | null> {
   if (!Types.ObjectId.isValid(clientId)) return null;
   await connectDB();
 
@@ -147,7 +153,7 @@ export async function getTenantDetail(clientId: string): Promise<TenantDetail | 
       .sort({ paidAt: -1 })
       .populate("containerId", "name")
       .lean() as unknown as Promise<(IIncome & { containerId: { _id: Types.ObjectId; name: string } | null })[]>,
-    getAllClientContainerDebts({ clientId }),
+    getAllClientContainerDebts({ clientId, to }),
     // Привязка к Telegram (см. models/GoodsOwnerLink.ts) есть только у физлиц.
     client.profile.type === "individual" ? GoodsOwnerLink.findOne({ phone: client.profile.phone }).lean() : Promise.resolve(null),
   ]);

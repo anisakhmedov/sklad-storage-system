@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import {
   ArrowLeft,
@@ -14,6 +14,8 @@ import {
   Trash2,
   Lock,
   Unlock,
+  ChevronDown,
+  CalendarClock,
 } from "lucide-react";
 import {
   TARIFF_TYPES,
@@ -71,6 +73,31 @@ interface ContainerRef {
   cellCount?: number;
 }
 
+interface DebtRecordBreakdown {
+  recordId: string;
+  productName: string;
+  quantity: number;
+  unit: string;
+  tariff: { type: string; rate: number };
+  since: string;
+  accrued: number;
+  closedAt?: string;
+}
+
+/** Долг по ОДНОЙ камере одного контейнера — самая мелкая единица разбивки (см. lib/debt.ts). */
+interface DebtCellRow {
+  containerId: string;
+  containerName: string;
+  cellNumber: number;
+  since: string;
+  accrued: number;
+  paid: number;
+  balance: number;
+  records: DebtRecordBreakdown[];
+}
+
+/** Долг по контейнеру целиком — сумма по всем его камерам, плюс сами камеры (cells) для
+ * разбивки (см. lib/debt.ts::ClientContainerDebt). */
 interface DebtRow {
   containerId: string;
   containerName: string;
@@ -78,6 +105,7 @@ interface DebtRow {
   accrued: number;
   paid: number;
   balance: number;
+  cells: DebtCellRow[];
 }
 
 interface Detail {
@@ -116,6 +144,7 @@ const HISTORY_KIND_LABELS: Record<string, { label: string; tone: string }> = {
   payment: { label: "Оплата", tone: "bg-brand-50 text-brand-700" },
 };
 const money = (n: number) => Math.round(n).toLocaleString("ru-RU");
+const todayInput = () => new Date().toISOString().slice(0, 10);
 
 export default function TenantDetailPage({ params }: { params: { clientId: string } }) {
   const [detail, setDetail] = useState<Detail | null>(null);
@@ -130,10 +159,19 @@ export default function TenantDetailPage({ params }: { params: { clientId: strin
   // здесь это нужно в первую очередь — сменить арендатору камеру, не пересоздавая запись.
   const [editingRecord, setEditingRecord] = useState<RecordRow | null>(null);
   const [closingRecord, setClosingRecord] = useState<RecordRow | null>(null);
+  // На какую дату считать задолженность (см. lib/debt.ts) — по умолчанию сегодня. Меняя её,
+  // можно посмотреть, сколько клиент был должен на любой прошлый момент (§ «Сводка
+  // задолженности» ниже) — начисление считается с даты каждой записи ПО эту дату включительно.
+  const [debtToDate, setDebtToDate] = useState(todayInput());
+  // Раскрытые строки разбивки по камерам (ключ containerId::cellNumber) — какие детали записей
+  // сейчас развёрнуты под строкой камеры.
+  const [expandedCells, setExpandedCells] = useState<Set<string>>(new Set());
 
   function loadDetail() {
     setLoading(true);
-    fetch(`/api/tenants/${encodeURIComponent(params.clientId)}`)
+    const params_ = new URLSearchParams();
+    if (debtToDate) params_.set("to", debtToDate);
+    fetch(`/api/tenants/${encodeURIComponent(params.clientId)}?${params_.toString()}`)
       .then(async (r) => {
         const d = await r.json().catch(() => ({}));
         if (!r.ok) {
@@ -166,12 +204,37 @@ export default function TenantDetailPage({ params }: { params: { clientId: strin
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [params.clientId]);
 
+  // Пересчитывает только задолженность (loadDetail) — журнал операций (история) от выбранной
+  // даты не зависит, перезапрашивать его незачем.
+  useEffect(() => {
+    loadDetail();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [debtToDate]);
+
   useEffect(() => {
     fetch("/api/containers")
       .then((r) => r.json())
       .then((d) => setContainers(d.containers || []))
       .catch(() => {});
   }, []);
+
+  function toggleCell(key: string) {
+    setExpandedCells((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }
+
+  // Плоский список "камера в контейнере" по всем контейнерам клиента, отсортированный так же,
+  // как в детализации TenantMatrixTable — сначала контейнер, потом номер камеры.
+  const cellRows = useMemo(() => {
+    if (!detail) return [];
+    return detail.debts
+      .flatMap((d) => d.cells)
+      .sort((a, b) => a.containerName.localeCompare(b.containerName, "ru") || a.cellNumber - b.cellNumber);
+  }, [detail]);
 
   async function handleDeleteIncome(inc: IncomeRow) {
     if (!confirm(`Удалить платёж на сумму ${money(inc.amount)} сум? Это действие необратимо.`)) return;
@@ -241,13 +304,37 @@ export default function TenantDetailPage({ params }: { params: { clientId: strin
         </a>
       </div>
 
+      <div className="mb-3 flex items-end justify-between flex-wrap gap-2">
+        <p className="text-sm text-ink-400 max-w-lg leading-relaxed">
+          Начисление считается по тарифу с даты каждой записи по выбранную дату включительно —
+          поменяйте дату, чтобы посмотреть, сколько клиент должен был на любой прошлый момент.
+        </p>
+        <div className="flex items-end gap-2">
+          <div>
+            <label className="label">Задолженность на дату</label>
+            <div className="input-icon-wrap">
+              <CalendarClock className="input-icon h-4 w-4" strokeWidth={2} />
+              <input
+                type="date"
+                className="input"
+                value={debtToDate}
+                onChange={(e) => setDebtToDate(e.target.value)}
+              />
+            </div>
+          </div>
+          <button className="btn-secondary" onClick={() => setDebtToDate(todayInput())}>
+            Сегодня
+          </button>
+        </div>
+      </div>
+
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
         <div className="card">
-          <p className="text-xs text-ink-400 mb-1">Начислено</p>
+          <p className="text-xs text-ink-400 mb-1">Начислено{debtToDate && debtToDate !== todayInput() ? ` на ${new Date(debtToDate).toLocaleDateString("ru-RU")}` : ""}</p>
           <p className="text-xl font-semibold text-ink-900 tabular-nums">{money(detail.totals.accrued)} сум</p>
         </div>
         <div className="card">
-          <p className="text-xs text-ink-400 mb-1">Оплачено</p>
+          <p className="text-xs text-ink-400 mb-1">Оплачено{debtToDate && debtToDate !== todayInput() ? ` до ${new Date(debtToDate).toLocaleDateString("ru-RU")}` : ""}</p>
           <p className="text-xl font-semibold text-ink-900 tabular-nums">{money(detail.totals.paid)} сум</p>
         </div>
         <div className="card">
@@ -292,32 +379,98 @@ export default function TenantDetailPage({ params }: { params: { clientId: strin
 
       <div className="card mb-8 overflow-x-auto">
         <div className="card-header">
-          <h2 className="card-title">Задолженность по контейнерам</h2>
+          <h2 className="card-title">Сводка задолженности по камерам ({cellRows.length})</h2>
+          <p className="card-subtitle">
+            Разбивка до камеры, а не только по контейнеру в целом — раскройте строку, чтобы
+            увидеть начисление по каждой записи внутри камеры.
+          </p>
         </div>
-        <table className="table-base">
-          <thead>
-            <tr>
-              <th>Контейнер</th>
-              <th>С даты</th>
-              <th>Начислено</th>
-              <th>Оплачено</th>
-              <th>Остаток</th>
-            </tr>
-          </thead>
-          <tbody>
-            {detail.debts.map((d) => (
-              <tr key={d.containerId}>
-                <td className="font-medium text-ink-800">{d.containerName}</td>
-                <td className="text-ink-500">{new Date(d.since).toLocaleDateString("ru-RU")}</td>
-                <td className="tabular-nums text-ink-500">{money(d.accrued)}</td>
-                <td className="tabular-nums text-ink-500">{money(d.paid)}</td>
-                <td className={`tabular-nums font-medium ${d.balance > 0 ? "text-rose-600" : "text-emerald-600"}`}>
-                  {money(d.balance)}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        {cellRows.length === 0 ? (
+          <div className="empty-state">
+            <p className="text-sm text-ink-500">Записей о размещении товара пока нет.</p>
+          </div>
+        ) : (
+          <>
+            <table className="table-base">
+              <thead>
+                <tr>
+                  <th>Контейнер</th>
+                  <th>Камера</th>
+                  <th>С даты</th>
+                  <th>Начислено</th>
+                  <th>Оплачено</th>
+                  <th>Остаток</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                {cellRows.map((c) => {
+                  const key = `${c.containerId}::${c.cellNumber}`;
+                  const isOpen = expandedCells.has(key);
+                  return (
+                    <Fragment key={key}>
+                      <tr className="cursor-pointer" onClick={() => toggleCell(key)}>
+                        <td className="font-medium text-ink-800">{c.containerName}</td>
+                        <td className="text-ink-600">Камера {c.cellNumber}</td>
+                        <td className="whitespace-nowrap text-ink-500">{new Date(c.since).toLocaleDateString("ru-RU")}</td>
+                        <td className="tabular-nums text-ink-500">{money(c.accrued)}</td>
+                        <td className="tabular-nums text-ink-500">{money(c.paid)}</td>
+                        <td className={`tabular-nums font-medium ${c.balance > 0 ? "text-rose-600" : "text-emerald-600"}`}>
+                          {money(c.balance)}
+                        </td>
+                        <td>
+                          <button
+                            type="button"
+                            className="btn-icon btn-ghost"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              toggleCell(key);
+                            }}
+                            aria-label="Детали"
+                          >
+                            <ChevronDown
+                              className={`h-4 w-4 transition-transform ${isOpen ? "rotate-180" : ""}`}
+                              strokeWidth={2}
+                            />
+                          </button>
+                        </td>
+                      </tr>
+                      {isOpen && (
+                        <tr>
+                          <td colSpan={7} className="bg-ink-50/70">
+                            <div className="text-xs text-ink-600 py-2.5 space-y-1.5">
+                              {c.records.map((r) => (
+                                <div key={r.recordId} className="flex justify-between gap-4">
+                                  <span>
+                                    {r.productName} · {r.quantity} {UNIT_LABELS[r.unit] || r.unit} · с{" "}
+                                    {new Date(r.since).toLocaleDateString("ru-RU")}
+                                    {r.closedAt && ` · закрыта ${new Date(r.closedAt).toLocaleDateString("ru-RU")}`}
+                                  </span>
+                                  <span className="tabular-nums font-medium text-ink-700">{money(r.accrued)} сум начислено</span>
+                                </div>
+                              ))}
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                    </Fragment>
+                  );
+                })}
+              </tbody>
+              <tfoot>
+                <tr className="font-semibold border-t-2 border-ink-200">
+                  <td colSpan={3} className="text-ink-700">Итого</td>
+                  <td className="tabular-nums">{money(detail.totals.accrued)}</td>
+                  <td className="tabular-nums">{money(detail.totals.paid)}</td>
+                  <td className={`tabular-nums ${detail.totals.balance > 0 ? "text-rose-600" : "text-emerald-600"}`}>
+                    {money(detail.totals.balance)}
+                  </td>
+                  <td />
+                </tr>
+              </tfoot>
+            </table>
+          </>
+        )}
       </div>
 
       <div className="card mb-8 overflow-x-auto">

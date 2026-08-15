@@ -31,7 +31,7 @@ export default function TenantsPage() {
   const [containerId, setContainerId] = useState("");
   const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState("");
-  const [view, setView] = useState<"list" | "matrix">("list");
+  const [view, setView] = useState<"list" | "matrix">("matrix");
   const [isOwner, setIsOwner] = useState(false);
 
   useEffect(() => {

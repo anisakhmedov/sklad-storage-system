@@ -13,12 +13,16 @@ import { logAudit } from "@/lib/audit";
 import { getTenantDetail } from "@/lib/tenants";
 import { denormalizeOwner } from "@/lib/ownerKey";
 
-export async function GET(_req: NextRequest, { params }: { params: { clientId: string } }) {
+export async function GET(req: NextRequest, { params }: { params: { clientId: string } }) {
   const user = await requireWebUser();
   if (!user) return jsonError("Не авторизован", 401);
 
   try {
-    const detail = await getTenantDetail(decodeURIComponent(params.clientId));
+    // ?to=YYYY-MM-DD — задолженность на конкретную дату (см. lib/tenants.ts::getTenantDetail),
+    // а не только "на сегодня". Некорректная/отсутствующая дата — отказ от фильтра, как и раньше.
+    const toParam = req.nextUrl.searchParams.get("to");
+    const to = toParam ? new Date(toParam) : undefined;
+    const detail = await getTenantDetail(decodeURIComponent(params.clientId), to && !Number.isNaN(to.getTime()) ? to : undefined);
     if (!detail) return jsonError("Арендатор не найден", 404);
 
     return NextResponse.json({ detail });
