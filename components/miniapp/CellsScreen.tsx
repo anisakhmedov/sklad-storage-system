@@ -1,10 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { miniAppFetch } from "./telegram";
+import { miniAppFetch, haptic } from "./telegram";
 import { useI18n } from "./i18n";
 import CellGrid, { CellGridCell } from "./CellGrid";
-import { ArrowLeft, LayoutGrid, Lock, LockOpen } from "lucide-react";
+import MiniAppHeader from "./MiniAppHeader";
+import { LayoutGrid, Lock, LockOpen } from "lucide-react";
 
 interface Container {
   id: string;
@@ -72,9 +73,11 @@ export default function CellsScreen({ onExit }: { onExit: () => void }) {
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
+        haptic.error();
         setError(data.error || t("cells.saveError"));
         return;
       }
+      haptic.success();
       setPicked(null);
       await loadCells(containerId);
     } finally {
@@ -86,19 +89,14 @@ export default function CellsScreen({ onExit }: { onExit: () => void }) {
     const container = containers.find((c) => c.id === containerId);
     return (
       <div className="pt-4 pb-8">
-        <div className="flex items-center gap-2 mb-5">
-          <button
-            className="btn-icon btn-ghost -ml-2"
-            onClick={() => {
-              setContainerId(null);
-              setPicked(null);
-            }}
-            aria-label={t("common.back")}
-          >
-            <ArrowLeft className="h-4.5 w-4.5" strokeWidth={2.1} />
-          </button>
-          <h1 className="text-lg font-semibold text-ink-900 tracking-tight truncate">{container?.name}</h1>
-        </div>
+        <MiniAppHeader
+          title={container?.name}
+          truncate
+          onBack={() => {
+            setContainerId(null);
+            setPicked(null);
+          }}
+        />
 
         {cellsLoading ? (
           <div className="grid grid-cols-4 gap-2">
@@ -124,8 +122,9 @@ export default function CellsScreen({ onExit }: { onExit: () => void }) {
         )}
 
         {picked && (
-          <div className="modal-backdrop" onClick={() => !busy && setPicked(null)}>
-            <div className="modal-panel max-w-sm" onClick={(e) => e.stopPropagation()}>
+          <div className="sheet-backdrop" onClick={() => !busy && setPicked(null)}>
+            <div className="sheet-panel" onClick={(e) => e.stopPropagation()}>
+              <div className="sheet-grabber" />
               <h3 className="card-title mb-1">{t("cells.cellNumber", { n: picked.number })}</h3>
               <p className="text-sm text-ink-400 mb-4">
                 {picked.occupants.length === 0
@@ -160,12 +159,7 @@ export default function CellsScreen({ onExit }: { onExit: () => void }) {
 
   return (
     <div className="pt-4 pb-8">
-      <div className="flex items-center gap-2 mb-5">
-        <button className="btn-icon btn-ghost -ml-2" onClick={onExit} aria-label={t("common.back")}>
-          <ArrowLeft className="h-4.5 w-4.5" strokeWidth={2.1} />
-        </button>
-        <h1 className="text-lg font-semibold text-ink-900 tracking-tight">{t("cells.title")}</h1>
-      </div>
+      <MiniAppHeader title={t("cells.title")} onBack={onExit} />
 
       {loading ? (
         <div className="space-y-2.5">
@@ -185,7 +179,10 @@ export default function CellsScreen({ onExit }: { onExit: () => void }) {
           {containers.map((c) => (
             <button
               key={c.id}
-              onClick={() => setContainerId(c.id)}
+              onClick={() => {
+                haptic.selection();
+                setContainerId(c.id);
+              }}
               className="w-full text-left rounded-2xl border border-ink-200 bg-white px-4 py-3.5 transition-colors hover:border-brand-300 hover:bg-brand-50/40"
             >
               <div className="font-medium text-ink-900">{c.name}</div>

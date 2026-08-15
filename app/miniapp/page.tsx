@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
-import { initTelegramWebApp, miniAppFetch } from "@/components/miniapp/telegram";
+import { useEffect, useState, useCallback, Children } from "react";
+import { initTelegramWebApp, miniAppFetch, haptic } from "@/components/miniapp/telegram";
 import { useI18n } from "@/components/miniapp/i18n";
 import RegisterForm from "@/components/miniapp/RegisterForm";
 import PendingScreen from "@/components/miniapp/PendingScreen";
@@ -12,7 +12,19 @@ import ExpensesScreen from "@/components/miniapp/ExpensesScreen";
 import PatrolScreen from "@/components/miniapp/PatrolScreen";
 import CellsScreen from "@/components/miniapp/CellsScreen";
 import InventoryDisposalsScreen from "@/components/miniapp/InventoryDisposalsScreen";
-import { Boxes, Plus, TriangleAlert, Wallet, ChevronRight, Users, MinusCircle, Thermometer, LayoutGrid, PackageMinus } from "lucide-react";
+import {
+  Boxes,
+  Plus,
+  TriangleAlert,
+  Wallet,
+  ChevronRight,
+  Users,
+  MinusCircle,
+  Thermometer,
+  LayoutGrid,
+  PackageMinus,
+  type LucideIcon,
+} from "lucide-react";
 
 type EmployeeStatus = "pending" | "approved" | "rejected";
 type Mode = "menu" | "record" | "income" | "clients" | "expenses" | "patrol" | "cells" | "disposals";
@@ -52,6 +64,13 @@ export default function MiniAppPage() {
     initTelegramWebApp();
     load();
   }, [load]);
+
+  // Корень навигации: сам кнопку "Назад" никогда не регистрирует (на главном меню
+  // возвращаться некуда) — как только ниже открывается любой из разделов, он сам вызывает
+  // useTelegramBackButton и получает кнопку; при возврате в меню его эффект чистит
+  // регистрацию сам (см. telegram.ts::useTelegramBackButton). Явный вызов здесь с null
+  // выполнился бы ПОСЛЕ эффекта дочернего экрана (эффекты потомков коммитятся раньше
+  // родительских) и перебивал бы его показ кнопки — поэтому его нет.
 
   if (loading) {
     return (
@@ -109,115 +128,100 @@ export default function MiniAppPage() {
     return <InventoryDisposalsScreen onExit={() => setMode("menu")} />;
   }
 
+  function open(next: Mode) {
+    haptic.selection();
+    setMode(next);
+  }
+
   return (
-    <div className="pt-4">
-      <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-brand-gradient text-white shadow-sm shadow-brand-600/25 mb-5">
-        <Boxes className="h-6 w-6" strokeWidth={2.1} />
+    <div className="pt-2">
+      <div className="flex items-center gap-3 mb-8">
+        <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-brand-gradient text-white shadow-sm shadow-brand-600/25">
+          <Boxes className="h-6 w-6" strokeWidth={2.1} />
+        </div>
+        <div className="min-w-0">
+          <h1 className="text-lg font-semibold text-ink-900 tracking-tight truncate">
+            {t("home.greeting", { name: me.employee.name })}
+          </h1>
+          <p className="text-xs text-ink-400 mt-0.5">{t("home.subtitle")}</p>
+        </div>
       </div>
-      <h1 className="text-xl font-semibold text-ink-900 tracking-tight mb-1">
-        {t("home.greeting", { name: me.employee.name })}
-      </h1>
-      <p className="text-sm text-ink-400 mb-8">{t("home.subtitle")}</p>
 
-      <div className="space-y-3">
-        <button
-          className="w-full flex items-center gap-3.5 rounded-2xl border border-ink-200 bg-white px-4 py-4 text-left transition-colors hover:border-brand-300 hover:bg-brand-50/40 active:scale-[0.99]"
-          onClick={() => setMode("record")}
-        >
-          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-brand-50 text-brand-600">
-            <Plus className="h-5 w-5" strokeWidth={2.1} />
-          </div>
-          <div className="flex-1 min-w-0">
-            <div className="font-medium text-ink-900">{t("home.newRecordTitle")}</div>
-            <div className="text-xs text-ink-400 mt-0.5">{t("home.newRecordDesc")}</div>
-          </div>
-          <ChevronRight className="h-4.5 w-4.5 text-ink-300 shrink-0" strokeWidth={2} />
-        </button>
+      <div className="space-y-6">
+        <MenuSection label={t("home.sectionDaily")} startDelay={0}>
+          <MenuItem icon={Plus} tone="brand" title={t("home.newRecordTitle")} desc={t("home.newRecordDesc")} onClick={() => open("record")} />
+          <MenuItem icon={Wallet} tone="emerald" title={t("home.incomeTitle")} desc={t("home.incomeDesc")} onClick={() => open("income")} />
+          <MenuItem icon={Users} tone="violet" title={t("home.clientsTitle")} desc={t("home.clientsDesc")} onClick={() => open("clients")} />
+        </MenuSection>
 
-        <button
-          className="w-full flex items-center gap-3.5 rounded-2xl border border-ink-200 bg-white px-4 py-4 text-left transition-colors hover:border-brand-300 hover:bg-brand-50/40 active:scale-[0.99]"
-          onClick={() => setMode("income")}
-        >
-          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600">
-            <Wallet className="h-5 w-5" strokeWidth={2.1} />
-          </div>
-          <div className="flex-1 min-w-0">
-            <div className="font-medium text-ink-900">{t("home.incomeTitle")}</div>
-            <div className="text-xs text-ink-400 mt-0.5">{t("home.incomeDesc")}</div>
-          </div>
-          <ChevronRight className="h-4.5 w-4.5 text-ink-300 shrink-0" strokeWidth={2} />
-        </button>
+        <MenuSection label={t("home.sectionFacility")} startDelay={3}>
+          <MenuItem icon={LayoutGrid} tone="teal" title={t("home.cellsTitle")} desc={t("home.cellsDesc")} onClick={() => open("cells")} />
+          <MenuItem icon={Thermometer} tone="sky" title={t("home.patrolTitle")} desc={t("home.patrolDesc")} onClick={() => open("patrol")} />
+          <MenuItem icon={PackageMinus} tone="indigo" title={t("home.disposalsTitle")} desc={t("home.disposalsDesc")} onClick={() => open("disposals")} />
+        </MenuSection>
 
-        <button
-          className="w-full flex items-center gap-3.5 rounded-2xl border border-ink-200 bg-white px-4 py-4 text-left transition-colors hover:border-brand-300 hover:bg-brand-50/40 active:scale-[0.99]"
-          onClick={() => setMode("clients")}
-        >
-          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-violet-50 text-violet-600">
-            <Users className="h-5 w-5" strokeWidth={2.1} />
-          </div>
-          <div className="flex-1 min-w-0">
-            <div className="font-medium text-ink-900">{t("home.clientsTitle")}</div>
-            <div className="text-xs text-ink-400 mt-0.5">{t("home.clientsDesc")}</div>
-          </div>
-          <ChevronRight className="h-4.5 w-4.5 text-ink-300 shrink-0" strokeWidth={2} />
-        </button>
-
-        <button
-          className="w-full flex items-center gap-3.5 rounded-2xl border border-ink-200 bg-white px-4 py-4 text-left transition-colors hover:border-brand-300 hover:bg-brand-50/40 active:scale-[0.99]"
-          onClick={() => setMode("expenses")}
-        >
-          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-rose-50 text-rose-600">
-            <MinusCircle className="h-5 w-5" strokeWidth={2.1} />
-          </div>
-          <div className="flex-1 min-w-0">
-            <div className="font-medium text-ink-900">{t("home.expensesTitle")}</div>
-            <div className="text-xs text-ink-400 mt-0.5">{t("home.expensesDesc")}</div>
-          </div>
-          <ChevronRight className="h-4.5 w-4.5 text-ink-300 shrink-0" strokeWidth={2} />
-        </button>
-
-        <button
-          className="w-full flex items-center gap-3.5 rounded-2xl border border-ink-200 bg-white px-4 py-4 text-left transition-colors hover:border-brand-300 hover:bg-brand-50/40 active:scale-[0.99]"
-          onClick={() => setMode("patrol")}
-        >
-          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-sky-50 text-sky-600">
-            <Thermometer className="h-5 w-5" strokeWidth={2.1} />
-          </div>
-          <div className="flex-1 min-w-0">
-            <div className="font-medium text-ink-900">{t("home.patrolTitle")}</div>
-            <div className="text-xs text-ink-400 mt-0.5">{t("home.patrolDesc")}</div>
-          </div>
-          <ChevronRight className="h-4.5 w-4.5 text-ink-300 shrink-0" strokeWidth={2} />
-        </button>
-
-        <button
-          className="w-full flex items-center gap-3.5 rounded-2xl border border-ink-200 bg-white px-4 py-4 text-left transition-colors hover:border-brand-300 hover:bg-brand-50/40 active:scale-[0.99]"
-          onClick={() => setMode("cells")}
-        >
-          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-teal-50 text-teal-600">
-            <LayoutGrid className="h-5 w-5" strokeWidth={2.1} />
-          </div>
-          <div className="flex-1 min-w-0">
-            <div className="font-medium text-ink-900">{t("home.cellsTitle")}</div>
-            <div className="text-xs text-ink-400 mt-0.5">{t("home.cellsDesc")}</div>
-          </div>
-          <ChevronRight className="h-4.5 w-4.5 text-ink-300 shrink-0" strokeWidth={2} />
-        </button>
-
-        <button
-          className="w-full flex items-center gap-3.5 rounded-2xl border border-ink-200 bg-white px-4 py-4 text-left transition-colors hover:border-brand-300 hover:bg-brand-50/40 active:scale-[0.99]"
-          onClick={() => setMode("disposals")}
-        >
-          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-indigo-50 text-indigo-600">
-            <PackageMinus className="h-5 w-5" strokeWidth={2.1} />
-          </div>
-          <div className="flex-1 min-w-0">
-            <div className="font-medium text-ink-900">{t("home.disposalsTitle")}</div>
-            <div className="text-xs text-ink-400 mt-0.5">{t("home.disposalsDesc")}</div>
-          </div>
-          <ChevronRight className="h-4.5 w-4.5 text-ink-300 shrink-0" strokeWidth={2} />
-        </button>
+        <MenuSection label={t("home.sectionOther")} startDelay={6}>
+          <MenuItem icon={MinusCircle} tone="rose" title={t("home.expensesTitle")} desc={t("home.expensesDesc")} onClick={() => open("expenses")} />
+        </MenuSection>
       </div>
     </div>
+  );
+}
+
+function MenuSection({ label, startDelay, children }: { label: string; startDelay: number; children: React.ReactNode }) {
+  return (
+    <div>
+      <p className="section-eyebrow mb-2 px-1">{label}</p>
+      <div className="space-y-2.5">
+        {Children.map(children, (child, i) => (
+          <div
+            className="animate-fade-up opacity-0"
+            style={{ animationDelay: `${(startDelay + i) * 40}ms`, animationFillMode: "forwards" }}
+          >
+            {child}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+const TONE_CLASSES: Record<string, string> = {
+  brand: "bg-brand-50 text-brand-600",
+  emerald: "bg-emerald-50 text-emerald-600",
+  violet: "bg-violet-50 text-violet-600",
+  rose: "bg-rose-50 text-rose-600",
+  sky: "bg-sky-50 text-sky-600",
+  teal: "bg-teal-50 text-teal-600",
+  indigo: "bg-indigo-50 text-indigo-600",
+};
+
+function MenuItem({
+  icon: Icon,
+  tone,
+  title,
+  desc,
+  onClick,
+}: {
+  icon: LucideIcon;
+  tone: keyof typeof TONE_CLASSES;
+  title: string;
+  desc: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      className="w-full flex items-center gap-3.5 rounded-2xl border border-ink-200 bg-white px-4 py-4 text-left transition-colors hover:border-brand-300 hover:bg-brand-50/40 active:scale-[0.99]"
+      onClick={onClick}
+    >
+      <div className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl ${TONE_CLASSES[tone]}`}>
+        <Icon className="h-5 w-5" strokeWidth={2.1} />
+      </div>
+      <div className="flex-1 min-w-0">
+        <div className="font-medium text-ink-900">{title}</div>
+        <div className="text-xs text-ink-400 mt-0.5">{desc}</div>
+      </div>
+      <ChevronRight className="h-4.5 w-4.5 text-ink-300 shrink-0" strokeWidth={2} />
+    </button>
   );
 }

@@ -1,10 +1,11 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { miniAppFetch } from "./telegram";
+import { miniAppFetch, haptic } from "./telegram";
 import { useI18n } from "./i18n";
 import ClientDetail from "./ClientDetail";
-import { ArrowLeft, Search, UserRound, Building2, ChevronRight, Users, TriangleAlert } from "lucide-react";
+import MiniAppHeader from "./MiniAppHeader";
+import { Search, UserRound, Building2, ChevronRight, Users, TriangleAlert } from "lucide-react";
 
 type OwnerType = "individual" | "company";
 
@@ -62,18 +63,16 @@ export default function ClientsList({ onExit }: { onExit: () => void }) {
 
   const filtered = owners.filter((o) => o.ownerLabel.toLowerCase().includes(query.trim().toLowerCase()));
 
+  // ClientDetail сам регистрирует нативную кнопку "Назад" (через собственный
+  // MiniAppHeader), пока карточка клиента открыта — конфликта с шапкой ниже нет, т.к.
+  // при selected !== null этот компонент рендерит только ClientDetail.
   if (selected) {
     return <ClientDetail owner={selected} onBack={() => setSelected(null)} />;
   }
 
   return (
     <div className="pt-4 pb-8">
-      <div className="flex items-center gap-2 mb-5">
-        <button className="btn-icon btn-ghost -ml-2" onClick={onExit} aria-label={t("common.back")}>
-          <ArrowLeft className="h-4.5 w-4.5" strokeWidth={2.1} />
-        </button>
-        <h1 className="text-lg font-semibold text-ink-900 tracking-tight">{t("clients.title")}</h1>
-      </div>
+      <MiniAppHeader title={t("clients.title")} onBack={onExit} />
 
       <div className="relative mb-4">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-ink-300" strokeWidth={2} />
@@ -112,7 +111,10 @@ export default function ClientsList({ onExit }: { onExit: () => void }) {
             return (
               <button
                 key={o.ownerKey}
-                onClick={() => setSelected(o)}
+                onClick={() => {
+                  haptic.selection();
+                  setSelected(o);
+                }}
                 className="w-full flex items-center gap-3 rounded-2xl border border-ink-200 bg-white px-4 py-3.5 text-left transition-colors hover:border-brand-300 hover:bg-brand-50/40 active:scale-[0.99]"
               >
                 <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-brand-50 text-brand-600">

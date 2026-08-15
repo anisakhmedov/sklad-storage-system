@@ -80,6 +80,10 @@ const config: Config = {
           from: { transform: "translateX(-100%)" },
           to: { transform: "translateX(0)" },
         },
+        "slide-up": {
+          from: { transform: "translateY(100%)" },
+          to: { transform: "translateY(0)" },
+        },
         shimmer: {
           "0%": { backgroundPosition: "-400px 0" },
           "100%": { backgroundPosition: "400px 0" },
@@ -91,6 +95,7 @@ const config: Config = {
         "scale-in": "scale-in 0.18s cubic-bezier(0.16,1,0.3,1)",
         "slide-in-right": "slide-in-right 0.25s cubic-bezier(0.16,1,0.3,1)",
         "slide-in-left": "slide-in-left 0.25s cubic-bezier(0.16,1,0.3,1)",
+        "slide-up": "slide-up 0.32s cubic-bezier(0.16,1,0.3,1)",
         shimmer: "shimmer 1.6s infinite linear",
       },
       backgroundImage: {

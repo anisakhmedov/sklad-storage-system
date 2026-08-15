@@ -205,6 +205,25 @@ body {
     @apply card w-full shadow-popover animate-scale-in;
   }
 
+  /* ---------- Bottom sheet (Mini App) ---------- */
+  /* Мобильный аналог .modal-backdrop/.modal-panel — выезжает снизу, как нативный лист
+     Telegram/iOS/Android, вместо центрированной десктопной модалки (которая на узком
+     вертикальном экране выглядит как случайно приземлившаяся карточка). Используется
+     только внутри components/miniapp/* — на веб-панели остаются обычные модалки. */
+  .sheet-backdrop {
+    @apply fixed inset-0 bg-ink-950/45 backdrop-blur-[2px] flex items-end justify-center z-50 animate-fade-in;
+  }
+
+  .sheet-panel {
+    @apply w-full max-w-md bg-white rounded-t-3xl shadow-popover px-5 pt-3
+      max-h-[86vh] overflow-y-auto animate-slide-up;
+    padding-bottom: calc(1.5rem + env(safe-area-inset-bottom));
+  }
+
+  .sheet-grabber {
+    @apply mx-auto mb-3 h-1.5 w-10 rounded-full bg-ink-200;
+  }
+
   .alert {
     @apply flex items-start gap-2.5 rounded-xl border px-3.5 py-3 text-sm;
   }

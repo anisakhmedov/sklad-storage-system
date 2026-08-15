@@ -75,7 +75,7 @@ templates/
   fonts/                         — DejaVu Sans (кириллица, включая узбекские буквы), LICENSE.txt
 scripts/
   seed.ts                        — наполняет БД тестовыми данными
-  setWebhook.ts                  — регистрирует webhook бота на задеплоенном URL
+  setWebhook.ts                  — регистрирует webhook бота, список команд и кнопку меню Mini App
   extractContractTemplate.js     — перегенерирует lib/contract/contractTemplateBlocks.ts из .docx
 ```
 
@@ -123,16 +123,18 @@ npm run dev                  # http://localhost:3000
 
 1. Создайте бота через [@BotFather](https://t.me/BotFather) → `/newbot`, получите токен.
 2. Пропишите токен в `.env.local` (локально) и в переменных окружения Vercel (для прода).
-3. (Опционально, но рекомендуется) В @BotFather включите Mini App: `/newapp` или
-   `/setmenubutton`, чтобы у бота была кнопка меню, открывающая `APP_BASE_URL/miniapp`.
-   Кнопка со ссылкой на Mini App также отправляется автоматически ботом на `/start`
-   (см. `lib/telegramBot.ts`).
-4. После деплоя на Vercel задайте `APP_BASE_URL=https://<ваш-домен>.vercel.app` и выполните:
+3. После деплоя на Vercel задайте `APP_BASE_URL=https://<ваш-домен>.vercel.app` и выполните:
    ```bash
    npm run set-webhook
    ```
-   Скрипт зарегистрирует webhook на `https://<APP_BASE_URL>/api/telegram/webhook` с секретом
-   из `TELEGRAM_WEBHOOK_SECRET` (если задан). Проверить текущий webhook можно через
+   Скрипт одним запуском регистрирует webhook на `https://<APP_BASE_URL>/api/telegram/webhook`
+   (с секретом из `TELEGRAM_WEBHOOK_SECRET`, если задан), список команд бота (`/start`,
+   `/report`, `/contract`, `/help` — видны в системном меню "/") и постоянную синюю кнопку
+   меню рядом с полем ввода, которая открывает `APP_BASE_URL/miniapp` напрямую — сотруднику
+   не нужно сначала писать `/start`, чтобы попасть в приложение (кнопка со ссылкой на Mini App
+   также по-прежнему отправляется ботом в ответ на `/start`, см. `lib/telegramBot.ts`, — это
+   запасной путь, а не единственный). Ручная настройка через `@BotFather` (`/newapp`,
+   `/setmenubutton`) для этого больше не нужна. Проверить текущий webhook можно через
    `https://api.telegram.org/bot<TOKEN>/getWebhookInfo`.
 
 ## Деплой на Vercel

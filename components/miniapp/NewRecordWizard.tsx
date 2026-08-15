@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { miniAppFetch } from "./telegram";
+import { miniAppFetch, haptic, useTelegramBackButton } from "./telegram";
 import { useI18n } from "./i18n";
 import CellGrid, { CellGridCell } from "./CellGrid";
 import ContractPreview from "./ContractPreview";
@@ -163,6 +163,11 @@ export default function NewRecordWizard({ onExit }: { onExit: () => void }) {
   const steps = stepsFor(form.ownerType, firms.length);
   const kind = steps[step];
 
+  // Нативная кнопка "Назад" Telegram зеркалит шаги мастера — на первом шаге закрывает
+  // визард, дальше листает назад по шагам; на экране "готово" не нужна (см.
+  // telegram.ts::useTelegramBackButton).
+  useTelegramBackButton(savedScreen ? null : step === 0 ? onExit : back);
+
   // Debounce 300мс, минимум 2 символа (см. GET /api/miniapp/owners/search — сервер тоже
   // отсекает короткие запросы).
   useEffect(() => {
@@ -237,15 +242,20 @@ export default function NewRecordWizard({ onExit }: { onExit: () => void }) {
       .finally(() => setCellsLoading(false));
   }, [form.containerId]);
 
+  function fail(message: string) {
+    haptic.error();
+    setError(message);
+  }
+
   function next() {
     setError(null);
-    if (kind === "container" && !form.containerId) return setError(t("newRecord.selectContainer"));
-    if (kind === "cell" && !form.cellNumber) return setError(t("newRecord.selectCell"));
+    if (kind === "container" && !form.containerId) return fail(t("newRecord.selectContainer"));
+    if (kind === "cell" && !form.cellNumber) return fail(t("newRecord.selectCell"));
     if (kind === "product") {
-      if (!form.productName.trim()) return setError(t("newRecord.productNameRequired"));
+      if (!form.productName.trim()) return fail(t("newRecord.productNameRequired"));
       const qty = Number(form.quantity);
       if (!form.quantity || Number.isNaN(qty) || qty <= 0) {
-        return setError(t("newRecord.quantityPositive"));
+        return fail(t("newRecord.quantityPositive"));
       }
     }
     if (kind === "owner") {
@@ -259,37 +269,39 @@ export default function NewRecordWizard({ onExit }: { onExit: () => void }) {
         if (!form.ownerPinfl.trim()) missing.push(t("newRecord.missingPinfl"));
         if (!form.ownerPassportIssueDate.trim()) missing.push(t("newRecord.missingPassportIssueDate"));
         if (!form.ownerPassportIssuedBy.trim()) missing.push(t("newRecord.missingPassportIssuedBy"));
-        if (missing.length > 0) return setError(t("newRecord.fillFields", { fields: missing.join(", ") }));
+        if (missing.length > 0) return fail(t("newRecord.fillFields", { fields: missing.join(", ") }));
 
         // Формат — только когда поле уже заполнено (пустое поле уже отловлено выше).
         const normalizedPhone = normalizePhone(form.ownerPhone);
         if (!/^\+998\d{9}$/.test(normalizedPhone)) {
-          return setError(t("newRecord.invalidPhone"));
+          return fail(t("newRecord.invalidPhone"));
         }
         if (!/^\d{14}$/.test(form.ownerPinfl.trim())) {
-          return setError(t("newRecord.invalidPinfl"));
+          return fail(t("newRecord.invalidPinfl"));
         }
       } else {
         const missing: string[] = [];
         if (!form.companyName.trim()) missing.push(t("newRecord.missingCompanyName"));
         if (!form.companyInn.trim()) missing.push(t("newRecord.missingInn"));
         if (!form.companyDirector.trim()) missing.push(t("newRecord.missingCompanyDirector"));
-        if (missing.length > 0) return setError(t("newRecord.fillFields", { fields: missing.join(", ") }));
+        if (missing.length > 0) return fail(t("newRecord.fillFields", { fields: missing.join(", ") }));
       }
     }
     if (kind === "tariff") {
       const rate = Number(form.tariffRate);
       if (!form.tariffRate || Number.isNaN(rate) || rate < 0) {
-        return setError(t("newRecord.invalidRate"));
+        return fail(t("newRecord.invalidRate"));
       }
     }
-    if (kind === "firm" && !form.firmId) return setError(t("newRecord.selectFirm"));
-    if (kind === "signature" && !form.clientSignaturePng) return setError(t("newRecord.signatureRequired"));
+    if (kind === "firm" && !form.firmId) return fail(t("newRecord.selectFirm"));
+    if (kind === "signature" && !form.clientSignaturePng) return fail(t("newRecord.signatureRequired"));
+    haptic.selection();
     setStep((s) => s + 1);
   }
 
   function back() {
     setError(null);
+    haptic.selection();
     setStep((s) => Math.max(0, s - 1));
   }
 
@@ -336,9 +348,11 @@ export default function NewRecordWizard({ onExit }: { onExit: () => void }) {
       });
       const data = await res.json();
       if (!res.ok) {
+        haptic.error();
         setError(data.error || t("newRecord.saveError"));
         return;
       }
+      haptic.success();
       setSavedScreen(true);
     } finally {
       setBusy(false);
@@ -454,7 +468,10 @@ export default function NewRecordWizard({ onExit }: { onExit: () => void }) {
               {containers.map((c) => (
                 <button
                   key={c.id}
-                  onClick={() => setForm({ ...form, containerId: c.id, cellNumber: null })}
+                  onClick={() => {
+                    haptic.selection();
+                    setForm({ ...form, containerId: c.id, cellNumber: null });
+                  }}
                   className={`w-full text-left rounded-2xl border px-4 py-3.5 transition-colors ${
                     form.containerId === c.id
                       ? "border-brand-600 bg-brand-50"
@@ -588,7 +605,10 @@ export default function NewRecordWizard({ onExit }: { onExit: () => void }) {
                   <button
                     key={o.ownerKey}
                     type="button"
-                    onClick={() => pickOwner(o)}
+                    onClick={() => {
+                      haptic.selection();
+                      pickOwner(o);
+                    }}
                     className="w-full text-left rounded-xl border border-ink-200 bg-white px-3.5 py-2.5 hover:bg-ink-50 transition-colors"
                   >
                     <div className="font-medium text-ink-900 text-sm">
@@ -737,6 +757,7 @@ export default function NewRecordWizard({ onExit }: { onExit: () => void }) {
                   key={tt}
                   type="button"
                   onClick={() => {
+                    haptic.selection();
                     const suggestion = suggestedEndDate(tt, new Date());
                     setForm({
                       ...form,
@@ -793,7 +814,10 @@ export default function NewRecordWizard({ onExit }: { onExit: () => void }) {
               <button
                 key={f.id}
                 type="button"
-                onClick={() => setForm({ ...form, firmId: f.id })}
+                onClick={() => {
+                  haptic.selection();
+                  setForm({ ...form, firmId: f.id });
+                }}
                 className={`w-full text-left rounded-2xl border px-4 py-3.5 transition-colors ${
                   form.firmId === f.id ? "border-brand-600 bg-brand-50" : "border-ink-200 bg-white hover:bg-ink-50"
                 }`}

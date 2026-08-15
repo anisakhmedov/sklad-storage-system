@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { miniAppFetch } from "./telegram";
+import { miniAppFetch, haptic } from "./telegram";
 import { useI18n } from "./i18n";
 import { UserRound, Phone, AlertCircle, ArrowRight } from "lucide-react";
 
@@ -23,9 +23,11 @@ export default function RegisterForm({ onRegistered }: { onRegistered: () => voi
       });
       const data = await res.json();
       if (!res.ok) {
+        haptic.error();
         setError(data.error || t("register.error"));
         return;
       }
+      haptic.success();
       onRegistered();
     } finally {
       setBusy(false);

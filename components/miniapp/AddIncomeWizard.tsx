@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { miniAppFetch } from "./telegram";
+import { miniAppFetch, haptic, useTelegramBackButton } from "./telegram";
 import { useI18n } from "./i18n";
 import { DEFAULT_CELL_COUNT, cellNumbersForCount } from "@/lib/cells";
 import {
@@ -142,18 +142,29 @@ export default function AddIncomeWizard({ onExit }: { onExit: () => void }) {
   );
 
   const selectedOwner = owners.find((o) => o.ownerKey === ownerKey);
+
+  // Нативная кнопка "Назад" Telegram зеркалит шаги мастера (см.
+  // telegram.ts::useTelegramBackButton) — на экране "готово" её нет.
+  useTelegramBackButton(savedScreen ? null : step === 0 ? onExit : back);
   const selectedDebt = containersForOwner.find((d) => d.containerId === containerId);
+
+  function fail(message: string) {
+    haptic.error();
+    setError(message);
+  }
 
   function next() {
     setError(null);
-    if (step === 0 && !ownerKey) return setError(t("income.selectOwner"));
-    if (step === 1 && !containerId) return setError(t("income.selectContainer"));
-    if (step === 2 && !amount) return setError(t("income.amountRequired"));
+    if (step === 0 && !ownerKey) return fail(t("income.selectOwner"));
+    if (step === 1 && !containerId) return fail(t("income.selectContainer"));
+    if (step === 2 && !amount) return fail(t("income.amountRequired"));
+    haptic.selection();
     setStep((s) => s + 1);
   }
 
   function back() {
     setError(null);
+    haptic.selection();
     setStep((s) => Math.max(0, s - 1));
   }
 
@@ -178,9 +189,11 @@ export default function AddIncomeWizard({ onExit }: { onExit: () => void }) {
       });
       const data = await res.json();
       if (!res.ok) {
+        haptic.error();
         setError(data.error || t("income.saveError"));
         return;
       }
+      haptic.success();
       setSavedScreen(true);
     } finally {
       setBusy(false);
@@ -270,6 +283,7 @@ export default function AddIncomeWizard({ onExit }: { onExit: () => void }) {
               <button
                 key={o.ownerKey}
                 onClick={() => {
+                  haptic.selection();
                   setOwnerKey(o.ownerKey);
                   setContainerId("");
                 }}
@@ -306,7 +320,10 @@ export default function AddIncomeWizard({ onExit }: { onExit: () => void }) {
           {containersForOwner.map((d) => (
             <button
               key={d.containerId}
-              onClick={() => setContainerId(d.containerId)}
+              onClick={() => {
+                haptic.selection();
+                setContainerId(d.containerId);
+              }}
               className={`w-full text-left rounded-2xl border px-4 py-3.5 transition-colors ${
                 containerId === d.containerId ? "border-brand-600 bg-brand-50" : "border-ink-200 bg-white hover:bg-ink-50"
               }`}

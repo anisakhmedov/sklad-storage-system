@@ -79,6 +79,9 @@ const ru: Dict = {
     cellsDesc: "Отметить камеру как заполненную",
     disposalsTitle: "Продажа / списание инвентаря",
     disposalsDesc: "Продать инвентарь клиенту или списать",
+    sectionDaily: "Ежедневно",
+    sectionFacility: "Склад",
+    sectionOther: "Прочее",
   },
   register: {
     title: "Регистрация",
@@ -409,6 +412,9 @@ const uz: Dict = {
     cellsDesc: "Камерани тўлган деб белгилаш",
     disposalsTitle: "Инвентарни сотиш / ҳисобдан чиқариш",
     disposalsDesc: "Инвентарни мижозга сотиш ёки ҳисобдан чиқариш",
+    sectionDaily: "Кундалик",
+    sectionFacility: "Омбор",
+    sectionOther: "Бошқа",
   },
   register: {
     title: "Рўйхатдан ўтиш",

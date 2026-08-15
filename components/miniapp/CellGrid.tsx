@@ -2,6 +2,7 @@
 
 import { Lock } from "lucide-react";
 import { useI18n } from "./i18n";
+import { haptic } from "./telegram";
 
 export interface CellGridCell {
   number: number;
@@ -52,7 +53,11 @@ export default function CellGrid({
             key={n}
             type="button"
             disabled={!clickable}
-            onClick={() => clickable && onSelect!(n)}
+            onClick={() => {
+              if (!clickable) return;
+              haptic.selection();
+              onSelect!(n);
+            }}
             className={`relative flex flex-col items-center justify-center gap-0.5 rounded-xl border-2 py-4 text-sm font-semibold transition-colors ${tone} ${
               isSelected ? "ring-2 ring-brand-600 ring-offset-1" : ""
             } ${clickable ? "active:scale-[0.97] cursor-pointer" : "cursor-not-allowed opacity-80"}`}

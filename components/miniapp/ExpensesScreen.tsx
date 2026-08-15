@@ -1,9 +1,10 @@
 "use client";
 
 import { useState } from "react";
-import { miniAppFetch } from "./telegram";
+import { miniAppFetch, haptic } from "./telegram";
 import { useI18n } from "./i18n";
-import { ArrowLeft, MinusCircle, CheckCircle2 } from "lucide-react";
+import MiniAppHeader from "./MiniAppHeader";
+import { MinusCircle, CheckCircle2 } from "lucide-react";
 
 type ExpenseType = "owner_withdrawal" | "salary" | "other";
 // "terminal" убран по решению владельца — расходы принимают только эти три способа
@@ -38,6 +39,7 @@ export default function ExpensesScreen({ onExit }: { onExit: () => void }) {
 
   async function handleSubmit() {
     if (!amount || Number(amount) <= 0) {
+      haptic.error();
       setError(t("expenses.amountRequired"));
       return;
     }
@@ -50,11 +52,14 @@ export default function ExpensesScreen({ onExit }: { onExit: () => void }) {
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
+        haptic.error();
         setError(data.error || t("expenses.saveError"));
         return;
       }
+      haptic.success();
       setDone(true);
     } catch {
+      haptic.error();
       setError(t("common.networkError"));
     } finally {
       setBusy(false);
@@ -78,12 +83,7 @@ export default function ExpensesScreen({ onExit }: { onExit: () => void }) {
 
   return (
     <div className="pt-4 pb-8">
-      <div className="flex items-center gap-2 mb-5">
-        <button className="btn-icon btn-ghost -ml-2" onClick={onExit} aria-label={t("common.back")}>
-          <ArrowLeft className="h-4.5 w-4.5" strokeWidth={2.1} />
-        </button>
-        <h1 className="text-lg font-semibold text-ink-900 tracking-tight">{t("expenses.title")}</h1>
-      </div>
+      <MiniAppHeader title={t("expenses.title")} onBack={onExit} />
 
       <div className="space-y-3">
         <div>

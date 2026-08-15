@@ -1,9 +1,10 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { miniAppFetch } from "./telegram";
+import { miniAppFetch, haptic } from "./telegram";
 import { useI18n } from "./i18n";
-import { ArrowLeft, Thermometer, Zap, Sun, Moon, CheckCircle2, TriangleAlert, ChevronRight } from "lucide-react";
+import MiniAppHeader from "./MiniAppHeader";
+import { Thermometer, Zap, Sun, Moon, CheckCircle2, TriangleAlert, ChevronRight } from "lucide-react";
 
 type Period = "morning" | "evening";
 
@@ -62,18 +63,15 @@ export default function PatrolScreen({ onExit }: { onExit: () => void }) {
     load();
   }, [load]);
 
+  // Пока period задан, ниже рендерится PeriodChecklist — он сам владеет кнопкой "Назад"
+  // через собственный MiniAppHeader (см. telegram.ts::useTelegramBackButton).
   if (period) {
     return <PeriodChecklist period={period} rows={status} onBack={() => setPeriod(null)} onChanged={load} />;
   }
 
   return (
     <div className="pt-4 pb-8">
-      <div className="flex items-center gap-2 mb-5">
-        <button className="btn-icon btn-ghost -ml-2" onClick={onExit} aria-label={t("common.back")}>
-          <ArrowLeft className="h-4.5 w-4.5" strokeWidth={2.1} />
-        </button>
-        <h1 className="text-lg font-semibold text-ink-900 tracking-tight">{t("patrol.title")}</h1>
-      </div>
+      <MiniAppHeader title={t("patrol.title")} onBack={onExit} />
 
       {loading ? (
         <div className="space-y-2.5">
@@ -97,7 +95,10 @@ export default function PatrolScreen({ onExit }: { onExit: () => void }) {
             return (
               <button
                 key={p}
-                onClick={() => setPeriod(p)}
+                onClick={() => {
+                  haptic.selection();
+                  setPeriod(p);
+                }}
                 className={`w-full flex items-center gap-3.5 rounded-2xl border px-4 py-4 text-left transition-colors active:scale-[0.99] ${
                   overdue
                     ? "border-rose-300 bg-rose-50"
@@ -161,12 +162,7 @@ function PeriodChecklist({
 
   return (
     <div className="pt-4 pb-8">
-      <div className="flex items-center gap-2 mb-5">
-        <button className="btn-icon btn-ghost -ml-2" onClick={onBack} aria-label={t("common.back")}>
-          <ArrowLeft className="h-4.5 w-4.5" strokeWidth={2.1} />
-        </button>
-        <h1 className="text-lg font-semibold text-ink-900 tracking-tight">{PERIOD_LABELS[period]}</h1>
-      </div>
+      <MiniAppHeader title={PERIOD_LABELS[period]} onBack={onBack} />
 
       {rows.length === 0 ? (
         <div className="empty-state">
@@ -180,7 +176,10 @@ function PeriodChecklist({
             return (
               <button
                 key={r.containerId}
-                onClick={() => setContainerId(r.containerId)}
+                onClick={() => {
+                  haptic.selection();
+                  setContainerId(r.containerId);
+                }}
                 className={`w-full flex items-center justify-between gap-3 rounded-2xl border px-4 py-3.5 text-left transition-colors ${
                   allDone ? "border-emerald-200 bg-emerald-50/60" : "border-ink-200 bg-white hover:border-brand-300"
                 }`}
@@ -218,12 +217,7 @@ function ContainerCellsPatrol({
 
   return (
     <div className="pt-4 pb-8">
-      <div className="flex items-center gap-2 mb-5">
-        <button className="btn-icon btn-ghost -ml-2" onClick={onBack} aria-label={t("common.back")}>
-          <ArrowLeft className="h-4.5 w-4.5" strokeWidth={2.1} />
-        </button>
-        <h1 className="text-lg font-semibold text-ink-900 tracking-tight truncate">{row.containerName}</h1>
-      </div>
+      <MiniAppHeader title={row.containerName} onBack={onBack} truncate />
 
       <p className="text-xs text-ink-400 mb-3">{t("patrol.cellHint")}</p>
 
@@ -235,7 +229,10 @@ function ContainerCellsPatrol({
             <button
               key={n}
               type="button"
-              onClick={() => setPicked(n)}
+              onClick={() => {
+                haptic.selection();
+                setPicked(n);
+              }}
               className={`flex flex-col items-center justify-center gap-0.5 rounded-xl border-2 py-4 text-sm font-semibold transition-colors active:scale-[0.97] ${
                 done ? "border-emerald-300 bg-emerald-50 text-emerald-700" : "border-ink-200 bg-white text-ink-700 hover:border-brand-300"
               }`}
@@ -284,10 +281,12 @@ function CellPatrolModal({
 
   async function submit() {
     if (!temperature || Number.isNaN(Number(temperature))) {
+      haptic.error();
       setError(t("patrol.temperatureRequired"));
       return;
     }
     if (!amperage || Number.isNaN(Number(amperage))) {
+      haptic.error();
       setError(t("patrol.amperageRequired"));
       return;
     }
@@ -300,11 +299,14 @@ function CellPatrolModal({
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
+        haptic.error();
         setError(data.error || t("patrol.saveError"));
         return;
       }
+      haptic.success();
       onSaved();
     } catch {
+      haptic.error();
       setError(t("common.networkError"));
     } finally {
       setBusy(false);
@@ -312,8 +314,9 @@ function CellPatrolModal({
   }
 
   return (
-    <div className="modal-backdrop" onClick={() => !busy && onClose()}>
-      <div className="modal-panel max-w-sm" onClick={(e) => e.stopPropagation()}>
+    <div className="sheet-backdrop" onClick={() => !busy && onClose()}>
+      <div className="sheet-panel" onClick={(e) => e.stopPropagation()}>
+        <div className="sheet-grabber" />
         <h3 className="card-title mb-4">{t("patrol.cellNumber", { n: cellNumber })}</h3>
         <div className="space-y-3">
           <div className="input-icon-wrap">

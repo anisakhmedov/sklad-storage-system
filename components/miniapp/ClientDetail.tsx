@@ -1,9 +1,10 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { miniAppFetch } from "./telegram";
+import { miniAppFetch, haptic } from "./telegram";
 import { useI18n } from "./i18n";
 import InventorySection from "./InventorySection";
+import MiniAppHeader from "./MiniAppHeader";
 import {
   TARIFF_TYPES,
   isTariffCompatibleWithUnit,
@@ -11,7 +12,6 @@ import {
   TariffType,
 } from "@/lib/tariff";
 import {
-  ArrowLeft,
   UserRound,
   Building2,
   Boxes,
@@ -142,14 +142,14 @@ export default function ClientDetail({
 
   return (
     <div className="pt-4 pb-8">
-      <div className="flex items-center justify-between mb-3">
-        <button className="btn-icon btn-ghost -ml-2" onClick={onBack} aria-label={t("common.back")}>
-          <ArrowLeft className="h-4.5 w-4.5" strokeWidth={2.1} />
-        </button>
-        <button className="btn-icon btn-ghost" onClick={load} aria-label={t("clientDetail.refreshAria")}>
-          <RefreshCw className="h-4 w-4" strokeWidth={2} />
-        </button>
-      </div>
+      <MiniAppHeader
+        onBack={onBack}
+        right={
+          <button className="btn-icon btn-ghost shrink-0" onClick={load} aria-label={t("clientDetail.refreshAria")}>
+            <RefreshCw className="h-4 w-4" strokeWidth={2} />
+          </button>
+        }
+      />
 
       <div className="flex items-center gap-3 mb-6">
         <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-brand-50 text-brand-600">
@@ -391,12 +391,15 @@ function ItemRow({ item, onChanged }: { item: SummaryItem; onChanged: () => void
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
+        haptic.error();
         setError(data.error || t("common.error"));
         return;
       }
+      haptic.success();
       setAmount("");
       onChanged();
     } catch {
+      haptic.error();
       setError(t("common.networkError"));
     } finally {
       setBusy(false);
@@ -624,7 +627,10 @@ function ItemRow({ item, onChanged }: { item: SummaryItem; onChanged: () => void
         <button
           className="btn-icon btn-secondary h-8 w-8"
           disabled={busy}
-          onClick={() => adjust(1)}
+          onClick={() => {
+            haptic.selection();
+            adjust(1);
+          }}
           aria-label={t("clientDetail.addAria")}
           title={t("clientDetail.addAria")}
         >
@@ -633,7 +639,10 @@ function ItemRow({ item, onChanged }: { item: SummaryItem; onChanged: () => void
         <button
           className="btn-icon btn-danger-ghost h-8 w-8"
           disabled={busy}
-          onClick={() => adjust(-1)}
+          onClick={() => {
+            haptic.selection();
+            adjust(-1);
+          }}
           aria-label={t("clientDetail.subtractAria")}
           title={t("clientDetail.subtractAria")}
         >

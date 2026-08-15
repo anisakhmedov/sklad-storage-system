@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Eraser } from "lucide-react";
 import { useI18n } from "./i18n";
+import { haptic } from "./telegram";
 
 /**
  * Холст для подписи клиента от руки (шаг "Подпись" в
@@ -82,6 +83,7 @@ export default function SignaturePad({
   }
 
   function clear() {
+    haptic.tap();
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext("2d");

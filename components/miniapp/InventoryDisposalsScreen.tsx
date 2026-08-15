@@ -1,10 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { miniAppFetch } from "./telegram";
+import { miniAppFetch, haptic } from "./telegram";
 import { useI18n } from "./i18n";
 import { isPricelessItemName } from "@/lib/inventoryPricing";
-import { ArrowLeft, DollarSign, PackageMinus, TriangleAlert, Package } from "lucide-react";
+import MiniAppHeader from "./MiniAppHeader";
+import { DollarSign, PackageMinus, TriangleAlert, Package } from "lucide-react";
 
 interface ContainerRef {
   id: string;
@@ -76,12 +77,7 @@ export default function InventoryDisposalsScreen({ onExit }: { onExit: () => voi
 
   return (
     <div className="pt-4 pb-8">
-      <div className="flex items-center gap-2 mb-5">
-        <button className="btn-icon btn-ghost -ml-2" onClick={onExit} aria-label={t("common.back")}>
-          <ArrowLeft className="h-4.5 w-4.5" strokeWidth={2.1} />
-        </button>
-        <h1 className="text-lg font-semibold text-ink-900 tracking-tight">{t("disposals.title")}</h1>
-      </div>
+      <MiniAppHeader title={t("disposals.title")} onBack={onExit} />
 
       {containers.length > 1 && (
         <select className="input mb-4" value={containerId} onChange={(e) => setContainerId(e.target.value)}>
@@ -128,7 +124,10 @@ export default function InventoryDisposalsScreen({ onExit }: { onExit: () => voi
                   <button
                     className="btn-secondary flex-1"
                     disabled={item.available <= 0}
-                    onClick={() => setActing({ item, kind: "sale" })}
+                    onClick={() => {
+                      haptic.selection();
+                      setActing({ item, kind: "sale" });
+                    }}
                   >
                     <DollarSign className="h-3.5 w-3.5" strokeWidth={2.1} />
                     {t("disposals.sell")}
@@ -137,7 +136,10 @@ export default function InventoryDisposalsScreen({ onExit }: { onExit: () => voi
                 <button
                   className="btn-secondary flex-1"
                   disabled={item.available <= 0}
-                  onClick={() => setActing({ item, kind: "writeoff" })}
+                  onClick={() => {
+                    haptic.selection();
+                    setActing({ item, kind: "writeoff" });
+                  }}
                 >
                   <PackageMinus className="h-3.5 w-3.5" strokeWidth={2.1} />
                   {t("disposals.writeoff")}
@@ -191,14 +193,17 @@ function DisposalModal({
   async function submit() {
     const qty = Number(quantity);
     if (!quantity || Number.isNaN(qty) || qty <= 0) {
+      haptic.error();
       setError(t("disposals.quantityRequired"));
       return;
     }
     if (qty > item.available) {
+      haptic.error();
       setError(t("disposals.notEnoughAvailable", { available: item.available, unit: item.unit }));
       return;
     }
     if (kind === "sale" && (!amount || Number(amount) <= 0)) {
+      haptic.error();
       setError(t("disposals.amountRequired"));
       return;
     }
@@ -217,11 +222,14 @@ function DisposalModal({
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
+        haptic.error();
         setError(data.error || t("disposals.saveError"));
         return;
       }
+      haptic.success();
       onSaved();
     } catch {
+      haptic.error();
       setError(t("common.networkError"));
     } finally {
       setBusy(false);
@@ -229,8 +237,9 @@ function DisposalModal({
   }
 
   return (
-    <div className="modal-backdrop" onClick={onClose}>
-      <div className="modal-panel max-w-sm" onClick={(e) => e.stopPropagation()}>
+    <div className="sheet-backdrop" onClick={onClose}>
+      <div className="sheet-panel" onClick={(e) => e.stopPropagation()}>
+        <div className="sheet-grabber" />
         <h3 className="card-title mb-4">
           {kind === "sale" ? t("disposals.sellTitle", { name: item.name }) : t("disposals.writeoffTitle", { name: item.name })}
         </h3>
