@@ -26,10 +26,17 @@ export async function GET(req: NextRequest) {
   const tariffType = sp.get("tariffType");
   const from = sp.get("from");
   const to = sp.get("to");
+  // "active" — товар ещё числится (closedAt не проставлен), "closed" — запись закрыта
+  // ("товар забран", см. models/StorageRecord.ts::closedAt). Не передано/любое другое
+  // значение — без фильтра по статусу (журнал показывает всё, в отличие от сводной таблицы
+  // "Арендаторы", см. lib/tenantMatrix.ts).
+  const status = sp.get("status");
 
   if (containerId && Types.ObjectId.isValid(containerId)) filter.containerId = containerId;
   if (employeeId && Types.ObjectId.isValid(employeeId)) filter.createdByEmployeeId = employeeId;
   if (tariffType) filter["tariff.type"] = tariffType;
+  if (status === "active") filter.closedAt = { $exists: false };
+  if (status === "closed") filter.closedAt = { $exists: true };
   if (product) filter.productName = { $regex: product, $options: "i" };
   if (from || to) {
     const createdAt: Record<string, Date> = {};

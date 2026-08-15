@@ -10,11 +10,11 @@ import ClientsList from "@/components/miniapp/ClientsList";
 import ExpensesScreen from "@/components/miniapp/ExpensesScreen";
 import PatrolScreen from "@/components/miniapp/PatrolScreen";
 import CellsScreen from "@/components/miniapp/CellsScreen";
-import TransportContainersScreen from "@/components/miniapp/TransportContainersScreen";
-import { Boxes, Plus, TriangleAlert, Wallet, ChevronRight, Users, MinusCircle, Thermometer, LayoutGrid, Truck } from "lucide-react";
+import InventoryDisposalsScreen from "@/components/miniapp/InventoryDisposalsScreen";
+import { Boxes, Plus, TriangleAlert, Wallet, ChevronRight, Users, MinusCircle, Thermometer, LayoutGrid, PackageMinus } from "lucide-react";
 
 type EmployeeStatus = "pending" | "approved" | "rejected";
-type Mode = "menu" | "record" | "income" | "clients" | "expenses" | "patrol" | "cells" | "transport";
+type Mode = "menu" | "record" | "income" | "clients" | "expenses" | "patrol" | "cells" | "disposals";
 
 interface MeResponse {
   telegram: { id: number; firstName?: string; lastName?: string; username?: string };
@@ -104,8 +104,8 @@ export default function MiniAppPage() {
     return <CellsScreen onExit={() => setMode("menu")} />;
   }
 
-  if (mode === "transport") {
-    return <TransportContainersScreen onExit={() => setMode("menu")} />;
+  if (mode === "disposals") {
+    return <InventoryDisposalsScreen onExit={() => setMode("menu")} />;
   }
 
   return (
@@ -205,14 +205,14 @@ export default function MiniAppPage() {
 
         <button
           className="w-full flex items-center gap-3.5 rounded-2xl border border-ink-200 bg-white px-4 py-4 text-left transition-colors hover:border-brand-300 hover:bg-brand-50/40 active:scale-[0.99]"
-          onClick={() => setMode("transport")}
+          onClick={() => setMode("disposals")}
         >
           <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-indigo-50 text-indigo-600">
-            <Truck className="h-5 w-5" strokeWidth={2.1} />
+            <PackageMinus className="h-5 w-5" strokeWidth={2.1} />
           </div>
           <div className="flex-1 min-w-0">
-            <div className="font-medium text-ink-900">Контейнеры для перевозки</div>
-            <div className="text-xs text-ink-400 mt-0.5">Выдать клиенту или отметить свободным</div>
+            <div className="font-medium text-ink-900">Продажа / списание инвентаря</div>
+            <div className="text-xs text-ink-400 mt-0.5">Продать инвентарь клиенту или списать</div>
           </div>
           <ChevronRight className="h-4.5 w-4.5 text-ink-300 shrink-0" strokeWidth={2} />
         </button>

@@ -6,7 +6,16 @@ import CellGrid, { CellGridCell } from "./CellGrid";
 import ContractPreview from "./ContractPreview";
 import SignaturePad from "./SignaturePad";
 import { buildContractFillData, placeholderMap } from "@/lib/contract/placeholders";
-import { TARIFF_TYPES, TARIFF_LABELS, DEFAULT_TARIFF_RATES, isTariffCompatibleWithUnit, TariffType, formatTariffText } from "@/lib/tariff";
+import { normalizePhone } from "@/lib/phone";
+import {
+  TARIFF_TYPES,
+  TARIFF_LABELS,
+  DEFAULT_TARIFF_RATES,
+  isTariffCompatibleWithUnit,
+  suggestedEndDate,
+  TariffType,
+  formatTariffText,
+} from "@/lib/tariff";
 import {
   ArrowLeft,
   CheckCircle2,
@@ -21,6 +30,8 @@ import {
   PenLine,
   ClipboardCheck,
   Landmark,
+  Search,
+  X,
 } from "lucide-react";
 
 interface Container {
@@ -44,12 +55,37 @@ interface Firm {
 type Unit = "tonne" | "kg" | "box" | "piece";
 type OwnerType = "individual" | "company";
 
+/** Один результат GET /api/miniapp/owners/search — goodsOwner как он хранится на записи
+ * (см. models/StorageRecord.ts::IGoodsOwner), плюс ownerKey для React key/выбора. */
+type OwnerSearchResult = {
+  ownerKey: string;
+  goodsOwner:
+    | {
+        type: "individual";
+        fullName: string;
+        phone: string;
+        passportData: string;
+        pinfl: string;
+        passportIssueDate: string;
+        passportIssuedBy: string;
+      }
+    | { type: "company"; companyName: string; inn: string; directorName: string };
+};
+
+/** Date -> "yyyy-mm-dd" для value <input type="date">. */
+function toDateInputValue(date: Date): string {
+  return date.toISOString().slice(0, 10);
+}
+
 const emptyForm = {
   containerId: "",
   cellNumber: null as number | null,
   productName: "",
   quantity: "",
-  unit: "tonne" as Unit,
+  // "кг" по умолчанию — вес обычно вводят в килограммах; дефолт "тонны" приводил к тому, что
+  // сотрудник забывал переключить единицу и вводил, например, 1000 (имея в виду кг), а система
+  // считала это 1000 тонн = 1 000 000 кг в сводной таблице (см. lib/tenantMatrix.ts::toKg).
+  unit: "kg" as Unit,
   ownerType: "individual" as OwnerType,
   // физическое лицо
   ownerFullName: "",
@@ -66,6 +102,11 @@ const emptyForm = {
   // (см. /dashboard/income), поэтому здесь только ставка, не сумма и не способ оплаты.
   tariffType: "per_day" as TariffType,
   tariffRate: String(DEFAULT_TARIFF_RATES.per_day),
+  // Планируемая дата, когда клиент заберёт товар — подсказывается по тарифу (см.
+  // lib/tariff.ts::suggestedEndDate) при выборе типа тарифа, но сотрудник может поправить
+  // или вовсе очистить. Строка "yyyy-mm-dd" (значение <input type="date">), не Date — как и
+  // quantity выше в этой форме. Пусто — сервер сам подставит подсказку при сохранении.
+  expectedEndDate: "",
   // PNG data URL подписи клиента (см. components/miniapp/SignaturePad.tsx) — только для физлиц.
   clientSignaturePng: null as string | null,
   // От чьего имени (какая фирма владельца) составляется договор/акт — см. models/Firm.ts.
@@ -111,8 +152,60 @@ export default function NewRecordWizard({ onExit }: { onExit: () => void }) {
   const [busy, setBusy] = useState(false);
   const [savedScreen, setSavedScreen] = useState(false);
 
+  // Поиск уже существовавших владельцев груза на шаге "owner" — повторное назначение клиента
+  // без ввода паспорта/реквизитов с нуля (см. GET /api/miniapp/owners/search). Отдельное от
+  // form состояние — сам поисковый запрос не сохраняется в записи.
+  const [ownerQuery, setOwnerQuery] = useState("");
+  const [ownerResults, setOwnerResults] = useState<OwnerSearchResult[]>([]);
+  const [ownerSearching, setOwnerSearching] = useState(false);
+  const [ownerPicked, setOwnerPicked] = useState<string | null>(null); // ownerKey выбранного — прячет список после выбора
+
   const steps = stepsFor(form.ownerType, firms.length);
   const kind = steps[step];
+
+  // Debounce 300мс, минимум 2 символа (см. GET /api/miniapp/owners/search — сервер тоже
+  // отсекает короткие запросы).
+  useEffect(() => {
+    setOwnerPicked(null);
+    if (ownerQuery.trim().length < 2) {
+      setOwnerResults([]);
+      return;
+    }
+    setOwnerSearching(true);
+    const t = setTimeout(() => {
+      miniAppFetch(`/api/miniapp/owners/search?q=${encodeURIComponent(ownerQuery.trim())}`)
+        .then((r) => r.json())
+        .then((d) => setOwnerResults(d.owners || []))
+        .catch(() => setOwnerResults([]))
+        .finally(() => setOwnerSearching(false));
+    }, 300);
+    return () => clearTimeout(t);
+  }, [ownerQuery]);
+
+  function pickOwner(picked: OwnerSearchResult) {
+    setOwnerPicked(picked.ownerKey);
+    setOwnerResults([]);
+    if (picked.goodsOwner.type === "individual") {
+      setForm({
+        ...form,
+        ownerType: "individual",
+        ownerFullName: picked.goodsOwner.fullName,
+        ownerPhone: picked.goodsOwner.phone,
+        ownerPassport: picked.goodsOwner.passportData,
+        ownerPinfl: picked.goodsOwner.pinfl,
+        ownerPassportIssueDate: picked.goodsOwner.passportIssueDate,
+        ownerPassportIssuedBy: picked.goodsOwner.passportIssuedBy,
+      });
+    } else {
+      setForm({
+        ...form,
+        ownerType: "company",
+        companyName: picked.goodsOwner.companyName,
+        companyInn: picked.goodsOwner.inn,
+        companyDirector: picked.goodsOwner.directorName,
+      });
+    }
+  }
 
   useEffect(() => {
     miniAppFetch("/api/miniapp/containers")
@@ -148,28 +241,48 @@ export default function NewRecordWizard({ onExit }: { onExit: () => void }) {
     setError(null);
     if (kind === "container" && !form.containerId) return setError("Выберите контейнер");
     if (kind === "cell" && !form.cellNumber) return setError("Выберите камеру");
-    if (kind === "product" && (!form.productName || !form.quantity)) {
-      return setError("Заполните наименование и количество");
+    if (kind === "product") {
+      if (!form.productName.trim()) return setError("Укажите наименование товара");
+      const qty = Number(form.quantity);
+      if (!form.quantity || Number.isNaN(qty) || qty <= 0) {
+        return setError("Количество должно быть больше 0");
+      }
     }
     if (kind === "owner") {
       if (form.ownerType === "individual") {
-        if (
-          !form.ownerFullName ||
-          !form.ownerPhone ||
-          !form.ownerPassport ||
-          !form.ownerPinfl ||
-          !form.ownerPassportIssueDate ||
-          !form.ownerPassportIssuedBy
-        ) {
-          return setError("Заполните все данные владельца груза (физ. лицо)");
+        // Собираем ВСЕ незаполненные поля разом — иначе сотрудник видит общую фразу
+        // "заполните всё", жмёт "Далее" снова, находит следующее пустое поле и так по кругу.
+        const missing: string[] = [];
+        if (!form.ownerFullName.trim()) missing.push("ФИО");
+        if (!form.ownerPhone.trim()) missing.push("телефон");
+        if (!form.ownerPassport.trim()) missing.push("номер паспорта");
+        if (!form.ownerPinfl.trim()) missing.push("ПИНФЛ");
+        if (!form.ownerPassportIssueDate.trim()) missing.push("дата выдачи паспорта");
+        if (!form.ownerPassportIssuedBy.trim()) missing.push("кем выдан паспорт");
+        if (missing.length > 0) return setError(`Заполните: ${missing.join(", ")}`);
+
+        // Формат — только когда поле уже заполнено (пустое поле уже отловлено выше).
+        const normalizedPhone = normalizePhone(form.ownerPhone);
+        if (!/^\+998\d{9}$/.test(normalizedPhone)) {
+          return setError("Некорректный номер телефона — проверьте код страны и количество цифр");
+        }
+        if (!/^\d{14}$/.test(form.ownerPinfl.trim())) {
+          return setError("ПИНФЛ должен состоять ровно из 14 цифр");
         }
       } else {
-        if (!form.companyName || !form.companyInn || !form.companyDirector) {
-          return setError("Заполните все данные владельца груза (юр. лицо)");
-        }
+        const missing: string[] = [];
+        if (!form.companyName.trim()) missing.push("наименование фирмы");
+        if (!form.companyInn.trim()) missing.push("ИНН");
+        if (!form.companyDirector.trim()) missing.push("ФИО директора");
+        if (missing.length > 0) return setError(`Заполните: ${missing.join(", ")}`);
       }
     }
-    if (kind === "tariff" && !form.tariffRate) return setError("Укажите ставку тарифа");
+    if (kind === "tariff") {
+      const rate = Number(form.tariffRate);
+      if (!form.tariffRate || Number.isNaN(rate) || rate < 0) {
+        return setError("Укажите корректную ставку тарифа");
+      }
+    }
     if (kind === "firm" && !form.firmId) return setError("Выберите, от какой фирмы оформляется договор");
     if (kind === "signature" && !form.clientSignaturePng) return setError("Клиент должен расписаться");
     setStep((s) => s + 1);
@@ -216,6 +329,9 @@ export default function NewRecordWizard({ onExit }: { onExit: () => void }) {
           // ещё раз на сервере (lib/validation.ts::storageRecordCreateSchema).
           ...(form.ownerType === "individual" ? { clientSignaturePng: form.clientSignaturePng } : {}),
           firmId: form.firmId || undefined,
+          // Пусто — не отправляем: сервер сам подставит подсказку по тарифу (см.
+          // app/api/miniapp/records/route.ts).
+          ...(form.expectedEndDate ? { expectedEndDate: new Date(form.expectedEndDate).toISOString() } : {}),
         }),
       });
       const data = await res.json();
@@ -431,8 +547,8 @@ export default function NewRecordWizard({ onExit }: { onExit: () => void }) {
                   });
                 }}
               >
-                <option value="tonne">тонны</option>
                 <option value="kg">кг</option>
+                <option value="tonne">тонны</option>
                 <option value="box">ящики</option>
                 <option value="piece">штуки</option>
               </select>
@@ -443,6 +559,60 @@ export default function NewRecordWizard({ onExit }: { onExit: () => void }) {
 
       {kind === "owner" && (
         <div className="space-y-3">
+          <div>
+            <label className="label">Клиент уже был?</label>
+            <div className="input-icon-wrap relative">
+              <Search className="input-icon h-4 w-4" strokeWidth={2} />
+              <input
+                className="input"
+                value={ownerQuery}
+                onChange={(e) => setOwnerQuery(e.target.value)}
+                placeholder="Поиск по имени, телефону, ИНН…"
+              />
+              {ownerQuery && (
+                <button
+                  type="button"
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-ink-300 hover:text-ink-500"
+                  onClick={() => {
+                    setOwnerQuery("");
+                    setOwnerResults([]);
+                  }}
+                  aria-label="Очистить"
+                >
+                  <X className="h-4 w-4" strokeWidth={2} />
+                </button>
+              )}
+            </div>
+            {ownerSearching && <p className="text-xs text-ink-400 mt-1.5">Ищем…</p>}
+            {!ownerSearching && ownerResults.length > 0 && (
+              <div className="mt-1.5 space-y-1.5">
+                {ownerResults.map((o) => (
+                  <button
+                    key={o.ownerKey}
+                    type="button"
+                    onClick={() => pickOwner(o)}
+                    className="w-full text-left rounded-xl border border-ink-200 bg-white px-3.5 py-2.5 hover:bg-ink-50 transition-colors"
+                  >
+                    <div className="font-medium text-ink-900 text-sm">
+                      {o.goodsOwner.type === "individual" ? o.goodsOwner.fullName : o.goodsOwner.companyName}
+                    </div>
+                    <div className="text-xs text-ink-400">
+                      {o.goodsOwner.type === "individual" ? o.goodsOwner.phone : `ИНН ${o.goodsOwner.inn}`}
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
+            {!ownerSearching && ownerQuery.trim().length >= 2 && ownerResults.length === 0 && !ownerPicked && (
+              <p className="text-xs text-ink-400 mt-1.5">Никого не нашли — заполните данные вручную ниже.</p>
+            )}
+            {ownerPicked && (
+              <p className="text-xs text-emerald-600 mt-1.5 flex items-center gap-1">
+                <CheckCircle2 className="h-3.5 w-3.5" strokeWidth={2} /> Данные подставлены — можно поправить ниже.
+              </p>
+            )}
+          </div>
+
           <label className="label">Тип арендатора</label>
           <div className="flex gap-2">
             <button
@@ -577,9 +747,15 @@ export default function NewRecordWizard({ onExit }: { onExit: () => void }) {
                 <button
                   key={t}
                   type="button"
-                  onClick={() =>
-                    setForm({ ...form, tariffType: t, tariffRate: String(DEFAULT_TARIFF_RATES[t]) })
-                  }
+                  onClick={() => {
+                    const suggestion = suggestedEndDate(t, new Date());
+                    setForm({
+                      ...form,
+                      tariffType: t,
+                      tariffRate: String(DEFAULT_TARIFF_RATES[t]),
+                      expectedEndDate: suggestion ? toDateInputValue(suggestion) : "",
+                    });
+                  }}
                   className={`w-full flex items-center justify-between rounded-xl border px-3.5 py-2.5 text-sm transition-colors ${
                     form.tariffType === t
                       ? "border-brand-600 bg-brand-50 text-brand-700 font-medium"
@@ -606,6 +782,19 @@ export default function NewRecordWizard({ onExit }: { onExit: () => void }) {
               value={form.tariffRate}
               onChange={(e) => setForm({ ...form, tariffRate: e.target.value })}
             />
+          </div>
+          <div>
+            <label className="label">Дата окончания (когда заберут)</label>
+            <input
+              type="date"
+              className="input"
+              value={form.expectedEndDate}
+              onChange={(e) => setForm({ ...form, expectedEndDate: e.target.value })}
+            />
+            <p className="text-xs text-ink-400 mt-1">
+              Ориентир, не сама оплата — на начисление тарифа не влияет, можно поправить или
+              оставить пустым.
+            </p>
           </div>
         </div>
       )}

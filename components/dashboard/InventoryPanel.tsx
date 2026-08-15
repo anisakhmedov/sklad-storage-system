@@ -8,42 +8,69 @@ interface InventoryRow {
   name: string;
   quantity: number; // общее количество
   unit: string;
+  containerId?: string;
   note?: string;
   outstanding?: number; // на руках у клиентов (см. models/InventoryLedgerEntry.ts)
   available?: number; // свободный остаток на складе = quantity − outstanding
+}
+
+interface ContainerRef {
+  _id: string;
+  name: string;
 }
 
 // Подсказки для быстрого добавления типовых позиций — не ограничивает список, просто
 // сокращает ввод для того, что явно просили (поддоны, ящики, рохля, кара).
 const SUGGESTIONS = ["Поддоны", "Ящики", "Рохля", "Кара"];
 
-/** Складской инвентарь на странице «Обзор» — доступен только владельцу (см. app/api/inventory). */
+/**
+ * Складской инвентарь на странице «Обзор» — доступен только владельцу (см. app/api/inventory).
+ * У каждого контейнера свой инвентарь (см. models/InventoryItem.ts::containerId) — виджет
+ * показывает позиции ОДНОГО выбранного контейнера за раз; полная картина по всем контейнерам
+ * и движения — на отдельной странице "Инвентарь" (app/dashboard/inventory/page.tsx).
+ */
 export default function InventoryPanel() {
+  const [containers, setContainers] = useState<ContainerRef[]>([]);
+  const [containerId, setContainerId] = useState("");
   const [items, setItems] = useState<InventoryRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [newName, setNewName] = useState("");
   const [busyId, setBusyId] = useState<string | null>(null);
 
+  useEffect(() => {
+    fetch("/api/containers")
+      .then((r) => r.json())
+      .then((d) => {
+        const list: ContainerRef[] = d.containers || [];
+        setContainers(list);
+        setContainerId((prev) => prev || list[0]?._id || "");
+      });
+  }, []);
+
   const load = useCallback(async () => {
+    if (!containerId) {
+      setLoading(false);
+      return;
+    }
     setLoading(true);
-    const res = await fetch("/api/inventory");
+    const res = await fetch(`/api/inventory?containerId=${containerId}`);
     const data = await res.json().catch(() => ({}));
     setItems(data.items || []);
     setLoading(false);
-  }, []);
+  }, [containerId]);
 
   useEffect(() => {
     load();
   }, [load]);
 
   async function addItem(name: string) {
-    if (!name.trim()) return;
+    if (!name.trim() || !containerId) return;
     setBusyId("new");
     try {
       await fetch("/api/inventory", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: name.trim(), quantity: 0 }),
+        body: JSON.stringify({ name: name.trim(), quantity: 0, containerId }),
       });
       setNewName("");
       await load();
@@ -90,9 +117,24 @@ export default function InventoryPanel() {
           </h2>
           <p className="card-subtitle">Складской инструмент — только вы видите этот блок.</p>
         </div>
+        {containers.length > 1 && (
+          <select
+            className="input h-8 text-sm w-auto"
+            value={containerId}
+            onChange={(e) => setContainerId(e.target.value)}
+          >
+            {containers.map((c) => (
+              <option key={c._id} value={c._id}>
+                {c.name}
+              </option>
+            ))}
+          </select>
+        )}
       </div>
 
-      {loading ? (
+      {containers.length === 0 ? (
+        <p className="text-sm text-ink-500 py-4">Сначала создайте контейнер (холодильник) на странице "Контейнеры".</p>
+      ) : loading ? (
         <div className="space-y-2.5">
           {[...Array(3)].map((_, i) => (
             <div key={i} className="skeleton h-11 w-full" />

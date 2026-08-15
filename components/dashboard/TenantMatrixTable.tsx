@@ -7,10 +7,18 @@ import { AlertCircle, Download, Loader2, RefreshCw, X } from "lucide-react";
 type OwnerType = "individual" | "company";
 type Unit = "tonne" | "kg" | "box" | "piece";
 
+interface GoodsCellRecord {
+  recordId: string;
+  productName: string;
+  displayQuantity: number;
+  nativeUnit: Unit;
+  nativeQuantity: number;
+}
+
 interface GoodsCell {
   value: number;
   unit: Unit;
-  recordIds: string[];
+  records: GoodsCellRecord[];
 }
 
 interface TenantMatrixRow {
@@ -22,6 +30,8 @@ interface TenantMatrixRow {
   goods: Record<string, GoodsCell>;
   inventory: Record<string, number>;
   boxesOutstanding?: number;
+  boxesGiven?: number;
+  boxesReturned?: number;
   boxRatePerBox?: number;
   contractNumber?: string;
   soleRecordId?: string;
@@ -45,8 +55,10 @@ interface InventoryItemRef {
   _id: string;
   name: string;
   unit: string;
+  containerId?: string;
 }
 
+const UNIT_LABELS: Record<Unit, string> = { tonne: "т", kg: "кг", box: "ящ.", piece: "шт." };
 const money = (n: number) => (n ? Math.round(n).toLocaleString("ru-RU") : "");
 const num = (n: number | undefined) => (n ? n.toLocaleString("ru-RU") : "");
 /** Итоговая строка "Итого по камере" в конце каждой камера-таблицы (см. рендер ниже) — сумма
@@ -62,15 +74,10 @@ type EditTarget =
       containerName: string;
       cellNumber: number;
       column: string;
-      recordId: string;
-      currentValue: number;
-      unit: Unit;
-    }
-  | {
-      kind: "goods-multi";
-      ownerLabel: string;
-      column: string;
-      currentValue: number;
+      // Обычно один элемент; несколько — когда у клиента в этой камере несколько записей с
+      // одинаковым названием товара (или несколько весовых записей, слитых в колонку "Кг") —
+      // тогда форма сначала просит выбрать, какую именно запись менять (см. GoodsForm ниже).
+      records: GoodsCellRecord[];
     }
   | {
       kind: "payment";
@@ -110,12 +117,19 @@ type EditTarget =
  * выдачу инвентаря/ящиков или добавить платёж) — правки идут через уже существующие эндпоинты
  * (акты и аудит-лог создаются там же, эта таблица их не дублирует).
  */
-export default function TenantMatrixTable({ isOwner }: { isOwner: boolean }) {
+export default function TenantMatrixTable({ isOwner, containerId }: { isOwner: boolean; containerId?: string }) {
   const [sections, setSections] = useState<TenantMatrixSection[]>([]);
   const [inventoryItems, setInventoryItems] = useState<InventoryItemRef[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [editing, setEditing] = useState<EditTarget | null>(null);
+  // Фильтр по камере — имеет смысл только когда выбран один контейнер (см. containerId выше),
+  // иначе номера камер разных холодильников перемешались бы. Сбрасывается при смене контейнера.
+  const [cellNumber, setCellNumber] = useState("");
+
+  useEffect(() => {
+    setCellNumber("");
+  }, [containerId]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -145,11 +159,31 @@ export default function TenantMatrixTable({ isOwner }: { isOwner: boolean }) {
     }
   }, [load, isOwner]);
 
+  // Ключ включает containerId — у каждого контейнера свой инвентарь (см.
+  // models/InventoryItem.ts::containerId), поэтому одноимённые позиции в разных контейнерах
+  // должны разрешаться в РАЗНЫЕ записи, а не схлопываться в одну по имени.
   const inventoryItemByName = useMemo(() => {
     const map = new Map<string, InventoryItemRef>();
-    for (const item of inventoryItems) map.set(item.name, item);
+    for (const item of inventoryItems) map.set(`${item.containerId}::${item.name}`, item);
     return map;
   }, [inventoryItems]);
+
+  // Фильтр по контейнеру (из page-level селекта) + по камере (свой, см. cellNumber выше) —
+  // камера сужает только когда контейнер уже выбран однозначно, иначе номера пересекались бы
+  // между разными холодильниками.
+  const visibleSections = useMemo(() => {
+    let list = containerId ? sections.filter((s) => s.containerId === containerId) : sections;
+    if (containerId && cellNumber) {
+      list = list.map((s) => ({ ...s, cells: s.cells.filter((c) => String(c.cellNumber) === cellNumber) }));
+    }
+    return list;
+  }, [sections, containerId, cellNumber]);
+
+  const cellOptions = useMemo(() => {
+    if (!containerId) return [];
+    const section = sections.find((s) => s.containerId === containerId);
+    return section ? section.cells.map((c) => c.cellNumber) : [];
+  }, [sections, containerId]);
 
   if (loading) {
     return (
@@ -190,6 +224,16 @@ export default function TenantMatrixTable({ isOwner }: { isOwner: boolean }) {
             <RefreshCw className="h-3.5 w-3.5" strokeWidth={2} />
             Обновить
           </button>
+          {containerId && cellOptions.length > 0 && (
+            <select className="input h-8 text-sm w-auto" value={cellNumber} onChange={(e) => setCellNumber(e.target.value)}>
+              <option value="">Все камеры</option>
+              {cellOptions.map((n) => (
+                <option key={n} value={n}>
+                  Камера {n}
+                </option>
+              ))}
+            </select>
+          )}
         </div>
         <a href="/api/tenants/matrix/export" className="btn-primary btn-sm">
           <Download className="h-3.5 w-3.5" strokeWidth={2.1} />
@@ -197,8 +241,15 @@ export default function TenantMatrixTable({ isOwner }: { isOwner: boolean }) {
         </a>
       </div>
 
+      {visibleSections.length === 0 ? (
+        <div className="card">
+          <div className="empty-state">
+            <p className="text-sm text-ink-500">По этому фильтру ничего не нашлось.</p>
+          </div>
+        </div>
+      ) : (
       <div className="space-y-8">
-        {sections.map((section) => (
+        {visibleSections.map((section) => (
           <div key={section.containerId}>
             <h2 className="text-base font-semibold text-ink-800 mb-3">{section.containerName}</h2>
             <div className="space-y-6">
@@ -260,7 +311,7 @@ export default function TenantMatrixTable({ isOwner }: { isOwner: boolean }) {
                           </td>
                           {section.goodsColumns.map((col) => {
                             const g = row.goods[col];
-                            const clickable = isOwner && !!g && g.recordIds.length === 1;
+                            const clickable = isOwner && !!g && g.records.length > 0;
                             return (
                               <td key={col} className="tabular-nums">
                                 <Cell
@@ -268,20 +319,14 @@ export default function TenantMatrixTable({ isOwner }: { isOwner: boolean }) {
                                   clickable={clickable}
                                   onClick={() => {
                                     if (!g) return;
-                                    if (g.recordIds.length === 1) {
-                                      setEditing({
-                                        kind: "goods",
-                                        ownerLabel: row.ownerLabel,
-                                        containerName: section.containerName,
-                                        cellNumber: cell.cellNumber,
-                                        column: col,
-                                        recordId: g.recordIds[0],
-                                        currentValue: g.value,
-                                        unit: g.unit,
-                                      });
-                                    } else {
-                                      setEditing({ kind: "goods-multi", ownerLabel: row.ownerLabel, column: col, currentValue: g.value });
-                                    }
+                                    setEditing({
+                                      kind: "goods",
+                                      ownerLabel: row.ownerLabel,
+                                      containerName: section.containerName,
+                                      cellNumber: cell.cellNumber,
+                                      column: col,
+                                      records: g.records,
+                                    });
                                   }}
                                 />
                               </td>
@@ -329,6 +374,14 @@ export default function TenantMatrixTable({ isOwner }: { isOwner: boolean }) {
                                   })
                                 }
                               />
+                              {/* Раскладка net-остатка — выдано/принято за всё время (см.
+                                  lib/boxes.ts::BoxBalance.given/returned), не только текущий
+                                  остаток. Пусто, если ни разу не было ни того, ни другого. */}
+                              {(row.boxesGiven || row.boxesReturned) && (
+                                <div className="text-xs text-ink-400 font-normal whitespace-nowrap">
+                                  выдано {num(row.boxesGiven) || 0} · принято {num(row.boxesReturned) || 0}
+                                </div>
+                              )}
                             </td>
                           )}
                           <td className={`tabular-nums ${row.balance > 0 ? "text-rose-600 font-medium" : ""}`}>
@@ -368,6 +421,7 @@ export default function TenantMatrixTable({ isOwner }: { isOwner: boolean }) {
           </div>
         ))}
       </div>
+      )}
 
       {editing && (
         <EditModal
@@ -473,22 +527,6 @@ function EditModal({
   onClose: () => void;
   onSaved: () => void;
 }) {
-  if (target.kind === "goods-multi") {
-    return (
-      <Modal title={`${target.ownerLabel} · ${target.column}`} onClose={onClose}>
-        <p className="text-sm text-ink-500">
-          Текущий остаток ({num(target.currentValue)}) собран из нескольких записей — правьте их по отдельности
-          на странице «Записи», где видно, какая запись за что отвечает.
-        </p>
-        <div className="flex justify-end pt-2">
-          <button className="btn-secondary" onClick={onClose}>
-            Понятно
-          </button>
-        </div>
-      </Modal>
-    );
-  }
-
   if (target.kind === "goods") return <GoodsForm target={target} onClose={onClose} onSaved={onSaved} />;
   if (target.kind === "payment") return <PaymentForm target={target} onClose={onClose} onSaved={onSaved} />;
   if (target.kind === "inventory")
@@ -508,62 +546,90 @@ function GoodsForm({
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [delta, setDelta] = useState("");
+  // Несколько записей за одной ячейкой (напр. клиент дважды привозил тот же товар, или
+  // несколько весовых записей слиты в колонку "Кг") — сначала выбираем, какую именно менять.
+  const [selectedIndex, setSelectedIndex] = useState(0);
+  const selected = target.records[selectedIndex];
+
+  // Ячейка "Кг" показывает вес в кг независимо от того, в чём он хранится в самой записи —
+  // тонны переведены ×1000 (см. lib/tenantMatrix.ts::toKg). Введённая здесь добавка тоже в кг,
+  // поэтому перед отправкой на /adjust (который пишет прямо в record.quantity, в НАТИВНОЙ
+  // единице) её нужно перевести обратно — иначе "прибавить 500 кг" превратило бы запись в
+  // тоннах в 500 лишних ТОНН вместо 0.5.
+  function toNativeDelta(displayDelta: number): number {
+    return selected.nativeUnit === "tonne" ? displayDelta / 1000 : displayDelta;
+  }
 
   async function submit(sign: 1 | -1) {
-      const v = Number(delta);
-      if (!delta || Number.isNaN(v) || v <= 0) {
-        setError("Укажите количество");
-        return;
-      }
-      if (sign === -1 && v > target.currentValue) {
-        setError(`На хранении только ${num(target.currentValue) || 0} — нельзя списать больше`);
-        return;
-      }
-      setBusy(true);
-      setError(null);
-      try {
-        const res = await fetch(`/api/records/${target.recordId}/adjust`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ delta: sign * v }),
-        });
-        const data = await res.json().catch(() => ({}));
-        if (!res.ok) {
-          setError(data.error || "Ошибка");
-          return;
-        }
-        onSaved();
-      } finally {
-        setBusy(false);
-      }
+    const v = Number(delta);
+    if (!delta || Number.isNaN(v) || v <= 0) {
+      setError("Укажите количество");
+      return;
     }
-    return (
-      <Modal title={`${target.ownerLabel} · ${target.column}`} onClose={onClose}>
-        <p className="text-xs text-ink-400 mb-2">
-          {target.containerName}, камера {target.cellNumber} · сейчас {num(target.currentValue)}
-        </p>
-        <input
-          type="number"
-          min="0"
-          step="any"
-          className="input"
-          placeholder="Количество"
-          value={delta}
-          onChange={(e) => setDelta(e.target.value)}
+    if (sign === -1 && v > selected.displayQuantity) {
+      setError(`На хранении только ${num(selected.displayQuantity) || 0} — нельзя списать больше`);
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/records/${selected.recordId}/adjust`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ delta: sign * toNativeDelta(v) }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setError(data.error || "Ошибка");
+        return;
+      }
+      onSaved();
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Modal title={`${target.ownerLabel} · ${target.column}`} onClose={onClose}>
+      <p className="text-xs text-ink-400 mb-2">
+        {target.containerName}, камера {target.cellNumber} · сейчас {num(selected.displayQuantity)}
+      </p>
+      {target.records.length > 1 && (
+        <select
+          className="input mb-2"
+          value={selectedIndex}
+          onChange={(e) => setSelectedIndex(Number(e.target.value))}
           disabled={busy}
-          autoFocus
-        />
-        {error && <p className="text-sm text-rose-600 mt-2">{error}</p>}
-        <div className="flex gap-2 pt-3">
-          <button className="btn-primary flex-1" disabled={busy} onClick={() => submit(1)}>
-            {busy && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-            Добавить
-          </button>
-          <button className="btn-secondary flex-1" disabled={busy} onClick={() => submit(-1)}>
-            Списать
-          </button>
-        </div>
-      </Modal>
+        >
+          {target.records.map((r, i) => (
+            <option key={r.recordId} value={i}>
+              {r.productName} · {r.nativeQuantity} {UNIT_LABELS[r.nativeUnit]}
+            </option>
+          ))}
+        </select>
+      )}
+      <input
+        type="number"
+        min="0"
+        step="any"
+        className="input"
+        placeholder="Количество"
+        value={delta}
+        onChange={(e) => setDelta(e.target.value)}
+        disabled={busy}
+        autoFocus
+      />
+      {error && <p className="text-sm text-rose-600 mt-2">{error}</p>}
+      <div className="flex gap-2 pt-3">
+        <button className="btn-primary flex-1" disabled={busy} onClick={() => submit(1)}>
+          {busy && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+          Добавить
+        </button>
+        <button className="btn-secondary flex-1" disabled={busy} onClick={() => submit(-1)}>
+          Списать
+        </button>
+      </div>
+    </Modal>
     );
 }
 
@@ -660,7 +726,7 @@ function InventoryForm({
 }) {
     const [error, setError] = useState<string | null>(null);
     const [busy, setBusy] = useState(false);
-    const item = inventoryItemByName.get(target.itemName);
+    const item = inventoryItemByName.get(`${target.containerId}::${target.itemName}`);
     const [quantity, setQuantity] = useState("");
     const [direction, setDirection] = useState<"given" | "returned">("given");
     async function submit() {

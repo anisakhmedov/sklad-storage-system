@@ -281,9 +281,15 @@ export default function IncomePage() {
     await Promise.all([loadExpenses(), loadFinance()]);
   }
 
-  const totalBalance = useMemo(() => debts.reduce((s, d) => s + d.balance, 0), [debts]);
-  const totalAccrued = useMemo(() => debts.reduce((s, d) => s + d.accrued, 0), [debts]);
-  const totalPaid = useMemo(() => debts.reduce((s, d) => s + d.paid, 0), [debts]);
+  // Общий фильтр по контейнерам (incomeFilter.containerId) — применяется и к задолженности
+  // здесь, и к "Последним платежам" ниже (см. filteredIncomes), одним и тем же выбором.
+  const filteredDebts = useMemo(
+    () => (incomeFilter.containerId ? debts.filter((d) => d.containerId === incomeFilter.containerId) : debts),
+    [debts, incomeFilter.containerId]
+  );
+  const totalBalance = useMemo(() => filteredDebts.reduce((s, d) => s + d.balance, 0), [filteredDebts]);
+  const totalAccrued = useMemo(() => filteredDebts.reduce((s, d) => s + d.accrued, 0), [filteredDebts]);
+  const totalPaid = useMemo(() => filteredDebts.reduce((s, d) => s + d.paid, 0), [filteredDebts]);
 
   const filteredIncomes = useMemo(() => {
     const search = incomeFilter.search.trim().toLowerCase();
@@ -617,6 +623,21 @@ export default function IncomePage() {
           </div>
           <div className="flex items-end gap-2">
             <div>
+              <label className="label">Контейнер</label>
+              <select
+                className="input"
+                value={incomeFilter.containerId}
+                onChange={(e) => setIncomeFilter({ ...incomeFilter, containerId: e.target.value })}
+              >
+                <option value="">Все</option>
+                {containers.map((c) => (
+                  <option key={c._id} value={c._id}>
+                    {c.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
               <label className="label">По дату</label>
               <div className="input-icon-wrap">
                 <CalendarClock className="input-icon h-4 w-4" strokeWidth={2} />
@@ -645,7 +666,7 @@ export default function IncomePage() {
             <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" strokeWidth={2} />
             <span>{debtsError}</span>
           </div>
-        ) : debts.length === 0 ? (
+        ) : filteredDebts.length === 0 ? (
           <div className="empty-state">
             <div className="empty-state-icon">
               <Wallet className="h-5 w-5" strokeWidth={1.8} />
@@ -669,7 +690,7 @@ export default function IncomePage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {debts.map((d) => {
+                  {filteredDebts.map((d) => {
                     const key = `${d.ownerKey}::${d.containerId}`;
                     const isOpen = expanded === key;
                     return (
@@ -1215,6 +1236,69 @@ function PaymentForm({
   );
 }
 
+interface EmployeeOption {
+  _id: string;
+  name: string;
+}
+
+/**
+ * Поле "Кому (имя сотрудника)" для расхода типа "зарплата" — выбор из реального списка
+ * сотрудников (включая заведённых без доступа к платформе, см. app/dashboard/employees/page.tsx)
+ * вместо произвольного текста, который раньше легко было ввести с опечаткой или дублирующим
+ * именем. "Другое…" оставлен на случай, если нужного сотрудника ещё нет в списке или запись
+ * относится к кому-то, кто уже удалён — employeeName как хранился строкой, так и хранится.
+ */
+function EmployeeNameField({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  const [employees, setEmployees] = useState<EmployeeOption[]>([]);
+  useEffect(() => {
+    fetch("/api/employees")
+      .then((r) => r.json())
+      .then((d) => setEmployees(d.employees || []))
+      .catch(() => {});
+  }, []);
+
+  const knownNames = new Set(employees.map((e) => e.name));
+  const isCustom = value !== "" && !knownNames.has(value);
+  const [custom, setCustom] = useState(isCustom);
+
+  return (
+    <div>
+      <label className="label">Кому (имя сотрудника)</label>
+      <select
+        className="input"
+        value={custom ? "__custom" : value}
+        onChange={(e) => {
+          if (e.target.value === "__custom") {
+            setCustom(true);
+            onChange("");
+          } else {
+            setCustom(false);
+            onChange(e.target.value);
+          }
+        }}
+      >
+        <option value="" disabled>
+          Выберите сотрудника…
+        </option>
+        {employees.map((e) => (
+          <option key={e._id} value={e.name}>
+            {e.name}
+          </option>
+        ))}
+        <option value="__custom">Другое…</option>
+      </select>
+      {custom && (
+        <input
+          className="input mt-1.5"
+          placeholder="Имя сотрудника"
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+        />
+      )}
+    </div>
+  );
+}
+
 /**
  * Расход — если создаёт владелец на сайте, сразу учитывается в остатке (см. app/api/expenses/route.ts).
  * Тип "salary" дополнительно просит имя сотрудника, кому заплатили.
@@ -1270,12 +1354,7 @@ function ExpenseModal({ onClose, onSaved }: { onClose: () => void; onSaved: () =
               <option value="other">Прочее</option>
             </select>
           </div>
-          {type === "salary" && (
-            <div>
-              <label className="label">Кому (имя сотрудника)</label>
-              <input className="input" value={employeeName} onChange={(e) => setEmployeeName(e.target.value)} />
-            </div>
-          )}
+          {type === "salary" && <EmployeeNameField value={employeeName} onChange={setEmployeeName} />}
           <div className="flex gap-3">
             <div className="flex-1">
               <label className="label">Сумма, сум</label>
@@ -1635,12 +1714,7 @@ function ExpenseEditModal({
               <option value="other">Прочее</option>
             </select>
           </div>
-          {type === "salary" && (
-            <div>
-              <label className="label">Кому (имя сотрудника)</label>
-              <input className="input" value={employeeName} onChange={(e) => setEmployeeName(e.target.value)} />
-            </div>
-          )}
+          {type === "salary" && <EmployeeNameField value={employeeName} onChange={setEmployeeName} />}
           <div className="flex gap-3">
             <div className="flex-1">
               <label className="label">Сумма, сум</label>

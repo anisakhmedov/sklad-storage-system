@@ -62,6 +62,24 @@ export interface IStorageRecord {
   tariff: ITariff;
   createdByEmployeeId: Types.ObjectId;
   createdAt: Date;
+  /**
+   * Планируемая дата, когда клиент заберёт товар — подсказывается по тарифу при создании
+   * записи (см. lib/tariff.ts::suggestedEndDate: createdAt + период тарифа), но сотрудник
+   * может её поменять. Не влияет на начисление — это просто ориентир/напоминание, в отличие
+   * от closedAt ниже. Может отсутствовать (например, у записей, созданных до этой доработки).
+   */
+  expectedEndDate?: Date;
+  /**
+   * Дата фактического закрытия записи ("товар забран", "договор расторгнут") — как только
+   * проставлена, начисление по тарифу (lib/tariff.ts/lib/debt.ts) останавливается на эту дату
+   * и дальше не растёт, даже если запись физически ещё числится в базе. Запись при этом не
+   * удаляется — остаётся в истории (см. README → «Тарифы, оплата и задолженность»), но
+   * пропадает из "активных" списков (сводная таблица арендаторов и т.п.). undefined — запись
+   * активна.
+   */
+  closedAt?: Date;
+  /** Кто закрыл запись — employee.name (Mini App) или identifier веб-пользователя. */
+  closedBy?: string;
   editedBy?: string;
   editedAt?: Date;
   /**
@@ -171,6 +189,9 @@ const StorageRecordSchema = new Schema<IStorageRecord>({
   tariff: { type: TariffSchema, required: true },
   createdByEmployeeId: { type: Schema.Types.ObjectId, ref: "Employee", required: true, index: true },
   createdAt: { type: Date, default: Date.now, index: true },
+  expectedEndDate: { type: Date },
+  closedAt: { type: Date, index: true },
+  closedBy: { type: String },
   editedBy: { type: String },
   editedAt: { type: Date },
   contractNumber: { type: String },

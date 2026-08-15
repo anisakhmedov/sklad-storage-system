@@ -1,16 +1,17 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import { Users, Phone, Send, Check, X, ShieldOff, Boxes, KeyRound } from "lucide-react";
+import { Users, Phone, Send, Check, X, ShieldOff, Boxes, KeyRound, UserPlus } from "lucide-react";
 
 interface Employee {
   _id: string;
   name: string;
   phone: string;
-  telegramId: string;
+  telegramId?: string;
   telegramUsername?: string;
   status: "pending" | "approved" | "rejected";
   containerAccess: string[];
+  hasPlatformAccess: boolean;
   createdAt: string;
 }
 
@@ -62,16 +63,18 @@ export default function EmployeesPage() {
   const [loading, setLoading] = useState(true);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [managing, setManaging] = useState<Employee | null>(null);
+  const [creating, setCreating] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
     const res = await fetch("/api/employees");
     const data = await res.json();
-    // Защита от старых данных без поля containerAccess (API уже нормализует, см.
-    // app/api/employees/route.ts, но дублируем на клиенте на случай кэша/прочих источников).
+    // Защита от старых данных без поля containerAccess/hasPlatformAccess (API уже нормализует,
+    // см. app/api/employees/route.ts, но дублируем на клиенте на случай кэша/прочих источников).
     const list: Employee[] = (data.employees || []).map((e: Employee) => ({
       ...e,
       containerAccess: e.containerAccess || [],
+      hasPlatformAccess: e.hasPlatformAccess ?? true,
     }));
     setEmployees(list);
     setLoading(false);
@@ -132,9 +135,15 @@ export default function EmployeesPage() {
 
   return (
     <div>
-      <div className="mb-7">
-        <p className="section-eyebrow">Персонал</p>
-        <h1 className="section-title mt-1">Сотрудники</h1>
+      <div className="mb-7 flex items-end justify-between flex-wrap gap-2">
+        <div>
+          <p className="section-eyebrow">Персонал</p>
+          <h1 className="section-title mt-1">Сотрудники</h1>
+        </div>
+        <button className="btn-primary" onClick={() => setCreating(true)}>
+          <UserPlus className="h-4 w-4" strokeWidth={2.1} />
+          Добавить сотрудника
+        </button>
       </div>
 
       <div className="flex items-center gap-2 mb-3">
@@ -226,42 +235,50 @@ export default function EmployeesPage() {
                   <td>
                     <PersonCell e={e} />
                   </td>
-                  <td className="text-ink-500">{e.telegramUsername ? `@${e.telegramUsername}` : e.telegramId}</td>
+                  <td className="text-ink-500">
+                    {e.hasPlatformAccess ? e.telegramUsername ? `@${e.telegramUsername}` : e.telegramId : "—"}
+                  </td>
                   <td>
-                    <span className={`badge ${statusColors[e.status]}`}>
-                      <span className={`badge-dot ${statusDot[e.status]}`} />
-                      {statusLabels[e.status]}
-                    </span>
+                    {e.hasPlatformAccess ? (
+                      <span className={`badge ${statusColors[e.status]}`}>
+                        <span className={`badge-dot ${statusDot[e.status]}`} />
+                        {statusLabels[e.status]}
+                      </span>
+                    ) : (
+                      <span className="badge bg-ink-100 text-ink-500">Без доступа к платформе</span>
+                    )}
                   </td>
                   <td className="text-ink-500">
-                    {e.containerAccess.length === 0 ? "Все контейнеры" : `Выбрано: ${e.containerAccess.length}`}
+                    {e.hasPlatformAccess ? (e.containerAccess.length === 0 ? "Все контейнеры" : `Выбрано: ${e.containerAccess.length}`) : "—"}
                   </td>
                   <td className="whitespace-nowrap">
-                    <div className="flex justify-end gap-2">
-                      <button className="btn-secondary btn-sm" onClick={() => setManaging(e)}>
-                        <KeyRound className="h-3.5 w-3.5" strokeWidth={2.1} />
-                        Доступ
-                      </button>
-                      {e.status === "approved" ? (
-                        <button
-                          className="btn-danger-ghost btn-sm"
-                          disabled={busyId === e._id}
-                          onClick={() => setStatus(e._id, "rejected")}
-                        >
-                          <ShieldOff className="h-3.5 w-3.5" strokeWidth={2.1} />
-                          Отозвать доступ
+                    {e.hasPlatformAccess && (
+                      <div className="flex justify-end gap-2">
+                        <button className="btn-secondary btn-sm" onClick={() => setManaging(e)}>
+                          <KeyRound className="h-3.5 w-3.5" strokeWidth={2.1} />
+                          Доступ
                         </button>
-                      ) : (
-                        <button
-                          className="btn-primary btn-sm"
-                          disabled={busyId === e._id}
-                          onClick={() => setStatus(e._id, "approved")}
-                        >
-                          <Check className="h-3.5 w-3.5" strokeWidth={2.25} />
-                          Одобрить
-                        </button>
-                      )}
-                    </div>
+                        {e.status === "approved" ? (
+                          <button
+                            className="btn-danger-ghost btn-sm"
+                            disabled={busyId === e._id}
+                            onClick={() => setStatus(e._id, "rejected")}
+                          >
+                            <ShieldOff className="h-3.5 w-3.5" strokeWidth={2.1} />
+                            Отозвать доступ
+                          </button>
+                        ) : (
+                          <button
+                            className="btn-primary btn-sm"
+                            disabled={busyId === e._id}
+                            onClick={() => setStatus(e._id, "approved")}
+                          >
+                            <Check className="h-3.5 w-3.5" strokeWidth={2.25} />
+                            Одобрить
+                          </button>
+                        )}
+                      </div>
+                    )}
                   </td>
                 </tr>
               ))}
@@ -269,6 +286,16 @@ export default function EmployeesPage() {
           </table>
         )}
       </div>
+
+      {creating && (
+        <CreateEmployeeModal
+          onClose={() => setCreating(false)}
+          onSaved={async () => {
+            setCreating(false);
+            await load();
+          }}
+        />
+      )}
 
       {managing && (
         <ContainerAccessModal
@@ -361,6 +388,82 @@ function ContainerAccessModal({
           <button type="button" className="btn-secondary" onClick={onClose}>
             Отмена
           </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Сотрудник, заведённый владельцем напрямую с сайта — БЕЗ регистрации через Telegram-бота, для
+ * персонала, которому доступ к платформе не нужен (см. models/Employee.ts::hasPlatformAccess).
+ * Одобрять не нужно — появляется в списке сразу, доступен для выбора в зарплатных расходах
+ * (см. app/dashboard/income/page.tsx::EmployeeNameField).
+ */
+function CreateEmployeeModal({ onClose, onSaved }: { onClose: () => void; onSaved: () => void }) {
+  const [name, setName] = useState("");
+  const [phone, setPhone] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  async function submit() {
+    if (!name.trim() || !phone.trim()) {
+      setError("Укажите имя и телефон");
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/employees", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: name.trim(), phone: phone.trim() }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setError(data.error || "Ошибка сохранения");
+        return;
+      }
+      onSaved();
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="modal-backdrop" onClick={onClose}>
+      <div className="modal-panel max-w-sm" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="card-title flex items-center gap-2">
+            <UserPlus className="h-4 w-4 text-brand-600" strokeWidth={2.1} />
+            Добавить сотрудника
+          </h3>
+          <button className="btn-icon btn-ghost" onClick={onClose} aria-label="Закрыть">
+            <X className="h-4 w-4" strokeWidth={2} />
+          </button>
+        </div>
+        <p className="text-xs text-ink-400 mb-3">
+          Без доступа к платформе — не сможет пользоваться Telegram-ботом, появится в списке
+          только для учёта (например, чтобы выбрать его при выплате зарплаты).
+        </p>
+        <div className="space-y-3">
+          <div>
+            <label className="label">Имя</label>
+            <input className="input" value={name} onChange={(e) => setName(e.target.value)} disabled={busy} autoFocus />
+          </div>
+          <div>
+            <label className="label">Телефон</label>
+            <input className="input" value={phone} onChange={(e) => setPhone(e.target.value)} disabled={busy} placeholder="+998901234567" />
+          </div>
+          {error && <p className="text-sm text-rose-600">{error}</p>}
+          <div className="flex gap-2 pt-1">
+            <button className="btn-primary flex-1" disabled={busy} onClick={submit}>
+              {busy ? "Сохранение…" : "Добавить"}
+            </button>
+            <button className="btn-secondary" onClick={onClose}>
+              Отмена
+            </button>
+          </div>
         </div>
       </div>
     </div>

@@ -9,6 +9,7 @@ interface InventoryRow {
   name: string;
   quantity: number;
   unit: string;
+  containerId?: string;
   outstanding: number;
   available: number;
 }
@@ -48,18 +49,29 @@ interface LedgerEntry {
  */
 export default function InventoryLedgerPage() {
   const [items, setItems] = useState<InventoryRow[]>([]);
+  // Старые позиции без containerId (заведены до появления привязки к контейнеру) — отдельно от
+  // основного списка, требуют ручной привязки (см. models/InventoryItem.ts::containerId).
+  const [unassignedItems, setUnassignedItems] = useState<InventoryRow[]>([]);
   const [containers, setContainers] = useState<ContainerRef[]>([]);
   const [debts, setDebts] = useState<OwnerContainerDebt[]>([]);
   const [entries, setEntries] = useState<LedgerEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [filters, setFilters] = useState({ containerId: "", cellNumber: "" });
   const [lendItem, setLendItem] = useState<InventoryRow | null>(null);
+  const [assignBusyId, setAssignBusyId] = useState<string | null>(null);
 
   const loadItems = useCallback(async () => {
-    const res = await fetch("/api/inventory");
-    const data = await res.json().catch(() => ({}));
-    setItems(data.items || []);
-  }, []);
+    const params = new URLSearchParams();
+    if (filters.containerId) params.set("containerId", filters.containerId);
+    const [itemsRes, unassignedRes] = await Promise.all([
+      fetch(`/api/inventory?${params.toString()}`),
+      fetch("/api/inventory?unassigned=1"),
+    ]);
+    const itemsData = await itemsRes.json().catch(() => ({}));
+    setItems(itemsData.items || []);
+    const unassignedData = await unassignedRes.json().catch(() => ({}));
+    setUnassignedItems(unassignedData.items || []);
+  }, [filters.containerId]);
 
   const loadEntries = useCallback(async () => {
     const params = new URLSearchParams();
@@ -77,6 +89,9 @@ export default function InventoryLedgerPage() {
     fetch("/api/debts")
       .then((r) => r.json())
       .then((d) => setDebts(d.debts || []));
+  }, []);
+
+  useEffect(() => {
     loadItems();
   }, [loadItems]);
 
@@ -87,6 +102,21 @@ export default function InventoryLedgerPage() {
 
   async function refreshAll() {
     await Promise.all([loadItems(), loadEntries()]);
+  }
+
+  async function assignContainer(itemId: string, toContainerId: string) {
+    if (!toContainerId) return;
+    setAssignBusyId(itemId);
+    try {
+      await fetch(`/api/inventory/${itemId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ containerId: toContainerId }),
+      });
+      await loadItems();
+    } finally {
+      setAssignBusyId(null);
+    }
   }
 
   // Диапазон камер для фильтра — камеры теперь редактируются индивидуально на контейнер (см.
@@ -109,6 +139,42 @@ export default function InventoryLedgerPage() {
           Остаток по каждой позиции и приход/уход инвентаря у клиентов по контейнеру и камере.
         </p>
       </div>
+
+      {unassignedItems.length > 0 && (
+        <div className="card mb-6 border-amber-300 bg-amber-50/60">
+          <p className="text-sm font-medium text-amber-800 mb-1">
+            Не привязаны к контейнеру ({unassignedItems.length})
+          </p>
+          <p className="text-xs text-amber-700 mb-3">
+            У каждого холодильника теперь свой инвентарь — эти позиции заведены раньше и пока
+            общие. Привяжите каждую к контейнеру, к которому она реально относится.
+          </p>
+          <div className="space-y-2">
+            {unassignedItems.map((item) => (
+              <div key={item._id} className="flex items-center gap-2 rounded-lg bg-white border border-amber-200 px-3 py-2">
+                <span className="font-medium text-ink-800 flex-1 min-w-0 truncate">
+                  {item.name} <span className="text-ink-400 font-normal">· {item.quantity} {item.unit}</span>
+                </span>
+                <select
+                  className="input h-8 text-sm w-auto"
+                  disabled={assignBusyId === item._id}
+                  defaultValue=""
+                  onChange={(e) => assignContainer(item._id, e.target.value)}
+                >
+                  <option value="" disabled>
+                    Выберите контейнер…
+                  </option>
+                  {containers.map((c) => (
+                    <option key={c._id} value={c._id}>
+                      {c.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 mb-6">
         {items.length === 0 ? (
@@ -277,7 +343,10 @@ function LendModal({
   }, [debts]);
 
   const [ownerKey, setOwnerKey] = useState("");
-  const [containerId, setContainerId] = useState("");
+  // Позиция привязана к своему контейнеру (см. models/InventoryItem.ts::containerId) —
+  // контейнер операции фиксирован и дальше не выбирается. У старых непривязанных позиций
+  // поле остаётся редактируемым (см. select ниже).
+  const [containerId, setContainerId] = useState(item.containerId || "");
   const [cellNumber, setCellNumber] = useState("");
   const [direction, setDirection] = useState<"given" | "returned">("given");
   const [quantity, setQuantity] = useState("1");
@@ -364,14 +433,20 @@ function LendModal({
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="label">Контейнер</label>
-              <select className="input" value={containerId} onChange={(e) => setContainerId(e.target.value)}>
-                <option value="">Выберите</option>
-                {containers.map((c) => (
-                  <option key={c._id} value={c._id}>
-                    {c.name}
-                  </option>
-                ))}
-              </select>
+              {item.containerId ? (
+                <p className="input flex items-center bg-ink-50 text-ink-600">
+                  {containers.find((c) => c._id === item.containerId)?.name || "—"}
+                </p>
+              ) : (
+                <select className="input" value={containerId} onChange={(e) => setContainerId(e.target.value)}>
+                  <option value="">Выберите</option>
+                  {containers.map((c) => (
+                    <option key={c._id} value={c._id}>
+                      {c.name}
+                    </option>
+                  ))}
+                </select>
+              )}
             </div>
             <div>
               <label className="label">Камера (необязательно)</label>

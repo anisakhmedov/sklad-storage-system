@@ -56,6 +56,9 @@ export async function POST(req: NextRequest) {
   ]);
   if (!container) return jsonError("Контейнер не найден", 404);
   if (!item) return jsonError("Позиция инвентаря не найдена", 404);
+  if (item.containerId && String(item.containerId) !== parsed.data.containerId) {
+    return jsonError("Эта позиция принадлежит другому контейнеру", 400);
+  }
 
   if (parsed.data.direction === "given") {
     const outstanding = (await getOutstandingByAllItems()).get(String(item._id)) || 0;

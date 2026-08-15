@@ -22,11 +22,19 @@ import { ownerKeyOf, ownerLabelOf } from "./ownerKey";
 export interface GoodsCell {
   value: number;
   unit: Unit; // "box"/"piece" для штучных колонок, "kg" для сводной колонки веса
-  /** Ровно одна запись стоит за ячейкой — можно редактировать через POST /api/records/[id]/adjust.
-   * Если у клиента несколько записей с одинаковым названием товара в этой камере, здесь будет
-   * несколько id и точечное редактирование через таблицу недоступно (значение всё равно верное,
-   * это сумма) — тогда правки делаются на странице "Записи". */
-  recordIds: string[];
+  /**
+   * Все записи, из которых сложена ячейка (обычно одна). При нескольких — таблица даёт выбрать
+   * конкретную запись перед правкой (см. components/dashboard/TenantMatrixTable.tsx::GoodsForm),
+   * т.к. adjust делается через POST /api/records/[id]/adjust на КОНКРЕТНУЮ запись, а не на сумму.
+   *
+   * displayQuantity — в единицах ЭТОЙ ячейки (для колонки "Кг" — уже переведено из тонн, см.
+   * toKg ниже); nativeUnit/nativeQuantity — как хранится в самой записи. Táблица обязана
+   * переводить введённую в кг добавку обратно в нативную единицу перед вызовом adjust —
+   * иначе для записи в тоннах "прибавить 500 кг" отправило бы delta=500 НАПРЯМУЮ в поле
+   * quantity (тонны), сделав из 1 тонны 501 тонну вместо 1.5 (см. GoodsForm в
+   * components/dashboard/TenantMatrixTable.tsx).
+   */
+  records: { recordId: string; productName: string; displayQuantity: number; nativeUnit: Unit; nativeQuantity: number }[];
 }
 
 export interface TenantMatrixRow {
@@ -38,6 +46,10 @@ export interface TenantMatrixRow {
   goods: Record<string, GoodsCell>;
   inventory: Record<string, number>;
   boxesOutstanding?: number;
+  /** Сколько всего выдано/принято за всё время — раскладка net-остатка boxesOutstanding
+   * (см. lib/boxes.ts::BoxBalance, «принятие ящиков» на странице «Арендаторы»). */
+  boxesGiven?: number;
+  boxesReturned?: number;
   boxRatePerBox?: number;
   /** № договора — показывается и редактируется только когда у клиента ровно одна запись
    * (StorageRecord) в этой камере: при нескольких записях непонятно, к какой из них относится
@@ -72,7 +84,11 @@ export async function getTenantMatrix(): Promise<TenantMatrixSection[]> {
   await connectDB();
 
   const [records, debts, inventoryBalances, boxBalances] = await Promise.all([
-    StorageRecord.find()
+    // Закрытые записи ("товар забран", см. models/StorageRecord.ts::closedAt) в этой сводной
+    // таблице не показываются — они "переехали" в историю (страница арендатора), а не лежат
+    // в камере физически. Остаток по ним, если есть, всё равно виден на странице оплаты
+    // (getAllOwnerContainerDebts ниже не фильтрует закрытые — деньги продолжают числиться).
+    StorageRecord.find({ closedAt: { $exists: false } })
       .sort({ createdAt: 1 })
       .populate<{ containerId: { _id: unknown; name: string } | null }>("containerId", "name")
       .lean(),
@@ -99,11 +115,15 @@ export async function getTenantMatrix(): Promise<TenantMatrixSection[]> {
     inventoryColumnsByContainer.get(b.containerId)!.add(b.itemName);
   }
 
-  const boxesByOwnerContainer = new Map<string, number>(); // ownerKey::containerId -> outstanding
+  const boxesByOwnerContainer = new Map<string, { outstanding: number; given: number; returned: number }>();
   const boxRateByOwnerContainer = new Map<string, number>();
   const containersWithBoxes = new Set<string>();
   for (const b of boxBalances) {
-    boxesByOwnerContainer.set(`${b.ownerKey}::${b.containerId}`, b.outstanding);
+    boxesByOwnerContainer.set(`${b.ownerKey}::${b.containerId}`, {
+      outstanding: b.outstanding,
+      given: b.given,
+      returned: b.returned,
+    });
     boxRateByOwnerContainer.set(`${b.ownerKey}::${b.containerId}`, b.ratePerBox);
     containersWithBoxes.add(b.containerId);
   }
@@ -141,6 +161,7 @@ export async function getTenantMatrix(): Promise<TenantMatrixSection[]> {
       const groupKey = `${ownerKey}::${containerId}`;
       const balanceInfo = balanceByGroup.get(groupKey);
       const inventoryMap = inventoryByOwnerContainer.get(groupKey);
+      const boxInfo = boxesByOwnerContainer.get(groupKey);
       rowsInCell.set(ownerKey, {
         ownerKey,
         ownerType: r.goodsOwner.type,
@@ -149,7 +170,9 @@ export async function getTenantMatrix(): Promise<TenantMatrixSection[]> {
         paid: balanceInfo?.paid || 0,
         goods: {},
         inventory: inventoryMap ? Object.fromEntries(inventoryMap) : {},
-        boxesOutstanding: boxesByOwnerContainer.get(groupKey),
+        boxesOutstanding: boxInfo?.outstanding,
+        boxesGiven: boxInfo?.given,
+        boxesReturned: boxInfo?.returned,
         boxRatePerBox: boxRateByOwnerContainer.get(groupKey),
       });
     }
@@ -158,15 +181,27 @@ export async function getTenantMatrix(): Promise<TenantMatrixSection[]> {
 
     if (r.unit === "kg" || r.unit === "tonne") {
       const kg = toKg(r.quantity, r.unit as Unit);
-      if (!row.goods[KG_COLUMN]) row.goods[KG_COLUMN] = { value: 0, unit: "kg", recordIds: [] };
+      if (!row.goods[KG_COLUMN]) row.goods[KG_COLUMN] = { value: 0, unit: "kg", records: [] };
       row.goods[KG_COLUMN].value += kg;
-      row.goods[KG_COLUMN].recordIds.push(String(r._id));
+      row.goods[KG_COLUMN].records.push({
+        recordId: String(r._id),
+        productName: r.productName,
+        displayQuantity: kg,
+        nativeUnit: r.unit as Unit,
+        nativeQuantity: r.quantity,
+      });
       agg.goodsColumns.add(KG_COLUMN);
     } else {
       const column = r.productName.trim() || "Товар";
-      if (!row.goods[column]) row.goods[column] = { value: 0, unit: r.unit as Unit, recordIds: [] };
+      if (!row.goods[column]) row.goods[column] = { value: 0, unit: r.unit as Unit, records: [] };
       row.goods[column].value += r.quantity;
-      row.goods[column].recordIds.push(String(r._id));
+      row.goods[column].records.push({
+        recordId: String(r._id),
+        productName: r.productName,
+        displayQuantity: r.quantity,
+        nativeUnit: r.unit as Unit,
+        nativeQuantity: r.quantity,
+      });
       agg.goodsColumns.add(column);
     }
   }
@@ -189,7 +224,7 @@ export async function getTenantMatrix(): Promise<TenantMatrixSection[]> {
         cellNumber,
         rows: Array.from(rowsMap.values())
           .map((row) => {
-            const allRecordIds = Object.values(row.goods).flatMap((g) => g.recordIds);
+            const allRecordIds = Object.values(row.goods).flatMap((g) => g.records.map((r) => r.recordId));
             if (allRecordIds.length === 1) {
               row.soleRecordId = allRecordIds[0];
               row.contractNumber = contractNumberByRecordId.get(allRecordIds[0]);

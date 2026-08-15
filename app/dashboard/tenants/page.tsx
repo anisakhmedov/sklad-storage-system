@@ -18,24 +18,40 @@ interface TenantRow {
   lastActivity: string;
 }
 
+interface ContainerRef {
+  _id: string;
+  name: string;
+}
+
 const money = (n: number) => Math.round(n).toLocaleString("ru-RU");
 
 export default function TenantsPage() {
   const [tenants, setTenants] = useState<TenantRow[]>([]);
+  const [containers, setContainers] = useState<ContainerRef[]>([]);
+  const [containerId, setContainerId] = useState("");
   const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState("");
   const [view, setView] = useState<"list" | "matrix">("list");
   const [isOwner, setIsOwner] = useState(false);
 
   useEffect(() => {
-    fetch("/api/tenants")
+    fetch("/api/containers")
       .then((r) => r.json())
-      .then((d) => setTenants(d.tenants || []))
-      .finally(() => setLoading(false));
+      .then((d) => setContainers(d.containers || []));
     fetch("/api/auth/me")
       .then((r) => r.json())
       .then((d) => setIsOwner(d.user?.role === "owner"));
   }, []);
+
+  useEffect(() => {
+    setLoading(true);
+    const params = new URLSearchParams();
+    if (containerId) params.set("containerId", containerId);
+    fetch(`/api/tenants?${params.toString()}`)
+      .then((r) => r.json())
+      .then((d) => setTenants(d.tenants || []))
+      .finally(() => setLoading(false));
+  }, [containerId]);
 
   const filtered = tenants.filter(
     (t) =>
@@ -81,8 +97,20 @@ export default function TenantsPage() {
         </div>
       </div>
 
+      <div className="card mb-6 max-w-xs">
+        <label className="label">Контейнер</label>
+        <select className="input" value={containerId} onChange={(e) => setContainerId(e.target.value)}>
+          <option value="">Все</option>
+          {containers.map((c) => (
+            <option key={c._id} value={c._id}>
+              {c.name}
+            </option>
+          ))}
+        </select>
+      </div>
+
       {view === "matrix" ? (
-        <TenantMatrixTable isOwner={isOwner} />
+        <TenantMatrixTable isOwner={isOwner} containerId={containerId} />
       ) : (
         <>
       <div className="card mb-6 max-w-md">

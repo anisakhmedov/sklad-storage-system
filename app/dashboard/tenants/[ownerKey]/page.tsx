@@ -62,13 +62,39 @@ interface Detail {
   totals: { accrued: number; paid: number; balance: number };
 }
 
+interface HistoryEvent {
+  kind: string;
+  date: string;
+  containerName: string;
+  cellNumber?: number;
+  itemLabel: string;
+  quantityText?: string;
+  amount?: number;
+  method?: string;
+  note?: string;
+  actId?: string;
+  actNumber?: string;
+  createdBy: string;
+}
+
 const UNIT_LABELS: Record<string, string> = { tonne: "т", kg: "кг", box: "ящ.", piece: "шт." };
-const METHOD_LABELS: Record<string, string> = { cash: "Наличные", terminal: "Терминал", transfer: "Перевод" };
+const METHOD_LABELS: Record<string, string> = { cash: "Наличные", terminal: "Терминал", transfer: "Перевод", card: "Карта (П2П)" };
+const HISTORY_KIND_LABELS: Record<string, { label: string; tone: string }> = {
+  goods_given: { label: "Приём товара", tone: "bg-emerald-100 text-emerald-700" },
+  goods_returned: { label: "Отдача товара", tone: "bg-amber-100 text-amber-700" },
+  inventory_given: { label: "Выдача инвентаря", tone: "bg-sky-100 text-sky-700" },
+  inventory_returned: { label: "Возврат инвентаря", tone: "bg-sky-100 text-sky-700" },
+  box_given: { label: "Выдача ящиков", tone: "bg-violet-100 text-violet-700" },
+  box_returned: { label: "Приём ящиков", tone: "bg-violet-100 text-violet-700" },
+  payment: { label: "Оплата", tone: "bg-brand-50 text-brand-700" },
+};
 const money = (n: number) => Math.round(n).toLocaleString("ru-RU");
 
 export default function TenantDetailPage({ params }: { params: { ownerKey: string } }) {
   const router = useRouter();
   const [detail, setDetail] = useState<Detail | null>(null);
+  const [history, setHistory] = useState<HistoryEvent[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(true);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [editingProfile, setEditingProfile] = useState(false);
@@ -86,6 +112,13 @@ export default function TenantDetailPage({ params }: { params: { ownerKey: strin
       })
       .catch(() => setError("Не удалось связаться с сервером"))
       .finally(() => setLoading(false));
+
+    setHistoryLoading(true);
+    fetch(`/api/tenants/${encodeURIComponent(params.ownerKey)}/history`)
+      .then((r) => r.json())
+      .then((d) => setHistory(d.events || []))
+      .catch(() => {})
+      .finally(() => setHistoryLoading(false));
   }, [params.ownerKey]);
 
   if (loading) {
@@ -211,6 +244,75 @@ export default function TenantDetailPage({ params }: { params: { ownerKey: strin
             ))}
           </tbody>
         </table>
+      </div>
+
+      <div className="card mb-8 overflow-x-auto">
+        <div className="card-header">
+          <h2 className="card-title">История операций ({history.length})</h2>
+          <p className="card-subtitle">Приём/отдача товара, выдача/возврат инвентаря и ящиков, оплаты — в одной ленте по времени.</p>
+        </div>
+        {historyLoading ? (
+          <div className="space-y-2.5 p-1">
+            {[...Array(3)].map((_, i) => (
+              <div key={i} className="skeleton h-11 w-full" />
+            ))}
+          </div>
+        ) : history.length === 0 ? (
+          <div className="empty-state py-6">
+            <p className="text-sm text-ink-500">Операций пока не было.</p>
+          </div>
+        ) : (
+          <table className="table-base">
+            <thead>
+              <tr>
+                <th>Дата</th>
+                <th>Тип</th>
+                <th>Контейнер</th>
+                <th>Камера</th>
+                <th>Что</th>
+                <th>Кол-во / Сумма</th>
+                <th>Кто оформил</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {history.map((h, idx) => {
+                const meta = HISTORY_KIND_LABELS[h.kind] || { label: h.kind, tone: "bg-ink-100 text-ink-600" };
+                return (
+                  <tr key={idx}>
+                    <td className="whitespace-nowrap text-ink-500">{new Date(h.date).toLocaleString("ru-RU")}</td>
+                    <td>
+                      <span className={`badge ${meta.tone}`}>{meta.label}</span>
+                    </td>
+                    <td className="text-ink-800">{h.containerName}</td>
+                    <td className="text-ink-600">{h.cellNumber ?? "—"}</td>
+                    <td className="text-ink-800">
+                      {h.itemLabel}
+                      {h.note && <div className="text-xs text-ink-400 max-w-xs truncate">{h.note}</div>}
+                    </td>
+                    <td className="tabular-nums text-ink-800">
+                      {h.kind === "payment" ? `${money(h.amount || 0)} сум${h.method ? ` · ${METHOD_LABELS[h.method] || h.method}` : ""}` : h.quantityText || "—"}
+                    </td>
+                    <td className="text-ink-500">{h.createdBy}</td>
+                    <td className="whitespace-nowrap">
+                      {h.actId && (
+                        <a
+                          className="btn-icon btn-secondary"
+                          href={`/api/acts/${h.actId}/pdf`}
+                          target="_blank"
+                          rel="noreferrer"
+                          title={`Акт ${h.actNumber || ""}`}
+                        >
+                          <Download className="h-3.5 w-3.5" strokeWidth={2} />
+                        </a>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        )}
       </div>
 
       <div className="card mb-8 overflow-x-auto">

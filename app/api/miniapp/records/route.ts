@@ -10,6 +10,7 @@ import { logAudit } from "@/lib/audit";
 import { notifyGoodsOwnerRegistered, sendContractToEmployee } from "@/lib/telegramNotify";
 import { getNextSequence } from "@/lib/counter";
 import { decodePngDataUrl } from "@/lib/signature";
+import { suggestedEndDate } from "@/lib/tariff";
 
 const MAX_SIGNATURE_BYTES = 2 * 1024 * 1024;
 
@@ -92,6 +93,9 @@ export async function POST(req: NextRequest) {
     clientSignaturePng: clientSignatureBuffer,
     signedAt: clientSignatureBuffer ? new Date() : undefined,
     issuingFirm,
+    // Сотрудник мог поправить подсказанную дату в мастере (см. NewRecordWizard) — если нет,
+    // считаем сами по тарифу (см. lib/tariff.ts::suggestedEndDate); per_day подсказки не даёт.
+    expectedEndDate: parsed.data.expectedEndDate ?? suggestedEndDate(parsed.data.tariff.type, new Date()) ?? undefined,
   });
 
   await logAudit({

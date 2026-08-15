@@ -20,6 +20,9 @@ export interface DebtRecordBreakdown {
   tariff: ITariff;
   since: Date;
   accrued: number;
+  /** Проставлена, если запись закрыта ("товар забран") — начисление остановлено на эту дату,
+   * см. models/StorageRecord.ts::closedAt. undefined — запись активна. */
+  closedAt?: Date;
 }
 
 export interface OwnerContainerDebt {
@@ -102,6 +105,12 @@ export async function getAllOwnerContainerDebts(
     const g = groups.get(groupKey)!;
     if (r.createdAt < g.since) g.since = r.createdAt;
 
+    // Закрытая запись ("товар забран", см. models/StorageRecord.ts::closedAt) не начисляет
+    // дальше closedAt, даже если запрошенная дата `to` позже — начисление "заморожено" на
+    // момент закрытия. Если `to` раньше closedAt (смотрим задолженность на прошлую дату, когда
+    // запись ещё была активна), ограничение не действует — берём саму `to`.
+    const accrualTo = r.closedAt && r.closedAt < to ? r.closedAt : to;
+
     // Записи, созданные до появления поля "тариф" (ранние тестовые/сид-записи), не имеют
     // r.tariff — раньше это роняло весь расчёт задолженности исключением (Cannot read
     // properties of undefined) для ВСЕХ владельцев и контейнеров разом, из-за чего
@@ -115,7 +124,7 @@ export async function getAllOwnerContainerDebts(
           quantity: r.quantity,
           unit: r.unit,
           from: r.createdAt,
-          to,
+          to: accrualTo,
         })
       : 0;
     g.records.push({
@@ -126,6 +135,7 @@ export async function getAllOwnerContainerDebts(
       tariff: r.tariff || { type: "per_day", rate: 0 },
       since: r.createdAt,
       accrued,
+      closedAt: r.closedAt || undefined,
     });
   }
 

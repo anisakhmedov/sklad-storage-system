@@ -40,6 +40,9 @@ export async function PATCH(
   // Дата договора — влияет на дату начала начисления по тарифу (см. lib/tariff.ts,
   // lib/validation.ts::storageRecordUpdateSchema).
   if (data.createdAt !== undefined) record.createdAt = data.createdAt;
+  // Планируемая дата окончания хранения — ориентир, не влияет на начисление (см.
+  // models/StorageRecord.ts::expectedEndDate).
+  if (data.expectedEndDate !== undefined) record.expectedEndDate = data.expectedEndDate;
   record.editedBy = user.identifier;
   record.editedAt = new Date();
 

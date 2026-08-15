@@ -13,15 +13,26 @@ import { getOutstandingByAllItems, itemAvailability } from "@/lib/inventoryLedge
  * сейчас на руках у клиентов (см. models/InventoryLedgerEntry.ts); `available` — свободный
  * остаток на складе (quantity − outstanding), показывается рядом с общим количеством в
  * components/dashboard/InventoryPanel.tsx.
+ *
+ * У каждого контейнера свой инвентарь (см. models/InventoryItem.ts::containerId) —
+ * `?containerId=` сужает список; `?unassigned=1` — наоборот, только СТАРЫЕ позиции без
+ * контейнера (заведены до этой доработки), для баннера привязки на странице "Инвентарь". Без
+ * параметров — все позиции сразу (нужно для быстрого виджета на "Обзоре", где показывается
+ * общая картина).
  */
-export async function GET() {
+export async function GET(req: NextRequest) {
   const user = await requireWebUser();
   if (!user) return jsonError("Не авторизован", 401);
   if (user.role !== "owner") return jsonError("Доступно только владельцу", 403);
 
   await connectDB();
+  const sp = req.nextUrl.searchParams;
+  const filter: Record<string, unknown> = {};
+  if (sp.get("containerId")) filter.containerId = sp.get("containerId");
+  if (sp.get("unassigned")) filter.containerId = { $exists: false };
+
   const [items, outstandingByItem] = await Promise.all([
-    InventoryItem.find().sort({ name: 1 }).lean(),
+    InventoryItem.find(filter).sort({ name: 1 }).lean(),
     getOutstandingByAllItems(),
   ]);
   const withAvailability = items.map((item) => ({

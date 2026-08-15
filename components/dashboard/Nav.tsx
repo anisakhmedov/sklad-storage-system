@@ -19,7 +19,7 @@ import {
   PackageSearch,
   Thermometer,
   Package,
-  Truck,
+  PackageMinus,
   Landmark,
 } from "lucide-react";
 
@@ -29,10 +29,10 @@ const links = [
   { href: "/dashboard/access", label: "Доступ", icon: KeyRound },
   { href: "/dashboard/firms", label: "Фирмы", icon: Landmark },
   { href: "/dashboard/containers", label: "Контейнеры", icon: Boxes },
-  { href: "/dashboard/transport-containers", label: "Перевозка", icon: Truck },
   { href: "/dashboard/records", label: "Записи", icon: ClipboardList },
   { href: "/dashboard/boxes", label: "Ящики", icon: PackageSearch },
   { href: "/dashboard/inventory", label: "Инвентарь", icon: Package },
+  { href: "/dashboard/inventory-disposals", label: "Продажа/списание", icon: PackageMinus },
   { href: "/dashboard/income", label: "Оплаты", icon: Wallet },
   { href: "/dashboard/tenants", label: "Арендаторы", icon: UserRound },
   { href: "/dashboard/patrols", label: "Обходы", icon: Thermometer },

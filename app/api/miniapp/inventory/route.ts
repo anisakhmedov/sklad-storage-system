@@ -11,7 +11,12 @@ import { getOutstandingByAllItems, itemAvailability, getInventoryOutstandingForO
 import { createAndSaveAct } from "@/lib/contract/actPersistence";
 import { sendActToEmployee } from "@/lib/telegramNotify";
 
-/** Список позиций инвентаря с остатком — для формы выдачи/приёма в Mini App. */
+/**
+ * Список позиций инвентаря с остатком — для формы выдачи/приёма в Mini App. У каждого
+ * контейнера свой инвентарь (см. models/InventoryItem.ts::containerId) — `?containerId=`
+ * сужает список до конкретного холодильника (см. components/miniapp/InventorySection.tsx,
+ * вызывается отдельно на каждую карточку контейнера в ClientDetail.tsx).
+ */
 export async function GET(req: NextRequest) {
   try {
     const { tgUser, employee } = await resolveEmployee(req);
@@ -20,9 +25,16 @@ export async function GET(req: NextRequest) {
       return jsonError("Доступ разрешён только подтверждённым сотрудникам", 403);
     }
 
+    const containerId = req.nextUrl.searchParams.get("containerId");
+    if (containerId && !employeeCanAccessContainer(employee, containerId)) {
+      return jsonError("Нет доступа к этому контейнеру", 403);
+    }
+
     await connectDB();
+    const filter: Record<string, unknown> = {};
+    if (containerId) filter.containerId = containerId;
     const [items, outstandingByItem] = await Promise.all([
-      InventoryItem.find().sort({ name: 1 }).lean(),
+      InventoryItem.find(filter).sort({ name: 1 }).lean(),
       getOutstandingByAllItems(),
     ]);
     const withAvailability = items.map((item) => ({
@@ -64,6 +76,12 @@ export async function POST(req: NextRequest) {
     ]);
     if (!container) return jsonError("Контейнер не найден", 404);
     if (!item) return jsonError("Позиция инвентаря не найдена", 404);
+    // У позиции, уже привязанной к контейнеру (не старая непривязанная), нельзя оформить
+    // выдачу/приём через чужой контейнер — у каждого холодильника свой инвентарь (см.
+    // models/InventoryItem.ts::containerId).
+    if (item.containerId && String(item.containerId) !== parsed.data.containerId) {
+      return jsonError("Эта позиция принадлежит другому контейнеру", 400);
+    }
 
     if (parsed.data.direction === "given") {
       const outstanding = (await getOutstandingByAllItems()).get(String(item._id)) || 0;

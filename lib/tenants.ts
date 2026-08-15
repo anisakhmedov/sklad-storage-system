@@ -32,9 +32,13 @@ export interface TenantListItem {
   lastActivity: Date;
 }
 
-/** Сводный список арендаторов, агрегированный по всем связкам владелец+контейнер. */
-export async function getAllTenants(): Promise<TenantListItem[]> {
-  const debts = await getAllOwnerContainerDebts();
+/**
+ * Сводный список арендаторов, агрегированный по всем связкам владелец+контейнер.
+ * `containerId` сужает агрегацию до одного контейнера — арендатор, у которого нет записей в
+ * этом контейнере, в список не попадает вовсе (см. GET /api/tenants, страница "Арендаторы").
+ */
+export async function getAllTenants(opts: { containerId?: string } = {}): Promise<TenantListItem[]> {
+  const debts = await getAllOwnerContainerDebts(opts.containerId ? { containerIds: [opts.containerId] } : {});
 
   const map = new Map<string, TenantListItem>();
   for (const d of debts) {

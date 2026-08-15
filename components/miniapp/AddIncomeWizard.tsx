@@ -15,7 +15,28 @@ import {
   CreditCard,
   Wallet,
   ClipboardCheck,
+  History,
 } from "lucide-react";
+
+interface HistoryEvent {
+  kind: string;
+  date: string;
+  itemLabel: string;
+  quantityText?: string;
+  amount?: number;
+  method?: string;
+}
+
+const METHOD_LABELS_SHORT: Record<string, string> = { cash: "нал.", card: "карта", transfer: "перевод", terminal: "терминал" };
+const HISTORY_KIND_LABELS: Record<string, string> = {
+  goods_given: "Приём товара",
+  goods_returned: "Отдача товара",
+  inventory_given: "Выдача инвентаря",
+  inventory_returned: "Возврат инвентаря",
+  box_given: "Выдача ящиков",
+  box_returned: "Приём ящиков",
+  payment: "Оплата",
+};
 
 type OwnerType = "individual" | "company";
 // Банковский счёт (перевод) намеренно исключён — сотрудник принимает оплату лично только
@@ -67,6 +88,24 @@ export default function AddIncomeWizard({ onExit }: { onExit: () => void }) {
   const [busy, setBusy] = useState(false);
   const [savedScreen, setSavedScreen] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [history, setHistory] = useState<HistoryEvent[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+
+  // Короткая история по этой связке владелец+контейнер — подгружается, как только сотрудник
+  // дошёл до шага "Оплата" (см. render step === 2 ниже), чтобы видеть контекст перед вводом
+  // суммы: что и когда уже было (см. GET /api/miniapp/clients/[ownerKey]/history).
+  useEffect(() => {
+    if (!ownerKey || !containerId) {
+      setHistory([]);
+      return;
+    }
+    setHistoryLoading(true);
+    miniAppFetch(`/api/miniapp/clients/${encodeURIComponent(ownerKey)}/history?containerId=${containerId}&limit=5`)
+      .then((r) => r.json())
+      .then((d) => setHistory(d.events || []))
+      .catch(() => setHistory([]))
+      .finally(() => setHistoryLoading(false));
+  }, [ownerKey, containerId]);
 
   useEffect(() => {
     miniAppFetch("/api/miniapp/debts")
@@ -303,6 +342,32 @@ export default function AddIncomeWizard({ onExit }: { onExit: () => void }) {
               )}
               .
             </p>
+          )}
+          {(historyLoading || history.length > 0) && (
+            <div className="rounded-xl border border-ink-200 px-3.5 py-2.5">
+              <p className="text-xs font-medium text-ink-600 mb-1.5 inline-flex items-center gap-1">
+                <History className="h-3.5 w-3.5" strokeWidth={2} />
+                Последние операции
+              </p>
+              {historyLoading ? (
+                <div className="skeleton h-10 w-full rounded-lg" />
+              ) : (
+                <div className="space-y-1">
+                  {history.map((h, idx) => (
+                    <div key={idx} className="flex items-center justify-between text-xs">
+                      <span className="text-ink-500">
+                        {HISTORY_KIND_LABELS[h.kind] || h.kind} · {new Date(h.date).toLocaleDateString("ru-RU")}
+                      </span>
+                      <span className="text-ink-700 font-medium">
+                        {h.kind === "payment"
+                          ? `${money(h.amount || 0)} сум${h.method ? ` · ${METHOD_LABELS_SHORT[h.method] || h.method}` : ""}`
+                          : h.quantityText || ""}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           )}
           <div>
             <label className="label">Сумма, сум</label>

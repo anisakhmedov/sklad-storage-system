@@ -155,6 +155,12 @@ export interface GoodsOwnerSummaryItem {
   productName: string;
   quantity: number;
   unit: Unit;
+  tariff?: { type: string; rate: number };
+  createdAt: Date;
+  expectedEndDate?: Date;
+  /** Запись закрыта ("товар забран", см. models/StorageRecord.ts::closedAt) — начисление
+   * остановлено на эту дату. undefined — активна. */
+  closedAt?: Date;
 }
 
 export interface GoodsOwnerSummaryContainer {
@@ -246,7 +252,16 @@ export async function getOwnerSummaryByKey(
       });
     }
     const entry = containerMap.get(cid)!;
-    entry.items.push({ recordId: String(r._id), productName: r.productName, quantity: r.quantity, unit: r.unit });
+    entry.items.push({
+      recordId: String(r._id),
+      productName: r.productName,
+      quantity: r.quantity,
+      unit: r.unit,
+      tariff: r.tariff,
+      createdAt: r.createdAt,
+      expectedEndDate: r.expectedEndDate,
+      closedAt: r.closedAt,
+    });
     if (r.createdAt > entry.lastDate) entry.lastDate = r.createdAt;
   }
 

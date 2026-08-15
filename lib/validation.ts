@@ -121,6 +121,10 @@ const storageRecordBaseSchema = z.object({
   // Необязательно: если фирм ещё не заведено или сотрудник ничего не выбрал, документ
   // использует lib/contract/firmDefaults.ts::DEFAULT_FIRM (см. app/api/miniapp/records/route.ts).
   firmId: z.string().optional(),
+  // Планируемая дата, когда клиент заберёт товар — подсказывается по тарифу (см.
+  // lib/tariff.ts::suggestedEndDate), но необязательна и редактируема (см.
+  // models/StorageRecord.ts::expectedEndDate). Не влияет на начисление.
+  expectedEndDate: z.coerce.date().optional(),
 });
 
 // "За кг" тарифы требуют известного веса — доступны только для unit "kg"/"tonne".
@@ -156,14 +160,35 @@ export const storageRecordUpdateSchema = storageRecordBaseSchema.partial().exten
   createdAt: z.coerce.date().optional(),
 });
 
-// Контейнер для перевозки — временный, без камер/актов (см. models/TransportContainer.ts).
-export const transportContainerCreateSchema = z.object({
-  label: z.string().min(1, "Укажите номер/название контейнера").max(100),
+// Закрытие/переоткрытие записи ("товар забран", см. models/StorageRecord.ts::closedAt) —
+// отдельная узкая операция, а не часть общего PATCH выше, т.к. меняет только два поля и не
+// должна требовать пересылки всей записи. closedAt: null явно переоткрывает запись (возврат
+// в "активные"); отсутствие поля недопустимо — действие должно быть явным.
+export const storageRecordCloseSchema = z.object({
+  closedAt: z.union([z.coerce.date(), z.null()]),
 });
 
-export const transportContainerGiveSchema = z.object({
-  currentOwnerLabel: z.string().min(1, "Укажите клиента").max(300),
+// Продажа/списание инвентаря (см. models/InventoryDisposalEntry.ts) — заменяет собой прежний
+// раздел "Контейнеры для перевозки" (убран полностью по решению владельца). "sale" уменьшает
+// свободный остаток позиции и требует сумму выручки; "writeoff" тоже уменьшает остаток, но без
+// денег (порча/утеря и т.п.).
+const inventoryDisposalBaseSchema = z.object({
+  itemId: z.string().min(1, "Выберите позицию инвентаря"),
+  containerId: z.string().min(1, "Выберите контейнер"),
+  kind: z.enum(["sale", "writeoff"]),
+  quantity: z.coerce.number().positive("Количество должно быть больше 0"),
+  amount: z.coerce.number().min(0, "Сумма не может быть отрицательной").optional(),
+  method: incomePaymentMethodEnum.optional(),
+  note: z.string().max(500).optional().default(""),
 });
+
+function requireAmountOnSale(data: { kind: string; amount?: number }, ctx: z.RefinementCtx) {
+  if (data.kind === "sale" && !(data.amount && data.amount > 0)) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["amount"], message: "Укажите сумму продажи" });
+  }
+}
+
+export const inventoryDisposalCreateSchema = inventoryDisposalBaseSchema.superRefine(requireAmountOnSale);
 
 // Собственная фирма владельца склада ("Сақловчи" в договоре/акте) — см. models/Firm.ts,
 // lib/contract/firmDefaults.ts::FirmSnapshot.
@@ -236,11 +261,15 @@ export const generalIncomeCreateSchema = z.object({
   paidAt: z.coerce.date().optional(),
 });
 
-// Складской инвентарь (см. models/InventoryItem.ts) — только владелец.
+// Складской инвентарь (см. models/InventoryItem.ts) — только владелец. У каждого контейнера
+// (холодильника) свой инвентарь — containerId обязателен для НОВЫХ позиций (у старых, заведённых
+// до этой доработки, поле может отсутствовать — привязывается вручную через PATCH, см.
+// inventoryItemUpdateSchema ниже и app/dashboard/inventory/page.tsx).
 export const inventoryItemCreateSchema = z.object({
   name: z.string().min(1, "Укажите название").max(200),
   quantity: z.coerce.number().min(0, "Количество не может быть отрицательным").default(0),
   unit: z.string().max(20).optional().default("шт."),
+  containerId: z.string().min(1, "Выберите контейнер"),
   note: z.string().max(500).optional().default(""),
 });
 
@@ -248,6 +277,9 @@ export const inventoryItemUpdateSchema = z.object({
   name: z.string().min(1).max(200).optional(),
   quantity: z.coerce.number().min(0, "Количество не может быть отрицательным").optional(),
   unit: z.string().max(20).optional(),
+  // Используется и для обычного редактирования, и для ручной привязки старых позиций к
+  // контейнеру (миграция — см. models/InventoryItem.ts).
+  containerId: z.string().min(1, "Выберите контейнер").optional(),
   note: z.string().max(500).optional(),
 });
 
@@ -324,6 +356,12 @@ export const incomeUpdateSchema = z.object({
 // без сужения).
 export const employeePaymentMethodEnum = z.enum(["cash", "card"]);
 export const incomeCreateSchemaEmployee = incomeCreateSchema.extend({ method: employeePaymentMethodEnum });
+
+// Тот же принцип для продажи инвентаря (см. inventoryDisposalCreateSchema выше) — сотрудник в
+// Mini App может принять только наличные/карту, не перевод.
+export const inventoryDisposalCreateSchemaEmployee = inventoryDisposalBaseSchema
+  .extend({ method: employeePaymentMethodEnum.optional() })
+  .superRefine(requireAmountOnSale);
 
 export type LoginInput = z.infer<typeof loginSchema>;
 export type EmployeeRegisterInput = z.infer<typeof employeeRegisterSchema>;

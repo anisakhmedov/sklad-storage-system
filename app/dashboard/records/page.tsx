@@ -2,7 +2,14 @@
 
 import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
-import { TARIFF_TYPES, TARIFF_LABELS, isTariffCompatibleWithUnit, formatTariffText, TariffType } from "@/lib/tariff";
+import {
+  TARIFF_TYPES,
+  TARIFF_LABELS,
+  isTariffCompatibleWithUnit,
+  formatTariffText,
+  suggestedEndDate,
+  TariffType,
+} from "@/lib/tariff";
 import { ownerKeyOf } from "@/lib/ownerKey";
 import ActsModal from "@/components/dashboard/ActsModal";
 import {
@@ -17,6 +24,8 @@ import {
   PlusCircle,
   Pencil as PencilAlt,
   Ban,
+  Lock,
+  Unlock,
 } from "lucide-react";
 
 interface ContainerRef {
@@ -56,6 +65,9 @@ interface Record_ {
   tariff: { type: TariffType; rate: number };
   createdByEmployeeId?: EmployeeRef | string;
   createdAt: string;
+  expectedEndDate?: string;
+  closedAt?: string;
+  closedBy?: string;
   editedBy?: string;
   editedAt?: string;
 }
@@ -95,6 +107,7 @@ export default function RecordsPage() {
     tariffType: "",
     from: "",
     to: "",
+    status: "",
   });
   const [editing, setEditing] = useState<Record_ | null>(null);
   const [editError, setEditError] = useState<string | null>(null);
@@ -102,6 +115,12 @@ export default function RecordsPage() {
   const [historyFor, setHistoryFor] = useState<Record_ | null>(null);
   const [history, setHistory] = useState<any[]>([]);
   const [actsFor, setActsFor] = useState<Record_ | null>(null);
+  // Отдельная маленькая форма (не общий editing modal) — закрытие просит только дату,
+  // переоткрытие вообще без формы (см. handleReopen ниже).
+  const [closingFor, setClosingFor] = useState<Record_ | null>(null);
+  const [closeDate, setCloseDate] = useState("");
+  const [closeBusy, setCloseBusy] = useState(false);
+  const [closeError, setCloseError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -111,6 +130,7 @@ export default function RecordsPage() {
     if (filters.tariffType) params.set("tariffType", filters.tariffType);
     if (filters.from) params.set("from", filters.from);
     if (filters.to) params.set("to", filters.to);
+    if (filters.status) params.set("status", filters.status);
     const res = await fetch(`/api/records?${params.toString()}`);
     const data = await res.json();
     setRecords(data.records || []);
@@ -134,6 +154,39 @@ export default function RecordsPage() {
     await load();
   }
 
+  async function handleReopen(id: string) {
+    if (!confirm("Открыть запись заново? Начисление тарифа продолжится.")) return;
+    await fetch(`/api/records/${id}/close`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ closedAt: null }),
+    });
+    await load();
+  }
+
+  async function handleSaveClose(e: React.FormEvent) {
+    e.preventDefault();
+    if (!closingFor) return;
+    setCloseBusy(true);
+    setCloseError(null);
+    try {
+      const res = await fetch(`/api/records/${closingFor._id}/close`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ closedAt: new Date(closeDate || Date.now()).toISOString() }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        setCloseError(data.error || "Не удалось закрыть запись");
+        return;
+      }
+      setClosingFor(null);
+      await load();
+    } finally {
+      setCloseBusy(false);
+    }
+  }
+
   async function handleSaveEdit(e: React.FormEvent) {
     e.preventDefault();
     if (!editing) return;
@@ -150,6 +203,10 @@ export default function RecordsPage() {
           goodsOwner: editing.goodsOwner,
           tariff: editing.tariff,
           createdAt: editing.createdAt,
+          // Пусто — просто не отправляем поле: storageRecordUpdateSchema трактует его
+          // отсутствие как "не менять" (z.coerce.date() на null дал бы 01.01.1970, а не
+          // очистку поля — см. lib/validation.ts).
+          ...(editing.expectedEndDate ? { expectedEndDate: editing.expectedEndDate } : {}),
         }),
       });
       if (!res.ok) {
@@ -244,6 +301,18 @@ export default function RecordsPage() {
               onChange={(e) => setFilters({ ...filters, to: e.target.value })}
             />
           </div>
+          <div>
+            <label className="label">Статус</label>
+            <select
+              className="input"
+              value={filters.status}
+              onChange={(e) => setFilters({ ...filters, status: e.target.value })}
+            >
+              <option value="">Все</option>
+              <option value="active">Активные</option>
+              <option value="closed">Закрытые</option>
+            </select>
+          </div>
         </div>
       </div>
 
@@ -266,6 +335,7 @@ export default function RecordsPage() {
             <thead>
               <tr>
                 <th>Дата</th>
+                <th>Окончание</th>
                 <th>Контейнер</th>
                 <th>Товар</th>
                 <th>Кол-во</th>
@@ -277,13 +347,24 @@ export default function RecordsPage() {
             </thead>
             <tbody>
               {records.map((r) => (
-                <tr key={r._id}>
+                <tr key={r._id} className={r.closedAt ? "opacity-60" : undefined}>
                   <td className="whitespace-nowrap">
                     {new Date(r.createdAt).toLocaleString("ru-RU")}
                     {r.editedAt && (
                       <div className="text-xs text-amber-600 mt-0.5">
                         изменено {new Date(r.editedAt).toLocaleDateString("ru-RU")}
                       </div>
+                    )}
+                  </td>
+                  <td className="whitespace-nowrap">
+                    {r.closedAt ? (
+                      <span className="badge bg-rose-100 text-rose-700">
+                        закрыта {new Date(r.closedAt).toLocaleDateString("ru-RU")}
+                      </span>
+                    ) : r.expectedEndDate ? (
+                      <span className="text-ink-500">{new Date(r.expectedEndDate).toLocaleDateString("ru-RU")}</span>
+                    ) : (
+                      <span className="text-ink-300">—</span>
                     )}
                   </td>
                   <td>{typeof r.containerId === "object" ? r.containerId.name : r.containerId}</td>
@@ -371,6 +452,27 @@ export default function RecordsPage() {
                       <button className="btn-icon btn-secondary" title="История" onClick={() => openHistory(r)}>
                         <History className="h-3.5 w-3.5" strokeWidth={2} />
                       </button>
+                      {r.closedAt ? (
+                        <button
+                          className="btn-icon btn-secondary"
+                          title="Открыть заново"
+                          onClick={() => handleReopen(r._id)}
+                        >
+                          <Unlock className="h-3.5 w-3.5" strokeWidth={2} />
+                        </button>
+                      ) : (
+                        <button
+                          className="btn-icon btn-secondary"
+                          title="Закрыть (товар забран)"
+                          onClick={() => {
+                            setCloseError(null);
+                            setCloseDate(new Date().toISOString().slice(0, 10));
+                            setClosingFor(r);
+                          }}
+                        >
+                          <Lock className="h-3.5 w-3.5" strokeWidth={2} />
+                        </button>
+                      )}
                       <button className="btn-icon btn-danger-ghost" title="Удалить" onClick={() => handleDelete(r._id)}>
                         <Trash2 className="h-3.5 w-3.5" strokeWidth={2} />
                       </button>
@@ -429,8 +531,8 @@ export default function RecordsPage() {
                         });
                       }}
                     >
-                      <option value="tonne">тонны</option>
                       <option value="kg">кг</option>
+                      <option value="tonne">тонны</option>
                       <option value="box">ящики</option>
                       <option value="piece">штуки</option>
                     </select>
@@ -453,6 +555,39 @@ export default function RecordsPage() {
                 />
                 <p className="text-xs text-ink-400 mt-1">
                   От этой даты считается начисление по тарифу и указывается номер/дата в PDF договоре.
+                </p>
+              </div>
+
+              <div>
+                <div className="flex items-center justify-between">
+                  <label className="label mb-0">Дата окончания (когда заберут)</label>
+                  <button
+                    type="button"
+                    className="text-xs font-medium text-brand-600 hover:text-brand-700"
+                    onClick={() => {
+                      const suggestion = suggestedEndDate(editing.tariff.type, new Date(editing.createdAt));
+                      if (suggestion) {
+                        setEditing({ ...editing, expectedEndDate: suggestion.toISOString() });
+                      }
+                    }}
+                  >
+                    Подставить по тарифу
+                  </button>
+                </div>
+                <input
+                  type="date"
+                  className="input"
+                  value={editing.expectedEndDate ? editing.expectedEndDate.slice(0, 10) : ""}
+                  onChange={(e) =>
+                    setEditing({
+                      ...editing,
+                      expectedEndDate: e.target.value ? new Date(e.target.value).toISOString() : undefined,
+                    })
+                  }
+                />
+                <p className="text-xs text-ink-400 mt-1">
+                  Ориентир, на начисление не влияет — сумма всё равно считается по фактическому
+                  числу оплаченных периодов (см. колонку «Тариф»).
                 </p>
               </div>
 
@@ -642,6 +777,45 @@ export default function RecordsPage() {
                     setEditing(null);
                   }}
                 >
+                  Отмена
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {closingFor && (
+        <div className="modal-backdrop overflow-y-auto py-8" onClick={() => setClosingFor(null)}>
+          <div className="modal-panel w-full max-w-sm my-auto" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="card-title">Закрыть запись</h3>
+              <button className="btn-icon btn-ghost" onClick={() => setClosingFor(null)} aria-label="Закрыть">
+                <X className="h-4 w-4" strokeWidth={2} />
+              </button>
+            </div>
+            <p className="text-sm text-ink-500 mb-3">
+              «{closingFor.productName}» — {closingFor.goodsOwner.type === "individual" ? closingFor.goodsOwner.fullName : closingFor.goodsOwner.companyName}.
+              Начисление тарифа остановится на указанную дату, запись пропадёт из сводной
+              таблицы «Арендаторы» и уйдёт в историю.
+            </p>
+            <form onSubmit={handleSaveClose} className="space-y-3">
+              <div>
+                <label className="label">Дата закрытия (товар забран)</label>
+                <input
+                  type="date"
+                  className="input"
+                  value={closeDate}
+                  onChange={(e) => setCloseDate(e.target.value)}
+                  required
+                />
+              </div>
+              {closeError && <div className="alert-danger">{closeError}</div>}
+              <div className="flex gap-2 pt-1">
+                <button className="btn-primary" disabled={closeBusy}>
+                  {closeBusy ? "Сохранение…" : "Закрыть запись"}
+                </button>
+                <button type="button" className="btn-secondary" onClick={() => setClosingFor(null)}>
                   Отмена
                 </button>
               </div>

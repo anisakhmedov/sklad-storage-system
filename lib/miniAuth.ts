@@ -23,7 +23,14 @@ export async function resolveEmployee(req: NextRequest) {
   if (!tgUser) return { tgUser: null, employee: null };
 
   await connectDB();
-  const employee = await Employee.findOne({ telegramId: String(tgUser.user.id) }).lean();
+  // Ищем ПО telegramId — значит, если документ найден, telegramId на нём гарантированно задан
+  // (сотрудники "без доступа к платформе", см. models/Employee.ts::hasPlatformAccess, его не
+  // имеют и потому в принципе не могут совпасть с этим запросом). Модель держит поле
+  // необязательным ради них, здесь же тип сужаем явно, чтобы не тащить "string | undefined"
+  // на каждое использование employee.telegramId ниже по коду (sendActToEmployee и т.п.).
+  const employee = (await Employee.findOne({ telegramId: String(tgUser.user.id) }).lean()) as
+    | (IEmployee & { telegramId: string })
+    | null;
   return { tgUser, employee };
 }
 

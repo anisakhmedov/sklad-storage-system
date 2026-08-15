@@ -60,6 +60,7 @@ export async function createAndSaveAct(input: CreateAndSaveActInput): Promise<IA
     direction,
     ownerLabel: input.ownerLabel,
     containerName: input.containerName,
+    cellNumber: input.cellNumber,
     itemLabel: input.itemLabel,
     changedQuantityText: input.changedQuantityText,
     totalQuantityText: input.totalQuantityText,

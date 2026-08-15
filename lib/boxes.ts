@@ -11,6 +11,13 @@ export interface BoxBalance {
   containerId: string;
   containerName: string;
   outstanding: number;
+  /** Сколько всего выдано клиенту за всё время (сумма direction: "given"), без вычета
+   * возвращённого — для отображения полной картины рядом с net-остатком (см.
+   * lib/tenantMatrix.ts, components/dashboard/TenantMatrixTable.tsx). */
+  given: number;
+  /** Сколько всего принято обратно от клиента (сумма direction: "returned") — то самое
+   * "принятие ящиков", которое раньше было видно только как часть net outstanding. */
+  returned: number;
   ratePerBox: number;
   owedAmount: number;
   lastActivity: Date;
@@ -42,6 +49,8 @@ export async function getAllBoxBalances(ownerKey?: string): Promise<BoxBalance[]
         containerId,
         containerName: containerRef?.name || "—",
         outstanding: 0,
+        given: 0,
+        returned: 0,
         ratePerBox: e.ratePerBox,
         owedAmount: 0,
         lastActivity: e.createdAt,
@@ -49,6 +58,8 @@ export async function getAllBoxBalances(ownerKey?: string): Promise<BoxBalance[]
     }
     const g = groups.get(key)!;
     g.outstanding += e.direction === "given" ? e.quantity : -e.quantity;
+    if (e.direction === "given") g.given += e.quantity;
+    else g.returned += e.quantity;
     g.ratePerBox = e.ratePerBox; // самая свежая ставка (записи отсортированы по возрастанию даты)
     g.ownerLabel = e.ownerLabel; // на случай смены отображаемого имени
     if (e.createdAt > g.lastActivity) g.lastActivity = e.createdAt;

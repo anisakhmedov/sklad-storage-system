@@ -91,10 +91,23 @@ function daysBetween(from: Date, to: Date): number {
   return diff + 1;
 }
 
+/** Целых периодов "за месяц" (30 дней) в прошедших днях — округление ВВЕРХ: даже 1 день сверху
+ * целого месяца начинает новый оплачиваемый месяц целиком (без поденной добивки внутри периода,
+ * по решению владельца). */
+function wholeMonths(days: number): number {
+  return Math.ceil(days / DAYS_PER_MONTH);
+}
+
+/** То же самое для тарифа "за 6 месяцев" (180 дней) — свой период, не производный от wholeMonths. */
+function wholeSixMonthPeriods(days: number): number {
+  return Math.ceil(days / (DAYS_PER_MONTH * 6));
+}
+
 /**
- * Начисленная по тарифу сумма за период [from, to]. per_day/per_month — фиксированная
- * ставка за размещение целиком (не зависит от количества товара). per_kg_month/
- * per_kg_6_months — ставка за килограмм, пересчитанная пропорционально прошедшим дням.
+ * Начисленная по тарифу сумма за период [from, to]. per_day — по дням (ставка × дни).
+ * per_month/per_kg_month/per_kg_6_months — целыми оплачиваемыми периодами (месяц / полгода):
+ * ставка за период умножается на число НАЧАВШИХСЯ периодов, без поденной добивки внутри периода
+ * (см. wholeMonths/wholeSixMonthPeriods выше и README → «Тарифы, оплата и задолженность»).
  */
 export function accrueTariff(params: {
   type: TariffType;
@@ -109,14 +122,34 @@ export function accrueTariff(params: {
     case "per_day":
       return params.rate * days;
     case "per_month":
-      return (params.rate / DAYS_PER_MONTH) * days;
+      return params.rate * wholeMonths(days);
     case "per_kg_month": {
       const kg = quantityInKg(params.quantity, params.unit) ?? 0;
-      return kg * (params.rate / DAYS_PER_MONTH) * days;
+      return kg * params.rate * wholeMonths(days);
     }
     case "per_kg_6_months": {
       const kg = quantityInKg(params.quantity, params.unit) ?? 0;
-      return kg * (params.rate / (DAYS_PER_MONTH * 6)) * days;
+      return kg * params.rate * wholeSixMonthPeriods(days);
     }
+  }
+}
+
+/**
+ * Подсказка «когда клиент заберёт товар» — предлагается сотруднику при создании записи
+ * (и пересчитывается при смене тарифа), но остаётся редактируемой (см. IStorageRecord →
+ * expectedEndDate в models/StorageRecord.ts). per_month/per_kg_month — один оплаченный
+ * период (30 дней) от даты договора, per_kg_6_months — полгода (180 дней). Для per_day
+ * заранее известной длительности нет (платят посуточно, пока товар лежит) — подсказки нет,
+ * поле остаётся пустым и целиком на усмотрение сотрудника.
+ */
+export function suggestedEndDate(type: TariffType, from: Date): Date | null {
+  switch (type) {
+    case "per_day":
+      return null;
+    case "per_month":
+    case "per_kg_month":
+      return new Date(from.getTime() + DAYS_PER_MONTH * MS_PER_DAY);
+    case "per_kg_6_months":
+      return new Date(from.getTime() + DAYS_PER_MONTH * 6 * MS_PER_DAY);
   }
 }
