@@ -81,10 +81,14 @@ export async function POST(req: NextRequest) {
   // Снимок реквизитов выбранной фирмы (см. models/Firm.ts) — если сотрудник ничего не выбрал
   // (или firmId не найден), issuingFirm остаётся не заполненным, и документы используют
   // lib/contract/firmDefaults.ts::DEFAULT_FIRM (см. lib/contract/placeholders.ts,
-  // lib/contract/generateAct.ts).
+  // lib/contract/generateAct.ts). Второй рубеж защиты: если клиент не прислал firmId (напр.
+  // мастер пропустил шаг "firm", т.к. контейнер уже привязан к фирме — см.
+  // models/Container.ts::firmId), берём фирму контейнера — API не полагается на то, что клиент
+  // обязательно продублирует её в теле запроса.
   let issuingFirm: InstanceType<typeof StorageRecord>["issuingFirm"];
-  if (parsed.data.firmId) {
-    const firm = await Firm.findById(parsed.data.firmId).lean();
+  const effectiveFirmId = parsed.data.firmId || (container.firmId ? String(container.firmId) : undefined);
+  if (effectiveFirmId) {
+    const firm = await Firm.findById(effectiveFirmId).lean();
     if (firm) {
       issuingFirm = {
         name: firm.name,

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { connectDB } from "@/lib/db";
 import { Firm } from "@/models/Firm";
+import { Container } from "@/models/Container";
 import { requireWebUser } from "@/lib/auth";
 import { jsonError, zodErrorResponse } from "@/lib/apiHelpers";
 import { firmUpdateSchema } from "@/lib/validation";
@@ -38,6 +39,9 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
 /**
  * Удаление фирмы НЕ трогает уже выданные документы — StorageRecord.issuingFirm хранит
  * снимок реквизитов на момент создания записи, а не ссылку (см. models/StorageRecord.ts).
+ * Контейнеры, привязанные к этой фирме (см. models/Container.ts::firmId), отвязываются —
+ * иначе они молча ссылались бы на несуществующую фирму, и шаг "firm" в Mini App просто
+ * пропадал бы без замены на DEFAULT_FIRM.
  */
 export async function DELETE(_req: NextRequest, { params }: { params: { id: string } }) {
   const user = await requireWebUser();
@@ -49,7 +53,7 @@ export async function DELETE(_req: NextRequest, { params }: { params: { id: stri
   if (!firm) return jsonError("Фирма не найдена", 404);
 
   const snapshot = firm.toObject();
-  await firm.deleteOne();
+  await Promise.all([firm.deleteOne(), Container.updateMany({ firmId: firm._id }, { $unset: { firmId: "" } })]);
 
   await logAudit({
     entity: "Firm",

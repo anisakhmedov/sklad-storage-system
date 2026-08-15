@@ -37,6 +37,9 @@ interface Container {
   id: string;
   name: string;
   description?: string;
+  // Фирма по умолчанию для этого контейнера (см. models/Container.ts::firmId) — если задана,
+  // шаг "firm" ниже пропускается целиком (см. stepsFor).
+  firmId?: string | null;
 }
 
 interface Firm {
@@ -137,13 +140,15 @@ const emptyForm = {
 // "Договор" и "Подпись" существуют только для физлиц (юрлицам договор не формируется —
 // см. lib/contract/generateContract.ts) — список шагов пересчитывается на каждый рендер по
 // текущему form.ownerType, поэтому переключение типа арендатора на шаге "owner" всегда
-// корректно меняет хвост списка. Шаг "firm" появляется, только если у владельца заведено
-// ≥2 фирм — при 0 фирм используется DEFAULT_FIRM, при 1 она выбирается автоматически.
+// корректно меняет хвост списка. Шаг "firm" появляется, только если выбранный контейнер НЕ
+// привязан к фирме (см. models/Container.ts::firmId, app/dashboard/firms/page.tsx) и у
+// владельца заведено ≥2 фирм — при привязанном контейнере фирма подставляется автоматически
+// (см. эффект ниже), при 0 фирм используется DEFAULT_FIRM, при 1 она выбирается сама.
 type StepKind = "container" | "cell" | "product" | "owner" | "tariff" | "firm" | "contract" | "signature" | "review";
 
-function stepsFor(ownerType: OwnerType, firmsCount: number): StepKind[] {
+function stepsFor(ownerType: OwnerType, firmsCount: number, containerHasFirm: boolean): StepKind[] {
   const steps: StepKind[] = ["container", "cell", "product", "owner", "tariff"];
-  if (firmsCount > 1) steps.push("firm");
+  if (!containerHasFirm && firmsCount > 1) steps.push("firm");
   if (ownerType === "individual") steps.push("contract", "signature");
   steps.push("review");
   return steps;
@@ -186,7 +191,8 @@ export default function NewRecordWizard({ onExit }: { onExit: () => void }) {
   // уже есть (см. README).
   const [pickedClientId, setPickedClientId] = useState<string | null>(null);
 
-  const steps = stepsFor(form.ownerType, firms.length);
+  const selectedContainer = containers.find((c) => c.id === form.containerId);
+  const steps = stepsFor(form.ownerType, firms.length, !!selectedContainer?.firmId);
   const kind = steps[step];
 
   // Нативная кнопка "Назад" Telegram зеркалит шаги мастера — на первом шаге закрывает
@@ -261,6 +267,17 @@ export default function NewRecordWizard({ onExit }: { onExit: () => void }) {
       setForm((f) => ({ ...f, firmId: firms[0].id }));
     }
   }, [firms, form.firmId]);
+
+  // Контейнер привязан к фирме (см. models/Container.ts::firmId) — подставляем её
+  // принудительно при каждой смене контейнера, без участия сотрудника (шаг "firm" в этом
+  // случае вообще не появляется в steps, см. stepsFor выше). Приоритет выше, чем у "фирма
+  // всего одна" — привязка конкретного контейнера более специфична.
+  useEffect(() => {
+    if (selectedContainer?.firmId && form.firmId !== selectedContainer.firmId) {
+      setForm((f) => ({ ...f, firmId: selectedContainer.firmId! }));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [form.containerId, selectedContainer?.firmId]);
 
   // Сетка камер конкретного контейнера — подгружается сразу при выборе контейнера
   // (шаг "container"), чтобы шаг "cell" открывался уже с готовыми данными.

@@ -50,6 +50,10 @@ export const containerCreateSchema = z.object({
     .min(1, "Должна быть хотя бы одна камера")
     .max(MAX_CELL_COUNT, "Слишком много камер")
     .optional(),
+  // Фирма по умолчанию для этого контейнера (см. models/Container.ts::firmId) — задаётся со
+  // страницы «Фирмы», не при создании контейнера, поэтому не required. null явно отвязывает
+  // контейнер от фирмы (отсутствие поля в partial()-версии ниже означает "не менять").
+  firmId: z.union([z.string().regex(/^[0-9a-fA-F]{24}$/, "Некорректный идентификатор фирмы"), z.null()]).optional(),
 });
 
 export const containerUpdateSchema = containerCreateSchema.partial();

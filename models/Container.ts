@@ -23,6 +23,15 @@ export interface IContainer {
    * app/api/miniapp/containers/[id]/cells/route.ts или app/api/containers/[id]/cells/route.ts.
    */
   fullCells: number[];
+  /**
+   * Фирма (models/Firm.ts), от чьего имени по умолчанию оформляются договоры/акты для записей
+   * в ЭТОМ контейнере — задаётся на веб-панели (см. app/dashboard/firms/page.tsx). Когда
+   * привязана, сотрудник в Mini App больше не выбирает фирму вручную при создании записи (шаг
+   * "firm" в мастере пропускается, см. components/miniapp/NewRecordWizard.tsx) — она
+   * подставляется автоматически по выбранному контейнеру. undefined — контейнер ни к какой
+   * фирме не привязан, действует прежнее поведение (шаг показывается, если фирм ≥2).
+   */
+  firmId?: Types.ObjectId;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -33,6 +42,7 @@ const ContainerSchema = new Schema<IContainer>({
   createdBy: { type: String, required: true },
   cellCount: { type: Number, default: DEFAULT_CELL_COUNT, min: 1, max: MAX_CELL_COUNT },
   fullCells: { type: [Number], default: [] },
+  firmId: { type: Schema.Types.ObjectId, ref: "Firm" },
   createdAt: { type: Date, default: Date.now },
   updatedAt: { type: Date, default: Date.now },
 });
