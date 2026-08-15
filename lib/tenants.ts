@@ -3,9 +3,12 @@ import { connectDB } from "./db";
 import { StorageRecord, GoodsOwnerType, IGoodsOwner } from "@/models/StorageRecord";
 import { Income, IIncome } from "@/models/Income";
 import { GoodsOwnerLink } from "@/models/GoodsOwnerLink";
-// Побочный эффект: регистрирует схему "Container" до populate("containerId") ниже
-// (см. пояснение в lib/contract/contractService.ts).
+// Побочный эффект: регистрирует схемы "Container"/"Employee" до populate("containerId")/
+// populate("createdByEmployeeId") ниже (см. пояснение в lib/contract/contractService.ts) —
+// без этого импорта mongoose падает с MissingSchemaError при первом же открытии карточки
+// арендатора (GET /api/tenants/[ownerKey]).
 import "@/models/Container";
+import "@/models/Employee";
 import { Types } from "mongoose";
 import { parseOwnerKey } from "./ownerKey";
 import { getAllOwnerContainerDebts, OwnerContainerDebt } from "./debt";
