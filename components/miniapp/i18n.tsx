@@ -62,8 +62,6 @@ const ru: Dict = {
     payment: "Оплата",
   },
   home: {
-    greeting: "Здравствуйте, {name}!",
-    subtitle: "Учёт хранения продукции в контейнерах",
     loadError: "Не удалось получить данные Telegram. Откройте приложение через бота.",
     newRecordTitle: "Новая запись",
     newRecordDesc: "Разместить товар в контейнере",
@@ -384,8 +382,6 @@ const uz: Dict = {
     payment: "Тўлов",
   },
   home: {
-    greeting: "Ассалому алайкум, {name}!",
-    subtitle: "Контейнерларда маҳсулот сақлаш ҳисоби",
     loadError: "Telegram маълумотларини олиб бўлмади. Иловани бот орқали очинг.",
     newRecordTitle: "Янги ёзув",
     newRecordDesc: "Товарни контейнерга жойлаштириш",
