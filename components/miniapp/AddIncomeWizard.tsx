@@ -33,8 +33,6 @@ const HISTORY_KIND_LABELS: Record<string, string> = {
   goods_returned: "Отдача товара",
   inventory_given: "Выдача инвентаря",
   inventory_returned: "Возврат инвентаря",
-  box_given: "Выдача ящиков",
-  box_returned: "Приём ящиков",
   payment: "Оплата",
 };
 

@@ -29,10 +29,6 @@ interface TenantMatrixRow {
   paid: number;
   goods: Record<string, GoodsCell>;
   inventory: Record<string, number>;
-  boxesOutstanding?: number;
-  boxesGiven?: number;
-  boxesReturned?: number;
-  boxRatePerBox?: number;
   contractNumber?: string;
   soleRecordId?: string;
 }
@@ -47,7 +43,6 @@ interface TenantMatrixSection {
   containerName: string;
   goodsColumns: string[];
   inventoryColumns: string[];
-  hasBoxesColumn: boolean;
   cells: TenantMatrixCell[];
 }
 
@@ -98,23 +93,13 @@ type EditTarget =
       cellNumber: number;
       itemName: string;
       currentValue: number;
-    }
-  | {
-      kind: "boxes";
-      ownerType: OwnerType;
-      ownerKey: string;
-      ownerLabel: string;
-      containerId: string;
-      containerName: string;
-      currentValue: number;
-      rate?: number;
     };
 
 /**
  * Вид «Таблица по камерам» страницы «Арендаторы» — сводная таблица в духе бумажного/Excel-
  * журнала владельца (см. lib/tenantMatrix.ts): секция на холодильник → подсекция на камеру →
  * строка на клиента. Пустые ячейки визуально пустые, но кликабельны (можно завести первую
- * выдачу инвентаря/ящиков или добавить платёж) — правки идут через уже существующие эндпоинты
+ * выдачу инвентаря или добавить платёж) — правки идут через уже существующие эндпоинты
  * (акты и аудит-лог создаются там же, эта таблица их не дублирует).
  */
 export default function TenantMatrixTable({ isOwner, containerId }: { isOwner: boolean; containerId?: string }) {
@@ -274,9 +259,6 @@ export default function TenantMatrixTable({ isOwner, containerId }: { isOwner: b
                             {col}
                           </th>
                         ))}
-                        {section.hasBoxesColumn && (
-                          <th title="Общий остаток по клиенту в этом контейнере (не по камере)">Ящики</th>
-                        )}
                         <th>К получению</th>
                       </tr>
                     </thead>
@@ -356,34 +338,6 @@ export default function TenantMatrixTable({ isOwner, containerId }: { isOwner: b
                               />
                             </td>
                           ))}
-                          {section.hasBoxesColumn && (
-                            <td className="tabular-nums">
-                              <Cell
-                                value={num(row.boxesOutstanding)}
-                                clickable={isOwner}
-                                onClick={() =>
-                                  setEditing({
-                                    kind: "boxes",
-                                    ownerType: row.ownerType,
-                                    ownerKey: row.ownerKey,
-                                    ownerLabel: row.ownerLabel,
-                                    containerId: section.containerId,
-                                    containerName: section.containerName,
-                                    currentValue: row.boxesOutstanding || 0,
-                                    rate: row.boxRatePerBox,
-                                  })
-                                }
-                              />
-                              {/* Раскладка net-остатка — выдано/принято за всё время (см.
-                                  lib/boxes.ts::BoxBalance.given/returned), не только текущий
-                                  остаток. Пусто, если ни разу не было ни того, ни другого. */}
-                              {(row.boxesGiven || row.boxesReturned) && (
-                                <div className="text-xs text-ink-400 font-normal whitespace-nowrap">
-                                  выдано {num(row.boxesGiven) || 0} · принято {num(row.boxesReturned) || 0}
-                                </div>
-                              )}
-                            </td>
-                          )}
                           <td className={`tabular-nums ${row.balance > 0 ? "text-rose-600 font-medium" : ""}`}>
                             {money(row.balance)}
                           </td>
@@ -408,9 +362,6 @@ export default function TenantMatrixTable({ isOwner, containerId }: { isOwner: b
                             {num(sum(cell.rows, (r) => r.inventory[col] || 0))}
                           </td>
                         ))}
-                        {section.hasBoxesColumn && (
-                          <td className="tabular-nums">{num(sum(cell.rows, (r) => r.boxesOutstanding || 0))}</td>
-                        )}
                         <td className="tabular-nums">{money(sum(cell.rows, (r) => r.balance))}</td>
                       </tr>
                     </tfoot>
@@ -511,7 +462,7 @@ function ContractCell({ row, editable, onSaved }: { row: TenantMatrixRow; editab
 
 /**
  * Диспетчер по виду правки — сами формы вынесены в отдельные компоненты (GoodsForm/PaymentForm/
- * InventoryForm/BoxesForm), а не в ветки одной функции: у каждого вида своя форма (свои
+ * InventoryForm), а не в ветки одной функции: у каждого вида своя форма (свои
  * useState), а React требует одинаковый порядок вызова хуков на каждый рендер компонента —
  * держать это правило верным при условных ветках внутри одной функции слишком легко случайно
  * сломать при следующей правке, отдельные компоненты избавляют от этого риска в принципе.
@@ -529,9 +480,7 @@ function EditModal({
 }) {
   if (target.kind === "goods") return <GoodsForm target={target} onClose={onClose} onSaved={onSaved} />;
   if (target.kind === "payment") return <PaymentForm target={target} onClose={onClose} onSaved={onSaved} />;
-  if (target.kind === "inventory")
-    return <InventoryForm target={target} inventoryItemByName={inventoryItemByName} onClose={onClose} onSaved={onSaved} />;
-  return <BoxesForm target={target} onClose={onClose} onSaved={onSaved} />;
+  return <InventoryForm target={target} inventoryItemByName={inventoryItemByName} onClose={onClose} onSaved={onSaved} />;
 }
 
 function GoodsForm({
@@ -811,116 +760,6 @@ function InventoryForm({
         </div>
       </Modal>
     );
-}
-
-function BoxesForm({
-  target,
-  onClose,
-  onSaved,
-}: {
-  target: Extract<EditTarget, { kind: "boxes" }>;
-  onClose: () => void;
-  onSaved: () => void;
-}) {
-  const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [quantity, setQuantity] = useState("");
-  const [direction, setDirection] = useState<"given" | "returned">("given");
-  const [rate, setRate] = useState(target.rate ? String(target.rate) : "");
-  async function submitBoxes() {
-    const v = Number(quantity);
-    const rateNum = Number(rate);
-    if (!quantity || Number.isNaN(v) || v <= 0) {
-      setError("Укажите количество ящиков");
-      return;
-    }
-    if (!rate || Number.isNaN(rateNum) || rateNum < 0) {
-      setError("Укажите ставку за ящик");
-      return;
-    }
-    if (direction === "returned" && v > target.currentValue) {
-      setError(`У клиента сейчас только ${num(target.currentValue) || 0} ящ. — нельзя принять больше`);
-      return;
-    }
-    setBusy(true);
-    setError(null);
-    try {
-      const res = await fetch("/api/boxes", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          ownerType: target.ownerType,
-          ownerKey: target.ownerKey,
-          ownerLabel: target.ownerLabel,
-          containerId: target.containerId,
-          direction,
-          quantity,
-          ratePerBox: rateNum,
-        }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        setError(data.error || "Ошибка");
-        return;
-      }
-      onSaved();
-    } finally {
-      setBusy(false);
-    }
-  }
-  return (
-    <Modal title={`Ящики — ${target.ownerLabel}`} onClose={onClose}>
-      <p className="text-xs text-ink-400 mb-2">
-        {target.containerName} · сейчас должен {num(target.currentValue)}
-      </p>
-      <div className="flex gap-1 text-xs mb-2">
-        <button
-          type="button"
-          className={`rounded-lg px-2.5 py-1.5 border font-medium transition-colors ${direction === "given" ? "border-brand-600 bg-brand-50 text-brand-700" : "border-ink-200 text-ink-500"}`}
-          onClick={() => setDirection("given")}
-        >
-          Выдал
-        </button>
-        <button
-          type="button"
-          className={`rounded-lg px-2.5 py-1.5 border font-medium transition-colors ${direction === "returned" ? "border-brand-600 bg-brand-50 text-brand-700" : "border-ink-200 text-ink-500"}`}
-          onClick={() => setDirection("returned")}
-        >
-          Принял
-        </button>
-      </div>
-      <div className="flex gap-2">
-        <input
-          type="number"
-          min="0"
-          step="1"
-          className="input flex-1"
-          placeholder="Кол-во ящиков"
-          value={quantity}
-          onChange={(e) => setQuantity(e.target.value)}
-          disabled={busy}
-          autoFocus
-        />
-        <input
-          type="number"
-          min="0"
-          step="any"
-          className="input flex-1"
-          placeholder="Ставка, сум/ящ."
-          value={rate}
-          onChange={(e) => setRate(e.target.value)}
-          disabled={busy}
-        />
-      </div>
-      {error && <p className="text-sm text-rose-600 mt-2">{error}</p>}
-      <div className="flex gap-2 pt-3">
-        <button className="btn-primary flex-1" disabled={busy} onClick={submitBoxes}>
-          {busy && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-          Сохранить
-        </button>
-      </div>
-    </Modal>
-  );
 }
 
 function Modal({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {

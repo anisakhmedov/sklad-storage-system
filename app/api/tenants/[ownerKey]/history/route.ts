@@ -5,7 +5,7 @@ import { getTenantHistory } from "@/lib/tenantHistory";
 
 /**
  * Единая хронологическая история операций арендатора (приём/отдача товара, выдача/возврат
- * инвентаря и ящиков, оплаты) — веб-панель, страница арендатора
+ * инвентаря, оплаты) — веб-панель, страница арендатора
  * (app/dashboard/tenants/[ownerKey]/page.tsx). См. lib/tenantHistory.ts.
  */
 export async function GET(req: NextRequest, { params }: { params: { ownerKey: string } }) {

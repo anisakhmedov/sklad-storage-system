@@ -3,24 +3,18 @@ import type { GoodsOwnerType } from "./StorageRecord";
 import { MAX_CELL_COUNT } from "@/lib/cells";
 
 /**
- * Сгенерированный PDF-акт (приём/отдача товара, выдача/возврат инвентаря, выдача/приём ящиков)
+ * Сгенерированный PDF-акт (приём/отдача товара, выдача/возврат инвентаря)
  * — В ОТЛИЧИЕ от договора (lib/contract/contractService.ts, который никогда не хранится и
  * пересобирается на каждый запрос), акт хранится целиком (pdfBuffer) сразу при создании, чтобы
  * кнопка "Акты" на странице "Записи" (app/dashboard/records/page.tsx) могла открыть любой
  * прошлый акт мгновенно, без пересборки. Единая модель под все виды акта — рендерится общим
  * lib/contract/generateAct.ts, сохраняется через lib/contract/actPersistence.ts::createAndSaveAct.
  *
- * recordId заполнен только для kind "goods_*" (акт по конкретной StorageRecord); инвентарные и
- * ящичные акты привязаны к клиенту+контейнеру (ownerKey+containerId), а не к одной записи —
+ * recordId заполнен только для kind "goods_*" (акт по конкретной StorageRecord); инвентарные
+ * акты привязаны к клиенту+контейнеру (ownerKey+containerId), а не к одной записи —
  * см. app/api/acts/route.ts, который ищет акты и по recordId, и по ownerKey+containerId.
  */
-export type ActKind =
-  | "goods_given"
-  | "goods_returned"
-  | "inventory_given"
-  | "inventory_returned"
-  | "box_given"
-  | "box_returned";
+export type ActKind = "goods_given" | "goods_returned" | "inventory_given" | "inventory_returned";
 
 export interface IAct {
   _id: Types.ObjectId;
@@ -33,7 +27,7 @@ export interface IAct {
   containerId: Types.ObjectId;
   containerName: string; // денормализовано — для списка без populate
   cellNumber?: number;
-  itemLabel: string; // "Товар: Яблоки" / "Инвентарь: Поддоны" / "Ящики"
+  itemLabel: string; // "Товар: Яблоки" / "Инвентарь: Поддоны"
   changedQuantityText: string;
   totalQuantityText?: string;
   pdfBuffer: Buffer;
@@ -47,7 +41,7 @@ const ActSchema = new Schema<IAct>({
   actNumber: { type: String, required: true },
   kind: {
     type: String,
-    enum: ["goods_given", "goods_returned", "inventory_given", "inventory_returned", "box_given", "box_returned"],
+    enum: ["goods_given", "goods_returned", "inventory_given", "inventory_returned"],
     required: true,
   },
   recordId: { type: Schema.Types.ObjectId, ref: "StorageRecord" },
@@ -67,7 +61,7 @@ const ActSchema = new Schema<IAct>({
   createdAt: { type: Date, default: Date.now },
 });
 
-// Кнопка "Акты" на записи (по recordId) и общий список по клиенту+контейнеру (инвентарь/ящики).
+// Кнопка "Акты" на записи (по recordId) и общий список по клиенту+контейнеру (инвентарь).
 ActSchema.index({ recordId: 1 });
 ActSchema.index({ ownerKey: 1, containerId: 1 });
 

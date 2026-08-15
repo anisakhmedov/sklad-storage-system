@@ -19,13 +19,11 @@ const KIND_LABELS: Record<string, string> = {
   goods_returned: "Акт сдачи товара",
   inventory_given: "Акт передачи инвентаря",
   inventory_returned: "Акт возврата инвентаря",
-  box_given: "Акт передачи ящиков",
-  box_returned: "Акт возврата ящиков",
 };
 
 /**
- * Список всех актов по записи и/или по клиенту+контейнеру (товарные + инвентарные + ящичные) —
- * кнопка "Акты" на app/dashboard/records/page.tsx, а также на app/dashboard/boxes/page.tsx и
+ * Список всех актов по записи и/или по клиенту+контейнеру (товарные + инвентарные) —
+ * кнопка "Акты" на app/dashboard/records/page.tsx, а также на
  * app/dashboard/inventory/page.tsx (там recordId не передаётся — ищем только по ownerKey+
  * containerId, см. app/api/acts/route.ts). Данные — app/api/acts/route.ts, PDF —
  * app/api/acts/[id]/pdf/route.ts (сохранённый файл, открывается мгновенно).

@@ -73,8 +73,8 @@ export async function getInventoryOutstandingForOwner(
 }
 
 /**
- * Баланс инвентаря по каждой связке клиент+позиция+контейнер (симметрично
- * lib/boxes.ts::getAllBoxBalances) — для страницы "Инвентарь" и профиля клиента.
+ * Баланс инвентаря по каждой связке клиент+позиция+контейнер — для страницы "Инвентарь" и
+ * профиля клиента.
  */
 export async function getAllInventoryBalances(ownerKey?: string): Promise<InventoryBalance[]> {
   await connectDB();

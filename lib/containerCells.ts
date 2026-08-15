@@ -33,8 +33,7 @@ export interface ContainerCellsGrid {
  * одного или нескольких контейнеров. Занятость камеры вычисляется из активных (quantity > 0) StorageRecord —
  * записи с обнулённым количеством (см. app/api/miniapp/records/[id]/adjust/route.ts)
  * считаются вывезенными и не занимают камеру. Один арендатор с несколькими записями в
- * одной камере схлопывается в одного occupant (по ownerKeyOf), как и в lib/boxes.ts /
- * lib/debt.ts.
+ * одной камере схлопывается в одного occupant (по ownerKeyOf), как и в lib/debt.ts.
  *
  * containerIds — undefined = все контейнеры (веб-дашборд, app/api/containers/cells/route.ts);
  * массив из одного id = один контейнер (mini app, ограничен доступом сотрудника через

@@ -3,7 +3,6 @@ import { ActDirection, ActSubject } from "./generateAct";
 const FILENAME_PREFIX: Record<ActSubject, Record<ActDirection, string>> = {
   goods: { given: "Akt_priema", returned: "Akt_otdachi" },
   inventory: { given: "Akt_peredachi_inventarya", returned: "Akt_vozvrata_inventarya" },
-  boxes: { given: "Akt_peredachi_yashchikov", returned: "Akt_vozvrata_yashchikov" },
 };
 
 /**

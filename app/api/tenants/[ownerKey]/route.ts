@@ -4,7 +4,6 @@ import { connectDB } from "@/lib/db";
 import { StorageRecord } from "@/models/StorageRecord";
 import { Income } from "@/models/Income";
 import { InventoryLedgerEntry } from "@/models/InventoryLedgerEntry";
-import { BoxLedgerEntry } from "@/models/BoxLedgerEntry";
 import { Act } from "@/models/Act";
 import { GoodsOwnerLink } from "@/models/GoodsOwnerLink";
 import { requireWebUser } from "@/lib/auth";
@@ -42,9 +41,8 @@ export async function GET(_req: NextRequest, { params }: { params: { ownerKey: s
  *
  * Если меняется телефон (физлицо) или ИНН (юрлицо) — это меняет ownerKey (см.
  * lib/ownerKey.ts), поэтому дополнительно переносим денормализованные ownerKey/ownerLabel во
- * ВСЕХ местах, где арендатор упоминается по ключу (Income/InventoryLedgerEntry/BoxLedgerEntry/
- * Act), и обновляем привязку к Telegram (GoodsOwnerLink), чтобы бот продолжил узнавать клиента
- * по новому номеру.
+ * ВСЕХ местах, где арендатор упоминается по ключу (Income/InventoryLedgerEntry/Act), и обновляем
+ * привязку к Telegram (GoodsOwnerLink), чтобы бот продолжил узнавать клиента по новому номеру.
  */
 export async function PATCH(req: NextRequest, { params }: { params: { ownerKey: string } }) {
   const user = await requireWebUser();
@@ -112,7 +110,6 @@ export async function PATCH(req: NextRequest, { params }: { params: { ownerKey: 
   await Promise.all([
     Income.updateMany({ ownerKey }, { $set: { ownerKey: newOwnerKey, ownerLabel: newLabel } }),
     InventoryLedgerEntry.updateMany({ ownerKey }, { $set: { ownerKey: newOwnerKey, ownerLabel: newLabel } }),
-    BoxLedgerEntry.updateMany({ ownerKey }, { $set: { ownerKey: newOwnerKey, ownerLabel: newLabel } }),
     Act.updateMany({ ownerKey }, { $set: { ownerKey: newOwnerKey, ownerLabel: newLabel } }),
     parsedKey.type === "individual"
       ? GoodsOwnerLink.updateMany(

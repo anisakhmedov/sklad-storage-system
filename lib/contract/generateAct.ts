@@ -6,11 +6,10 @@ import { ownerLabelOf } from "@/lib/ownerKey";
 import { DEFAULT_FIRM } from "./firmDefaults";
 
 /**
- * PDF-рендерер актов — общий для трёх видов операций (см. models/Act.ts::ActKind):
- * "goods" (товар клиента, партия per-запись), "inventory" (складской инвентарь, выданный
- * клиенту, см. models/InventoryLedgerEntry.ts) и "boxes" (ящики под товар, см.
- * models/BoxLedgerEntry.ts). Вёрстка одна и та же (шапка/таблица/подписи), меняются только
- * заголовок и подписи строк — под конкретный предмет акта (subject).
+ * PDF-рендерер актов — общий для двух видов операций (см. models/Act.ts::ActKind):
+ * "goods" (товар клиента, партия per-запись) и "inventory" (складской инвентарь, выданный
+ * клиенту, см. models/InventoryLedgerEntry.ts). Вёрстка одна и та же (шапка/таблица/подписи),
+ * меняются только заголовок и подписи строк — под конкретный предмет акта (subject).
  *
  * Самостоятельный генератор (не переиспользует внутренности lib/contract/generateContract.ts),
  * чтобы не трогать уже отлаженный рендер договора — шрифты и общий стиль оформления те же.
@@ -28,7 +27,7 @@ const PAGE_MARGIN = 54;
 const numberFmt = new Intl.NumberFormat("ru-RU");
 
 export type ActDirection = "given" | "returned";
-export type ActSubject = "goods" | "inventory" | "boxes";
+export type ActSubject = "goods" | "inventory";
 
 interface SubjectLabels {
   titleUz: (isGiven: boolean) => string;
@@ -51,12 +50,6 @@ const SUBJECT_LABELS: Record<ActSubject, SubjectLabels> = {
     itemRowLabel: "Инвентар",
     quantityRowLabel: (g) => (g ? "Берилган миқдор" : "Қайтарилган миқдор"),
   },
-  boxes: {
-    titleUz: (g) => (g ? "ЯЩИКЛАРНИ ТОПШИРИШ ДАЛОЛАТНОМАСИ" : "ЯЩИКЛАРНИ ҚАЙТАРИБ ОЛИШ ДАЛОЛАТНОМАСИ"),
-    subjectWordUz: "ящик",
-    itemRowLabel: "Ящиклар",
-    quantityRowLabel: (g) => (g ? "Берилган миқдор" : "Қайтарилган миқдор"),
-  },
 };
 
 export interface ActFillData {
@@ -65,18 +58,17 @@ export interface ActFillData {
   ownerLabel: string;
   containerName: string;
   /** Номер камеры — есть у товарных актов (StorageRecord.cellNumber всегда задан) и у
-   * инвентарных (InventoryLedgerEntry.cellNumber необязателен); у актов по ящикам отсутствует
-   * (BoxLedgerEntry камеру не хранит — ящики не привязаны к конкретной камере). Строка "Камера"
-   * в PDF рисуется только когда значение есть. */
+   * инвентарных (InventoryLedgerEntry.cellNumber необязателен). Строка "Камера" в PDF
+   * рисуется только когда значение есть. */
   cellNumber?: number;
-  itemLabel: string; // наименование товара / позиции инвентаря / "Ящики"
+  itemLabel: string; // наименование товара / позиции инвентаря
   changedQuantityText: string;
   totalQuantityText?: string;
   contractNumber?: string;
   actNumber?: string;
   dateText: string;
   /** Фирма-подписант ("Сақловчи") — см. lib/contract/firmDefaults.ts. По умолчанию
-   * DEFAULT_FIRM (акты по инвентарю/ящикам не привязаны к конкретной фирме записи). */
+   * DEFAULT_FIRM (акты по инвентарю не привязаны к конкретной фирме записи). */
   firmName: string;
 }
 

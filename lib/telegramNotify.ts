@@ -75,16 +75,13 @@ const ACT_CAPTIONS: Record<ActKind, string> = {
   goods_returned: "📄 Акт отдачи товара сформирован автоматически.",
   inventory_given: "📄 Акт передачи инвентаря сформирован автоматически.",
   inventory_returned: "📄 Акт возврата инвентаря сформирован автоматически.",
-  box_given: "📄 Акт передачи ящиков сформирован автоматически.",
-  box_returned: "📄 Акт возврата ящиков сформирован автоматически.",
 };
 
 /**
  * Отправляет сотруднику уже сохранённый акт (см. lib/contract/actPersistence.ts::createAndSaveAct —
  * акт всегда сначала сохраняется целиком в БД, отправка в Telegram — best-effort уведомление
  * поверх уже готового буфера, а не отдельная генерация). Используется для всех видов акта:
- * товар (app/api/miniapp/records/[id]/adjust/route.ts), инвентарь (app/api/miniapp/inventory/route.ts),
- * ящики (app/api/miniapp/boxes/[ownerKey]/route.ts).
+ * товар (app/api/miniapp/records/[id]/adjust/route.ts), инвентарь (app/api/miniapp/inventory/route.ts).
  */
 export async function sendActToEmployee(employeeTelegramId: string, act: Pick<IAct, "kind" | "pdfBuffer" | "filename">): Promise<void> {
   try {

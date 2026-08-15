@@ -6,14 +6,13 @@ import { StorageRecord, GoodsOwnerType, Unit } from "@/models/StorageRecord";
 import "@/models/Container";
 import { getAllOwnerContainerDebts } from "./debt";
 import { getAllInventoryBalances } from "./inventoryLedger";
-import { getAllBoxBalances } from "./boxes";
 import { ownerKeyOf, ownerLabelOf } from "./ownerKey";
 
 /**
  * Сводная таблица «Арендаторы по камерам» (см. app/dashboard/tenants/page.tsx, вид «Таблица по
  * камерам») — воспроизводит бумажный/Excel-журнал, который владелец вёл вручную по каждому
  * холодильнику: секция на контейнер → подсекция на камеру → строка на клиента с деньгами,
- * товаром (динамические колонки по фактическим названиям) и инвентарём/ящиками.
+ * товаром (динамические колонки по фактическим названиям) и инвентарём.
  *
  * Колонки товара и инвентаря вычисляются ОТДЕЛЬНО для каждого контейнера (не глобально по всей
  * базе) — у разных холодильников разный ассортимент тары/товара.
@@ -45,12 +44,6 @@ export interface TenantMatrixRow {
   paid: number;
   goods: Record<string, GoodsCell>;
   inventory: Record<string, number>;
-  boxesOutstanding?: number;
-  /** Сколько всего выдано/принято за всё время — раскладка net-остатка boxesOutstanding
-   * (см. lib/boxes.ts::BoxBalance, «принятие ящиков» на странице «Арендаторы»). */
-  boxesGiven?: number;
-  boxesReturned?: number;
-  boxRatePerBox?: number;
   /** № договора — показывается и редактируется только когда у клиента ровно одна запись
    * (StorageRecord) в этой камере: при нескольких записях непонятно, к какой из них относится
    * правка, поле остаётся пустым (см. lib/tenantMatrix.ts::getTenantMatrix). */
@@ -68,7 +61,6 @@ export interface TenantMatrixSection {
   containerName: string;
   goodsColumns: string[];
   inventoryColumns: string[];
-  hasBoxesColumn: boolean;
   cells: TenantMatrixCell[];
 }
 
@@ -83,7 +75,7 @@ function toKg(quantity: number, unit: Unit): number {
 export async function getTenantMatrix(): Promise<TenantMatrixSection[]> {
   await connectDB();
 
-  const [records, debts, inventoryBalances, boxBalances] = await Promise.all([
+  const [records, debts, inventoryBalances] = await Promise.all([
     // Закрытые записи ("товар забран", см. models/StorageRecord.ts::closedAt) в этой сводной
     // таблице не показываются — они "переехали" в историю (страница арендатора), а не лежат
     // в камере физически. Остаток по ним, если есть, всё равно виден на странице оплаты
@@ -94,7 +86,6 @@ export async function getTenantMatrix(): Promise<TenantMatrixSection[]> {
       .lean(),
     getAllOwnerContainerDebts(),
     getAllInventoryBalances(),
-    getAllBoxBalances(),
   ]);
 
   const balanceByGroup = new Map<string, { balance: number; paid: number }>();
@@ -102,9 +93,9 @@ export async function getTenantMatrix(): Promise<TenantMatrixSection[]> {
     balanceByGroup.set(`${d.ownerKey}::${d.containerId}`, { balance: d.balance, paid: d.paid });
   }
 
-  // Инвентарь/ящики не привязаны к камере (InventoryLedgerEntry — не всегда, BoxLedgerEntry —
-  // никогда), поэтому считаются на уровне владелец+контейнер и показываются одинаково во всех
-  // камера-секциях этого владельца в этом контейнере.
+  // Инвентарь не привязан к камере (InventoryLedgerEntry.cellNumber — не всегда задан), поэтому
+  // считается на уровне владелец+контейнер и показывается одинаково во всех камера-секциях
+  // этого владельца в этом контейнере.
   const inventoryByOwnerContainer = new Map<string, Map<string, number>>(); // ownerKey::containerId -> itemName -> outstanding
   const inventoryColumnsByContainer = new Map<string, Set<string>>();
   for (const b of inventoryBalances) {
@@ -113,19 +104,6 @@ export async function getTenantMatrix(): Promise<TenantMatrixSection[]> {
     inventoryByOwnerContainer.get(groupKey)!.set(b.itemName, b.outstanding);
     if (!inventoryColumnsByContainer.has(b.containerId)) inventoryColumnsByContainer.set(b.containerId, new Set());
     inventoryColumnsByContainer.get(b.containerId)!.add(b.itemName);
-  }
-
-  const boxesByOwnerContainer = new Map<string, { outstanding: number; given: number; returned: number }>();
-  const boxRateByOwnerContainer = new Map<string, number>();
-  const containersWithBoxes = new Set<string>();
-  for (const b of boxBalances) {
-    boxesByOwnerContainer.set(`${b.ownerKey}::${b.containerId}`, {
-      outstanding: b.outstanding,
-      given: b.given,
-      returned: b.returned,
-    });
-    boxRateByOwnerContainer.set(`${b.ownerKey}::${b.containerId}`, b.ratePerBox);
-    containersWithBoxes.add(b.containerId);
   }
 
   // recordId -> № договора — для вычисления contractNumber/soleRecordId по завершении обхода
@@ -161,7 +139,6 @@ export async function getTenantMatrix(): Promise<TenantMatrixSection[]> {
       const groupKey = `${ownerKey}::${containerId}`;
       const balanceInfo = balanceByGroup.get(groupKey);
       const inventoryMap = inventoryByOwnerContainer.get(groupKey);
-      const boxInfo = boxesByOwnerContainer.get(groupKey);
       rowsInCell.set(ownerKey, {
         ownerKey,
         ownerType: r.goodsOwner.type,
@@ -170,10 +147,6 @@ export async function getTenantMatrix(): Promise<TenantMatrixSection[]> {
         paid: balanceInfo?.paid || 0,
         goods: {},
         inventory: inventoryMap ? Object.fromEntries(inventoryMap) : {},
-        boxesOutstanding: boxInfo?.outstanding,
-        boxesGiven: boxInfo?.given,
-        boxesReturned: boxInfo?.returned,
-        boxRatePerBox: boxRateByOwnerContainer.get(groupKey),
       });
     }
     const row = rowsInCell.get(ownerKey)!;
@@ -239,7 +212,6 @@ export async function getTenantMatrix(): Promise<TenantMatrixSection[]> {
       containerName: agg.containerName,
       goodsColumns,
       inventoryColumns,
-      hasBoxesColumn: containersWithBoxes.has(containerId),
       cells,
     });
   }
@@ -267,7 +239,6 @@ export async function buildTenantMatrixWorkbook(sections: TenantMatrixSection[])
       ...section.goodsColumns,
       "Описание / договор",
       ...section.inventoryColumns,
-      ...(section.hasBoxesColumn ? ["Ящики"] : []),
       "К получению",
     ];
 
@@ -292,7 +263,6 @@ export async function buildTenantMatrixWorkbook(sections: TenantMatrixSection[])
           ...section.goodsColumns.map((col) => row.goods[col]?.value || ""),
           row.contractNumber || "",
           ...section.inventoryColumns.map((col) => row.inventory[col] || ""),
-          ...(section.hasBoxesColumn ? [row.boxesOutstanding || ""] : []),
           Math.round(row.balance),
         ]);
       });
@@ -308,7 +278,6 @@ export async function buildTenantMatrixWorkbook(sections: TenantMatrixSection[])
         ...section.goodsColumns.map((col) => sumCol((r) => r.goods[col]?.value || 0)),
         "",
         ...section.inventoryColumns.map((col) => sumCol((r) => r.inventory[col] || 0)),
-        ...(section.hasBoxesColumn ? [sumCol((r) => r.boxesOutstanding || 0)] : []),
         sumCol((r) => r.balance),
       ]);
       totalsRow.font = { bold: true };

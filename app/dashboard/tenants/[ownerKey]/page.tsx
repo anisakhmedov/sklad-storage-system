@@ -84,8 +84,6 @@ const HISTORY_KIND_LABELS: Record<string, { label: string; tone: string }> = {
   goods_returned: { label: "Отдача товара", tone: "bg-amber-100 text-amber-700" },
   inventory_given: { label: "Выдача инвентаря", tone: "bg-sky-100 text-sky-700" },
   inventory_returned: { label: "Возврат инвентаря", tone: "bg-sky-100 text-sky-700" },
-  box_given: { label: "Выдача ящиков", tone: "bg-violet-100 text-violet-700" },
-  box_returned: { label: "Приём ящиков", tone: "bg-violet-100 text-violet-700" },
   payment: { label: "Оплата", tone: "bg-brand-50 text-brand-700" },
 };
 const money = (n: number) => Math.round(n).toLocaleString("ru-RU");
@@ -249,7 +247,7 @@ export default function TenantDetailPage({ params }: { params: { ownerKey: strin
       <div className="card mb-8 overflow-x-auto">
         <div className="card-header">
           <h2 className="card-title">История операций ({history.length})</h2>
-          <p className="card-subtitle">Приём/отдача товара, выдача/возврат инвентаря и ящиков, оплаты — в одной ленте по времени.</p>
+          <p className="card-subtitle">Приём/отдача товара, выдача/возврат инвентаря, оплаты — в одной ленте по времени.</p>
         </div>
         {historyLoading ? (
           <div className="space-y-2.5 p-1">

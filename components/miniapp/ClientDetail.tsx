@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { miniAppFetch } from "./telegram";
-import BoxSection from "./BoxSection";
 import InventorySection from "./InventorySection";
 import {
   TARIFF_TYPES,
@@ -53,8 +52,6 @@ const HISTORY_KIND_LABELS: Record<string, string> = {
   goods_returned: "Отдача товара",
   inventory_given: "Выдача инвентаря",
   inventory_returned: "Возврат инвентаря",
-  box_given: "Выдача ящиков",
-  box_returned: "Приём ящиков",
   payment: "Оплата",
 };
 
@@ -84,13 +81,6 @@ interface Summary {
   totalBalance: number;
 }
 
-interface BoxBalance {
-  containerId: string;
-  outstanding: number;
-  ratePerBox: number;
-  owedAmount: number;
-}
-
 interface InventoryBalance {
   itemId: string;
   itemName: string;
@@ -112,7 +102,6 @@ export default function ClientDetail({
   onBack: () => void;
 }) {
   const [summary, setSummary] = useState<Summary | null>(null);
-  const [boxBalances, setBoxBalances] = useState<BoxBalance[]>([]);
   const [inventoryBalances, setInventoryBalances] = useState<InventoryBalance[]>([]);
   // У каждого контейнера свой инвентарь (см. models/InventoryItem.ts::containerId) — карточка
   // каждого контейнера получает СВОЙ список позиций, а не общий на всех.
@@ -124,9 +113,8 @@ export default function ClientDetail({
     setLoading(true);
     setError(null);
     try {
-      const [summaryRes, boxesRes, inventoryRes] = await Promise.all([
+      const [summaryRes, inventoryRes] = await Promise.all([
         miniAppFetch(`/api/miniapp/clients/${encodeURIComponent(owner.ownerKey)}`),
-        miniAppFetch(`/api/miniapp/boxes/${encodeURIComponent(owner.ownerKey)}`),
         miniAppFetch(`/api/miniapp/inventory/${encodeURIComponent(owner.ownerKey)}`),
       ]);
       const data = await summaryRes.json().catch(() => ({}));
@@ -135,8 +123,6 @@ export default function ClientDetail({
         return;
       }
       setSummary(data.summary);
-      const boxData = await boxesRes.json().catch(() => ({}));
-      setBoxBalances(boxesRes.ok ? boxData.balances || [] : []);
       const inventoryData = await inventoryRes.json().catch(() => ({}));
       setInventoryBalances(inventoryRes.ok ? inventoryData.balances || [] : []);
 
@@ -212,7 +198,6 @@ export default function ClientDetail({
               key={c.containerId}
               container={c}
               owner={owner}
-              boxBalance={boxBalances.find((b) => b.containerId === c.containerId)}
               inventoryBalances={inventoryBalances.filter((b) => b.containerId === c.containerId)}
               inventoryItems={inventoryItemsByContainer.get(c.containerId) || []}
               onChanged={load}
@@ -232,8 +217,8 @@ export default function ClientDetail({
 }
 
 /**
- * Единая хронологическая история клиента (приём/отдача товара, выдача/возврат инвентаря и
- * ящиков, оплаты) — см. GET /api/miniapp/clients/[ownerKey]/history, lib/tenantHistory.ts.
+ * Единая хронологическая история клиента (приём/отдача товара, выдача/возврат инвентаря,
+ * оплаты) — см. GET /api/miniapp/clients/[ownerKey]/history, lib/tenantHistory.ts.
  * Свёрнута по умолчанию и подгружается по клику — сама карточка клиента и так тяжёлая,
  * не грузим историю, пока сотрудник её явно не запросил.
  */
@@ -309,14 +294,12 @@ function HistorySection({ ownerKey }: { ownerKey: string }) {
 function ContainerCard({
   container,
   owner,
-  boxBalance,
   inventoryBalances,
   inventoryItems,
   onChanged,
 }: {
   container: SummaryContainer;
   owner: { ownerKey: string; ownerLabel: string; ownerType: OwnerType };
-  boxBalance: BoxBalance | undefined;
   inventoryBalances: InventoryBalance[];
   inventoryItems: InventoryItemRef[];
   onChanged: () => void;
@@ -341,7 +324,6 @@ function ContainerCard({
         </span>
       </div>
 
-      <BoxSection owner={owner} containerId={container.containerId} balance={boxBalance} onChanged={onChanged} />
       <InventorySection
         owner={owner}
         containerId={container.containerId}

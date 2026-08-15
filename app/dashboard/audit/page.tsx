@@ -22,7 +22,6 @@ const ENTITIES = [
   "Container",
   "Income",
   "Withdrawal",
-  "BoxLedgerEntry",
   "Expense",
   "GeneralIncome",
   "InventoryItem",

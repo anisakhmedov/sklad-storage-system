@@ -12,8 +12,6 @@ const KIND_TO_SUBJECT: Record<ActKind, { subject: ActSubject; direction: ActDire
   goods_returned: { subject: "goods", direction: "returned" },
   inventory_given: { subject: "inventory", direction: "given" },
   inventory_returned: { subject: "inventory", direction: "returned" },
-  box_given: { subject: "boxes", direction: "given" },
-  box_returned: { subject: "boxes", direction: "returned" },
 };
 
 export interface CreateAndSaveActInput {
@@ -30,7 +28,7 @@ export interface CreateAndSaveActInput {
   totalQuantityText?: string;
   contractNumber?: string;
   /** Фирма-подписант ("Сақловчи") — см. lib/contract/firmDefaults.ts. По умолчанию DEFAULT_FIRM
-   * (акты по инвентарю/ящикам не привязаны к конкретной фирме записи). */
+   * (акты по инвентарю не привязаны к конкретной фирме записи). */
   firmName?: string;
   createdBy: string;
   createdByRole: "owner" | "employee";
@@ -43,10 +41,9 @@ export interface CreateAndSaveActInput {
  * в Act (models/Act.ts) — акт, в отличие от договора, НЕ пересобирается по запросу (решение
  * владельца: акты должны открываться мгновенно из истории).
  *
- * Вызывается из трёх мест: app/api/miniapp/records/[id]/adjust/route.ts (goods_*),
- * app/api/miniapp/boxes/[ownerKey]/route.ts (box_*), app/api/miniapp/inventory/route.ts
- * (inventory_*). Ошибки здесь не проглатываются (в отличие от lib/telegramNotify.ts) — акт
- * обязателен, а его последующая отправка в Telegram уже best-effort.
+ * Вызывается из двух мест: app/api/miniapp/records/[id]/adjust/route.ts (goods_*),
+ * app/api/miniapp/inventory/route.ts (inventory_*). Ошибки здесь не проглатываются (в отличие
+ * от lib/telegramNotify.ts) — акт обязателен, а его последующая отправка в Telegram уже best-effort.
  */
 export async function createAndSaveAct(input: CreateAndSaveActInput): Promise<IAct> {
   await connectDB();

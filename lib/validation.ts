@@ -216,17 +216,6 @@ export const quantityAdjustSchema = z.object({
   note: z.string().max(500).optional().default(""),
 });
 
-// Учёт ящиков, выданных/возвращённых клиентом (см. models/BoxLedgerEntry.ts, lib/boxes.ts).
-export const boxEntryCreateSchema = z.object({
-  ownerKey: z.string().min(1, "Не выбран владелец груза"),
-  ownerType: goodsOwnerTypeEnum,
-  ownerLabel: z.string().min(1, "Не указано имя/наименование владельца").max(300),
-  containerId: z.string().min(1, "Выберите контейнер"),
-  direction: z.enum(["given", "returned"]),
-  quantity: z.coerce.number().positive("Количество должно быть больше 0"),
-  ratePerBox: z.coerce.number().min(0, "Ставка не может быть отрицательной"),
-});
-
 // Расход (снятие владельцем/зарплата/прочее, см. models/Expense.ts). status выставляется
 // сервером в зависимости от того, кто создаёт (owner → approved сразу, employee → pending) —
 // не принимается от клиента.
@@ -284,7 +273,7 @@ export const inventoryItemUpdateSchema = z.object({
 });
 
 // Выдать/принять инвентарь клиенту (см. models/InventoryLedgerEntry.ts, lib/inventoryLedger.ts) —
-// параллельный учёт от ящиков (boxEntryCreateSchema выше), без ставки/стоимости.
+// без ставки/стоимости (в отличие от прежнего параллельного учёта ящиков, упразднённого).
 export const inventoryLedgerEntryCreateSchema = z.object({
   itemId: z.string().min(1, "Выберите позицию инвентаря"),
   ownerKey: z.string().min(1, "Не выбран владелец груза"),
