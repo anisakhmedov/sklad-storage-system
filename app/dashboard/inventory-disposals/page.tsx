@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { PackageMinus, DollarSign, Trash2 } from "lucide-react";
+import { isPricelessItemName } from "@/lib/inventoryPricing";
 
 interface ContainerRef {
   _id: string;
@@ -121,14 +122,16 @@ export default function InventoryDisposalsPage() {
                 Свободно: <span className="font-medium text-ink-700">{item.available}</span> {item.unit}
               </div>
               <div className="flex gap-1.5">
-                <button
-                  className="btn-secondary btn-sm flex-1"
-                  disabled={item.available <= 0}
-                  onClick={() => setActing({ item, kind: "sale" })}
-                >
-                  <DollarSign className="h-3.5 w-3.5" strokeWidth={2} />
-                  Продать
-                </button>
+                {!isPricelessItemName(item.name) && (
+                  <button
+                    className="btn-secondary btn-sm flex-1"
+                    disabled={item.available <= 0}
+                    onClick={() => setActing({ item, kind: "sale" })}
+                  >
+                    <DollarSign className="h-3.5 w-3.5" strokeWidth={2} />
+                    Продать
+                  </button>
+                )}
                 <button
                   className="btn-secondary btn-sm flex-1"
                   disabled={item.available <= 0}
@@ -138,6 +141,9 @@ export default function InventoryDisposalsPage() {
                   Списать
                 </button>
               </div>
+              {isPricelessItemName(item.name) && (
+                <p className="text-[11px] text-ink-400 mt-1.5">У ящиков нет цены — доступно только списание.</p>
+              )}
             </div>
           ))
         )}

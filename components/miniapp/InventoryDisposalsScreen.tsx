@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { miniAppFetch } from "./telegram";
 import { ArrowLeft, DollarSign, PackageMinus, TriangleAlert, Package } from "lucide-react";
+import { isPricelessItemName } from "@/lib/inventoryPricing";
 
 interface ContainerRef {
   id: string;
@@ -119,14 +120,16 @@ export default function InventoryDisposalsScreen({ onExit }: { onExit: () => voi
                 </span>
               </div>
               <div className="flex gap-1.5">
-                <button
-                  className="btn-secondary flex-1"
-                  disabled={item.available <= 0}
-                  onClick={() => setActing({ item, kind: "sale" })}
-                >
-                  <DollarSign className="h-3.5 w-3.5" strokeWidth={2.1} />
-                  Продать
-                </button>
+                {!isPricelessItemName(item.name) && (
+                  <button
+                    className="btn-secondary flex-1"
+                    disabled={item.available <= 0}
+                    onClick={() => setActing({ item, kind: "sale" })}
+                  >
+                    <DollarSign className="h-3.5 w-3.5" strokeWidth={2.1} />
+                    Продать
+                  </button>
+                )}
                 <button
                   className="btn-secondary flex-1"
                   disabled={item.available <= 0}
@@ -136,6 +139,9 @@ export default function InventoryDisposalsScreen({ onExit }: { onExit: () => voi
                   Списать
                 </button>
               </div>
+              {isPricelessItemName(item.name) && (
+                <p className="text-[11px] text-ink-400 mt-1.5">У ящиков нет цены — доступно только списание.</p>
+              )}
             </div>
           ))}
         </div>

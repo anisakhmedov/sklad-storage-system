@@ -5,6 +5,7 @@ import { InventoryDisposalEntry, InventoryDisposalKind } from "@/models/Inventor
 // (см. пояснение в lib/contract/contractService.ts).
 import "@/models/Container";
 import { getOutstandingByAllItems, itemAvailability } from "./inventoryLedger";
+import { isPricelessItemName } from "./inventoryPricing";
 import { PaymentMethod } from "@/models/StorageRecord";
 
 export class InventoryDisposalError extends Error {}
@@ -14,6 +15,9 @@ export class InventoryDisposalError extends Error {}
  * (item.quantity), проверив, что этого хватает в СВОБОДНОМ остатке (не выданном клиентам, см.
  * lib/inventoryLedger.ts::itemAvailability). Бросает InventoryDisposalError с понятным текстом
  * вместо кода ошибки — вызывающий код (API-роут) сам решает, каким HTTP-статусом это обернуть.
+ *
+ * "Ящики" продать нельзя — у них нет цены (см. lib/inventoryPricing.ts), доступно только
+ * списание. Проверка здесь, а не только в UI — чтобы прямой запрос к API тоже не смог продать.
  */
 export async function createInventoryDisposal(params: {
   itemId: string;
@@ -30,6 +34,10 @@ export async function createInventoryDisposal(params: {
 
   const item = await InventoryItem.findById(params.itemId);
   if (!item) throw new InventoryDisposalError("Позиция инвентаря не найдена");
+
+  if (params.kind === "sale" && isPricelessItemName(item.name)) {
+    throw new InventoryDisposalError("«Ящики» нельзя продать — у них нет цены, доступно только списание");
+  }
 
   // Позиция, у которой уже проставлен containerId (не старая непривязанная), должна совпадать
   // с контейнером операции — иначе можно было бы "продать" инвентарь чужого холодильника.
