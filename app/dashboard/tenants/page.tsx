@@ -73,18 +73,18 @@ export default function TenantsPage() {
           <div className="inline-flex rounded-xl border border-ink-200 bg-white p-1">
             <button
               className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
-                view === "matrix" ? "bg-brand-50 text-brand-700" : "text-ink-500"
+                view === "list" ? "bg-brand-50 text-brand-700" : "text-ink-500"
               }`}
-              onClick={() => setView("matrix")}
+              onClick={() => setView("list")}
             >
               <LayoutList className="h-3.5 w-3.5" strokeWidth={2} />
               Список
             </button>
             <button
               className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
-                view === "list" ? "bg-brand-50 text-brand-700" : "text-ink-500"
+                view === "matrix" ? "bg-brand-50 text-brand-700" : "text-ink-500"
               }`}
-              onClick={() => setView("list")}
+              onClick={() => setView("matrix")}
             >
               <Table2 className="h-3.5 w-3.5" strokeWidth={2} />
               Таблица по камерам
