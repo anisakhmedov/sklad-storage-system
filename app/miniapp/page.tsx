@@ -146,16 +146,13 @@ export default function MiniAppPage() {
           <MenuItem icon={Plus} tone="brand" title={t("home.newRecordTitle")} desc={t("home.newRecordDesc")} onClick={() => open("record")} />
           <MenuItem icon={Wallet} tone="emerald" title={t("home.incomeTitle")} desc={t("home.incomeDesc")} onClick={() => open("income")} />
           <MenuItem icon={Users} tone="violet" title={t("home.clientsTitle")} desc={t("home.clientsDesc")} onClick={() => open("clients")} />
+          <MenuItem icon={MinusCircle} tone="rose" title={t("home.expensesTitle")} desc={t("home.expensesDesc")} onClick={() => open("expenses")} />
+        
         </MenuSection>
 
         <MenuSection label={t("home.sectionFacility")} startDelay={3}>
-          <MenuItem icon={LayoutGrid} tone="teal" title={t("home.cellsTitle")} desc={t("home.cellsDesc")} onClick={() => open("cells")} />
           <MenuItem icon={Thermometer} tone="sky" title={t("home.patrolTitle")} desc={t("home.patrolDesc")} onClick={() => open("patrol")} />
           <MenuItem icon={PackageSearch} tone="indigo" title={t("home.disposalsTitle")} desc={t("home.disposalsDesc")} onClick={() => open("disposals")} />
-        </MenuSection>
-
-        <MenuSection label={t("home.sectionOther")} startDelay={6}>
-          <MenuItem icon={MinusCircle} tone="rose" title={t("home.expensesTitle")} desc={t("home.expensesDesc")} onClick={() => open("expenses")} />
         </MenuSection>
       </div>
     </div>
