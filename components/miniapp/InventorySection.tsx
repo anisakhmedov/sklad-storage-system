@@ -25,7 +25,7 @@ interface InventoryItemRef {
  * — учёт складского инвентаря (поддоны/рохля и т.п., см. models/InventoryItem.ts), выданного
  * этому клиенту в этом контейнере, отдельно от товара.
  * Баланс передаётся сверху (одним запросом на всего клиента — GET
- * /api/miniapp/inventory/[ownerKey], см. ClientDetail), здесь только список остатков и форма
+ * /api/miniapp/inventory/[clientId], см. ClientDetail), здесь только список остатков и форма
  * выдать/принять по конкретной позиции → существующий POST /api/miniapp/inventory (тот же, что
  * и на веб-панели — уже создаёт акт и пишет в аудит-лог).
  */
@@ -37,7 +37,7 @@ export default function InventorySection({
   items,
   onChanged,
 }: {
-  owner: { ownerKey: string; ownerType: OwnerType; ownerLabel: string };
+  owner: { clientId: string; ownerType: OwnerType; ownerLabel: string };
   containerId: string;
   cellNumber?: number;
   balances: InventoryBalanceRow[];
@@ -75,9 +75,7 @@ export default function InventorySection({
         method: "POST",
         body: JSON.stringify({
           itemId,
-          ownerKey: owner.ownerKey,
-          ownerType: owner.ownerType,
-          ownerLabel: owner.ownerLabel,
+          clientId: owner.clientId,
           containerId,
           cellNumber,
           direction,

@@ -10,7 +10,6 @@ import {
   suggestedEndDate,
   TariffType,
 } from "@/lib/tariff";
-import { ownerKeyOf } from "@/lib/ownerKey";
 import ActsModal from "@/components/dashboard/ActsModal";
 import {
   ClipboardList,
@@ -57,6 +56,7 @@ type GoodsOwner = GoodsOwnerIndividual | GoodsOwnerCompany;
 
 interface Record_ {
   _id: string;
+  clientId: string;
   containerId: ContainerRef | string;
   productName: string;
   quantity: number;
@@ -376,7 +376,7 @@ export default function RecordsPage() {
                     {r.goodsOwner.type === "individual" ? (
                       <>
                         <Link
-                          href={`/dashboard/tenants/${encodeURIComponent(ownerKeyOf(r.goodsOwner))}`}
+                          href={`/dashboard/tenants/${encodeURIComponent(r.clientId)}`}
                           className="text-ink-800 hover:text-brand-600 font-medium"
                         >
                           {r.goodsOwner.fullName}
@@ -386,7 +386,7 @@ export default function RecordsPage() {
                     ) : (
                       <>
                         <Link
-                          href={`/dashboard/tenants/${encodeURIComponent(ownerKeyOf(r.goodsOwner))}`}
+                          href={`/dashboard/tenants/${encodeURIComponent(r.clientId)}`}
                           className="text-ink-800 hover:text-brand-600 font-medium"
                         >
                           {r.goodsOwner.companyName}
@@ -592,7 +592,9 @@ export default function RecordsPage() {
               </div>
 
               <div className="flex items-center justify-between pt-2">
-                <p className="text-sm font-medium text-ink-600">Владелец груза</p>
+                <p className="text-sm font-medium text-ink-600" title="Правит только печатный снимок этой записи (напр. опечатку в ФИО на конкретном акте) — не влияет на карточку клиента и его долг/оплаты. Профиль клиента целиком редактируется на странице «Арендаторы».">
+                  Владелец груза (снимок записи)
+                </p>
                 <div className="flex gap-1 text-xs">
                   <button
                     type="button"
@@ -882,7 +884,7 @@ export default function RecordsPage() {
       {actsFor && (
         <ActsModal
           recordId={actsFor._id}
-          ownerKey={ownerKeyOf(actsFor.goodsOwner)}
+          clientId={actsFor.clientId}
           containerId={typeof actsFor.containerId === "object" ? actsFor.containerId._id : actsFor.containerId}
           onClose={() => setActsFor(null)}
         />

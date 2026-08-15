@@ -3,7 +3,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { miniAppFetch, haptic, useTelegramBackButton } from "./telegram";
 import { useI18n } from "./i18n";
-import { DEFAULT_CELL_COUNT, cellNumbersForCount } from "@/lib/cells";
 import {
   ArrowLeft,
   CheckCircle2,
@@ -11,6 +10,7 @@ import {
   UserRound,
   Building2,
   Boxes,
+  LayoutGrid,
   Banknote,
   CreditCard,
   Wallet,
@@ -33,21 +33,19 @@ type OwnerType = "individual" | "company";
 // lib/validation.ts::incomeCreateSchemaEmployee, app/api/miniapp/income/route.ts).
 type Method = "cash" | "card";
 
-interface OwnerContainerDebt {
+/** Долг по ОДНОЙ камере одного клиента в одном контейнере (см. lib/debt.ts::ClientCellDebt) —
+ * GET /api/miniapp/debts отдаёт уже готовую разбивку до камеры, мастер сам сворачивает её до
+ * уровня клиента/контейнера на шагах 0/1. */
+interface ClientCellDebt {
+  clientId: string;
   ownerType: OwnerType;
-  ownerKey: string;
   ownerLabel: string;
   containerId: string;
   containerName: string;
+  cellNumber: number;
   accrued: number;
   paid: number;
   balance: number;
-}
-
-interface ContainerRef {
-  id: string;
-  name: string;
-  cellCount?: number;
 }
 
 const money = (n: number) => Math.round(n).toLocaleString("ru-RU");
@@ -60,8 +58,14 @@ const METHODS: Array<{ value: Method; icon: typeof Banknote }> = [
 
 export default function AddIncomeWizard({ onExit }: { onExit: () => void }) {
   const { t } = useI18n();
-  const STEP_LABELS = [t("income.stepOwner"), t("income.stepContainer"), t("income.stepPayment"), t("income.stepReview")];
-  const STEP_ICONS = [UserRound, Boxes, Wallet, ClipboardCheck];
+  const STEP_LABELS = [
+    t("income.stepOwner"),
+    t("income.stepContainer"),
+    t("income.stepCell"),
+    t("income.stepPayment"),
+    t("income.stepReview"),
+  ];
+  const STEP_ICONS = [UserRound, Boxes, LayoutGrid, Wallet, ClipboardCheck];
   const METHOD_LABELS_SHORT: Record<string, string> = {
     cash: t("methodShort.cash"),
     card: t("methodShort.card"),
@@ -69,13 +73,12 @@ export default function AddIncomeWizard({ onExit }: { onExit: () => void }) {
     terminal: t("methodShort.terminal"),
   };
 
-  const [debts, setDebts] = useState<OwnerContainerDebt[]>([]);
-  const [containers, setContainers] = useState<ContainerRef[]>([]);
+  const [debts, setDebts] = useState<ClientCellDebt[]>([]);
   const [loadingDebts, setLoadingDebts] = useState(true);
   const [step, setStep] = useState(0);
-  const [ownerKey, setOwnerKey] = useState("");
+  const [clientId, setClientId] = useState("");
   const [containerId, setContainerId] = useState("");
-  const [cellNumber, setCellNumber] = useState("");
+  const [cellNumber, setCellNumber] = useState<number | null>(null);
   const [amount, setAmount] = useState("");
   const [method, setMethod] = useState<Method>("cash");
   const [paidAt, setPaidAt] = useState(todayInput());
@@ -87,21 +90,21 @@ export default function AddIncomeWizard({ onExit }: { onExit: () => void }) {
   const [history, setHistory] = useState<HistoryEvent[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
 
-  // Короткая история по этой связке владелец+контейнер — подгружается, как только сотрудник
-  // дошёл до шага "Оплата" (см. render step === 2 ниже), чтобы видеть контекст перед вводом
-  // суммы: что и когда уже было (см. GET /api/miniapp/clients/[ownerKey]/history).
+  // Короткая история по этой связке клиент+контейнер — подгружается, как только сотрудник
+  // дошёл до шага "Оплата" (см. render step === 3 ниже), чтобы видеть контекст перед вводом
+  // суммы: что и когда уже было (см. GET /api/miniapp/clients/[clientId]/history).
   useEffect(() => {
-    if (!ownerKey || !containerId) {
+    if (!clientId || !containerId) {
       setHistory([]);
       return;
     }
     setHistoryLoading(true);
-    miniAppFetch(`/api/miniapp/clients/${encodeURIComponent(ownerKey)}/history?containerId=${containerId}&limit=5`)
+    miniAppFetch(`/api/miniapp/clients/${encodeURIComponent(clientId)}/history?containerId=${containerId}&limit=5`)
       .then((r) => r.json())
       .then((d) => setHistory(d.events || []))
       .catch(() => setHistory([]))
       .finally(() => setHistoryLoading(false));
-  }, [ownerKey, containerId]);
+  }, [clientId, containerId]);
 
   useEffect(() => {
     miniAppFetch("/api/miniapp/debts")
@@ -117,36 +120,51 @@ export default function AddIncomeWizard({ onExit }: { onExit: () => void }) {
       })
       .catch(() => setLoadError(t("common.networkError")))
       .finally(() => setLoadingDebts(false));
-    // Нужно только для количества камер в выпадающем списке ниже (см. models/Container.ts::cellCount) —
-    // ошибку загрузки этого списка отдельно не показываем, дропдаун просто останется на 8 по умолчанию.
-    miniAppFetch("/api/miniapp/containers")
-      .then((r) => r.json())
-      .then((d) => setContainers(d.containers || []))
-      .catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const owners = useMemo(() => {
-    const map = new Map<string, { ownerKey: string; ownerType: OwnerType; ownerLabel: string }>();
+    const map = new Map<string, { clientId: string; ownerType: OwnerType; ownerLabel: string }>();
     for (const d of debts) {
-      if (!map.has(d.ownerKey)) {
-        map.set(d.ownerKey, { ownerKey: d.ownerKey, ownerType: d.ownerType, ownerLabel: d.ownerLabel });
+      if (!map.has(d.clientId)) {
+        map.set(d.clientId, { clientId: d.clientId, ownerType: d.ownerType, ownerLabel: d.ownerLabel });
       }
     }
     return Array.from(map.values()).sort((a, b) => a.ownerLabel.localeCompare(b.ownerLabel, "ru"));
   }, [debts]);
 
-  const containersForOwner = useMemo(
-    () => debts.filter((d) => d.ownerKey === ownerKey),
-    [debts, ownerKey]
+  // Контейнеры клиента — сворачиваем камеры суммой (д.balance/accrued/paid по камерам этого
+  // контейнера), чтобы шаг 1 выглядел как раньше ("выберите контейнер, вот долг по нему").
+  const containersForOwner = useMemo(() => {
+    const map = new Map<string, { containerId: string; containerName: string; accrued: number; paid: number; balance: number }>();
+    for (const d of debts) {
+      if (d.clientId !== clientId) continue;
+      const existing = map.get(d.containerId);
+      if (existing) {
+        existing.accrued += d.accrued;
+        existing.paid += d.paid;
+        existing.balance += d.balance;
+      } else {
+        map.set(d.containerId, { containerId: d.containerId, containerName: d.containerName, accrued: d.accrued, paid: d.paid, balance: d.balance });
+      }
+    }
+    return Array.from(map.values());
+  }, [debts, clientId]);
+
+  // Камеры клиента В ЭТОМ контейнере — только те, где у него реально есть записи (не 1..cellCount
+  // подряд), с собственным долгом на каждой (см. lib/debt.ts).
+  const cellsForOwnerContainer = useMemo(
+    () => debts.filter((d) => d.clientId === clientId && d.containerId === containerId).sort((a, b) => a.cellNumber - b.cellNumber),
+    [debts, clientId, containerId]
   );
 
-  const selectedOwner = owners.find((o) => o.ownerKey === ownerKey);
+  const selectedOwner = owners.find((o) => o.clientId === clientId);
+  const selectedContainer = containersForOwner.find((d) => d.containerId === containerId);
+  const selectedCellDebt = cellsForOwnerContainer.find((d) => d.cellNumber === cellNumber);
 
   // Нативная кнопка "Назад" Telegram зеркалит шаги мастера (см.
   // telegram.ts::useTelegramBackButton) — на экране "готово" её нет.
   useTelegramBackButton(savedScreen ? null : step === 0 ? onExit : back);
-  const selectedDebt = containersForOwner.find((d) => d.containerId === containerId);
 
   function fail(message: string) {
     haptic.error();
@@ -155,9 +173,10 @@ export default function AddIncomeWizard({ onExit }: { onExit: () => void }) {
 
   function next() {
     setError(null);
-    if (step === 0 && !ownerKey) return fail(t("income.selectOwner"));
+    if (step === 0 && !clientId) return fail(t("income.selectOwner"));
     if (step === 1 && !containerId) return fail(t("income.selectContainer"));
-    if (step === 2 && !amount) return fail(t("income.amountRequired"));
+    if (step === 2 && !cellNumber) return fail(t("income.selectCell"));
+    if (step === 3 && !amount) return fail(t("income.amountRequired"));
     haptic.selection();
     setStep((s) => s + 1);
   }
@@ -169,18 +188,16 @@ export default function AddIncomeWizard({ onExit }: { onExit: () => void }) {
   }
 
   async function handleSubmit() {
-    if (!selectedOwner) return;
+    if (!selectedOwner || !cellNumber) return;
     setBusy(true);
     setError(null);
     try {
       const res = await miniAppFetch("/api/miniapp/income", {
         method: "POST",
         body: JSON.stringify({
-          ownerType: selectedOwner.ownerType,
-          ownerKey: selectedOwner.ownerKey,
-          ownerLabel: selectedOwner.ownerLabel,
+          clientId: selectedOwner.clientId,
           containerId,
-          cellNumber: cellNumber || undefined,
+          cellNumber,
           amount,
           method,
           paidAt,
@@ -201,9 +218,9 @@ export default function AddIncomeWizard({ onExit }: { onExit: () => void }) {
   }
 
   function startAnother() {
-    setOwnerKey("");
+    setClientId("");
     setContainerId("");
-    setCellNumber("");
+    setCellNumber(null);
     setAmount("");
     setMethod("cash");
     setPaidAt(todayInput());
@@ -281,14 +298,15 @@ export default function AddIncomeWizard({ onExit }: { onExit: () => void }) {
           ) : (
             owners.map((o) => (
               <button
-                key={o.ownerKey}
+                key={o.clientId}
                 onClick={() => {
                   haptic.selection();
-                  setOwnerKey(o.ownerKey);
+                  setClientId(o.clientId);
                   setContainerId("");
+                  setCellNumber(null);
                 }}
                 className={`w-full text-left rounded-2xl border px-4 py-3.5 transition-colors ${
-                  ownerKey === o.ownerKey ? "border-brand-600 bg-brand-50" : "border-ink-200 bg-white hover:bg-ink-50"
+                  clientId === o.clientId ? "border-brand-600 bg-brand-50" : "border-ink-200 bg-white hover:bg-ink-50"
                 }`}
               >
                 <div className="flex items-center justify-between">
@@ -307,7 +325,7 @@ export default function AddIncomeWizard({ onExit }: { onExit: () => void }) {
                       </div>
                     </div>
                   </div>
-                  {ownerKey === o.ownerKey && <CheckCircle2 className="h-5 w-5 text-brand-600 shrink-0" strokeWidth={2} />}
+                  {clientId === o.clientId && <CheckCircle2 className="h-5 w-5 text-brand-600 shrink-0" strokeWidth={2} />}
                 </div>
               </button>
             ))
@@ -323,6 +341,7 @@ export default function AddIncomeWizard({ onExit }: { onExit: () => void }) {
               onClick={() => {
                 haptic.selection();
                 setContainerId(d.containerId);
+                setCellNumber(null);
               }}
               className={`w-full text-left rounded-2xl border px-4 py-3.5 transition-colors ${
                 containerId === d.containerId ? "border-brand-600 bg-brand-50" : "border-ink-200 bg-white hover:bg-ink-50"
@@ -347,12 +366,44 @@ export default function AddIncomeWizard({ onExit }: { onExit: () => void }) {
       )}
 
       {step === 2 && (
+        <div className="space-y-2">
+          <p className="text-xs text-ink-400 leading-relaxed mb-1">{t("income.selectCell")}</p>
+          {cellsForOwnerContainer.map((d) => (
+            <button
+              key={d.cellNumber}
+              onClick={() => {
+                haptic.selection();
+                setCellNumber(d.cellNumber);
+              }}
+              className={`w-full text-left rounded-2xl border px-4 py-3.5 transition-colors ${
+                cellNumber === d.cellNumber ? "border-brand-600 bg-brand-50" : "border-ink-200 bg-white hover:bg-ink-50"
+              }`}
+            >
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="font-medium text-ink-900">{t("income.cellOption", { n: d.cellNumber })}</div>
+                  <div className="text-xs mt-0.5">
+                    {d.balance > 0 ? (
+                      <span className="text-rose-600">{t("income.debtText", { amount: money(d.balance) })}</span>
+                    ) : (
+                      <span className="text-emerald-600">{t("income.noDebtText")}</span>
+                    )}
+                  </div>
+                </div>
+                {cellNumber === d.cellNumber && <CheckCircle2 className="h-5 w-5 text-brand-600 shrink-0" strokeWidth={2} />}
+              </div>
+            </button>
+          ))}
+        </div>
+      )}
+
+      {step === 3 && (
         <div className="space-y-3">
-          {selectedDebt && (
+          {selectedCellDebt && (
             <p className="text-xs text-ink-500 bg-ink-50 rounded-xl px-3.5 py-2.5 leading-relaxed">
-              {t("income.accruedPaidText", { accrued: money(selectedDebt.accrued), paid: money(selectedDebt.paid) })}{" "}
-              {selectedDebt.balance > 0 ? (
-                <span className="text-rose-600 font-medium">{t("income.debtText", { amount: money(selectedDebt.balance) })}</span>
+              {t("income.accruedPaidText", { accrued: money(selectedCellDebt.accrued), paid: money(selectedCellDebt.paid) })}{" "}
+              {selectedCellDebt.balance > 0 ? (
+                <span className="text-rose-600 font-medium">{t("income.debtText", { amount: money(selectedCellDebt.balance) })}</span>
               ) : (
                 <span className="text-emerald-600 font-medium">{t("income.noDebtText")}</span>
               )}
@@ -397,19 +448,6 @@ export default function AddIncomeWizard({ onExit }: { onExit: () => void }) {
             />
           </div>
           <div>
-            <label className="label">{t("income.cellOptionalLabel")}</label>
-            <select className="input" value={cellNumber} onChange={(e) => setCellNumber(e.target.value)}>
-              <option value="">{t("income.wholeContainer")}</option>
-              {cellNumbersForCount(containers.find((c) => c.id === containerId)?.cellCount || DEFAULT_CELL_COUNT).map(
-                (n) => (
-                  <option key={n} value={n}>
-                    {t("income.cellOption", { n })}
-                  </option>
-                )
-              )}
-            </select>
-          </div>
-          <div>
             <label className="label">{t("income.paymentMethodLabel")}</label>
             <div className="flex gap-2">
               {METHODS.map((m) => (
@@ -438,10 +476,11 @@ export default function AddIncomeWizard({ onExit }: { onExit: () => void }) {
         </div>
       )}
 
-      {step === 3 && (
+      {step === 4 && (
         <div className="card space-y-0 text-sm">
           <Row label={t("income.reviewOwner")} value={selectedOwner?.ownerLabel} />
-          <Row label={t("income.reviewContainer")} value={selectedDebt?.containerName} />
+          <Row label={t("income.reviewContainer")} value={selectedContainer?.containerName} />
+          <Row label={t("income.reviewCell")} value={cellNumber ? t("income.cellOption", { n: cellNumber }) : undefined} />
           <Row label={t("income.reviewAmount")} value={`${money(Number(amount) || 0)} ${t("common.sum")}`} />
           <Row label={t("income.reviewMethod")} value={t(`method.${method}`)} />
           <Row label={t("income.reviewDate")} value={new Date(paidAt).toLocaleDateString("ru-RU")} />

@@ -16,7 +16,7 @@ interface ContainerRef {
 }
 
 interface Occupant {
-  ownerKey: string;
+  clientId: string;
   ownerLabel: string;
   ownerType: OwnerType;
   productSummary: string;
@@ -41,7 +41,7 @@ export default function InventoryDisposalsScreen({ onExit }: { onExit: () => voi
   const [cells, setCells] = useState<CellGridCell[]>([]);
   const [cellsLoading, setCellsLoading] = useState(false);
   const [cellNumber, setCellNumber] = useState<number | null>(null);
-  const [owner, setOwner] = useState<{ ownerKey: string; ownerLabel: string; ownerType: OwnerType } | null>(null);
+  const [owner, setOwner] = useState<{ clientId: string; ownerLabel: string; ownerType: OwnerType } | null>(null);
 
   useEffect(() => {
     miniAppFetch("/api/miniapp/containers")
@@ -87,7 +87,7 @@ export default function InventoryDisposalsScreen({ onExit }: { onExit: () => voi
               const Icon = o.ownerType === "individual" ? UserRound : Building2;
               return (
                 <button
-                  key={o.ownerKey}
+                  key={o.clientId}
                   onClick={() => {
                     haptic.selection();
                     setOwner(o);

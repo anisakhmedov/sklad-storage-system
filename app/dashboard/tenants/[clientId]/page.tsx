@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { ArrowLeft, Download, UserRound, Building2, TriangleAlert, Pencil, X, AlertCircle } from "lucide-react";
 
 type OwnerType = "individual" | "company";
@@ -52,7 +51,7 @@ interface DebtRow {
 }
 
 interface Detail {
-  ownerKey: string;
+  clientId: string;
   ownerType: OwnerType;
   profile: GoodsOwner;
   telegram: { telegramId: string; linkedAt: string } | null;
@@ -88,8 +87,7 @@ const HISTORY_KIND_LABELS: Record<string, { label: string; tone: string }> = {
 };
 const money = (n: number) => Math.round(n).toLocaleString("ru-RU");
 
-export default function TenantDetailPage({ params }: { params: { ownerKey: string } }) {
-  const router = useRouter();
+export default function TenantDetailPage({ params }: { params: { clientId: string } }) {
   const [detail, setDetail] = useState<Detail | null>(null);
   const [history, setHistory] = useState<HistoryEvent[]>([]);
   const [historyLoading, setHistoryLoading] = useState(true);
@@ -97,9 +95,9 @@ export default function TenantDetailPage({ params }: { params: { ownerKey: strin
   const [error, setError] = useState<string | null>(null);
   const [editingProfile, setEditingProfile] = useState(false);
 
-  useEffect(() => {
+  function loadDetail() {
     setLoading(true);
-    fetch(`/api/tenants/${encodeURIComponent(params.ownerKey)}`)
+    fetch(`/api/tenants/${encodeURIComponent(params.clientId)}`)
       .then(async (r) => {
         const d = await r.json().catch(() => ({}));
         if (!r.ok) {
@@ -110,14 +108,19 @@ export default function TenantDetailPage({ params }: { params: { ownerKey: strin
       })
       .catch(() => setError("Не удалось связаться с сервером"))
       .finally(() => setLoading(false));
+  }
+
+  useEffect(() => {
+    loadDetail();
 
     setHistoryLoading(true);
-    fetch(`/api/tenants/${encodeURIComponent(params.ownerKey)}/history`)
+    fetch(`/api/tenants/${encodeURIComponent(params.clientId)}/history`)
       .then((r) => r.json())
       .then((d) => setHistory(d.events || []))
       .catch(() => {})
       .finally(() => setHistoryLoading(false));
-  }, [params.ownerKey]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [params.clientId]);
 
   if (loading) {
     return (
@@ -159,7 +162,7 @@ export default function TenantDetailPage({ params }: { params: { ownerKey: strin
             <p className="text-sm text-ink-400">{detail.ownerType === "individual" ? "Физическое лицо" : "Юридическое лицо"}</p>
           </div>
         </div>
-        <a href={`/api/tenants/${encodeURIComponent(params.ownerKey)}/export`} className="btn-primary">
+        <a href={`/api/tenants/${encodeURIComponent(params.clientId)}/export`} className="btn-primary">
           <Download className="h-4 w-4" strokeWidth={2.1} />
           Скачать Excel
         </a>
@@ -383,20 +386,12 @@ export default function TenantDetailPage({ params }: { params: { ownerKey: strin
 
       {editingProfile && (
         <TenantProfileEditModal
-          ownerKey={params.ownerKey}
+          clientId={params.clientId}
           profile={detail.profile}
           onClose={() => setEditingProfile(false)}
-          onSaved={(newOwnerKey) => {
+          onSaved={() => {
             setEditingProfile(false);
-            if (newOwnerKey && newOwnerKey !== params.ownerKey) {
-              // Телефон/ИНН изменился — ownerKey (и URL этой страницы) устарел.
-              router.replace(`/dashboard/tenants/${encodeURIComponent(newOwnerKey)}`);
-            } else {
-              router.refresh();
-              fetch(`/api/tenants/${encodeURIComponent(params.ownerKey)}`)
-                .then((r) => r.json())
-                .then((d) => setDetail(d.detail));
-            }
+            loadDetail();
           }}
         />
       )}
@@ -405,20 +400,20 @@ export default function TenantDetailPage({ params }: { params: { ownerKey: strin
 }
 
 /**
- * Правка карточки арендатора — применяется КО ВСЕМ его записям разом (см.
- * app/api/tenants/[ownerKey]/route.ts). Тип (физ./юр. лицо) не редактируется здесь — он задан
+ * Правка карточки арендатора — теперь правит ОДИН документ Client (models/Client.ts), см.
+ * app/api/tenants/[clientId]/route.ts. Тип (физ./юр. лицо) не редактируется здесь — он задан
  * профилем, который уже есть.
  */
 function TenantProfileEditModal({
-  ownerKey,
+  clientId,
   profile,
   onClose,
   onSaved,
 }: {
-  ownerKey: string;
+  clientId: string;
   profile: GoodsOwner;
   onClose: () => void;
-  onSaved: (newOwnerKey?: string) => void;
+  onSaved: () => void;
 }) {
   const [form, setForm] = useState<GoodsOwner>(profile);
   const [error, setError] = useState<string | null>(null);
@@ -429,7 +424,7 @@ function TenantProfileEditModal({
     setError(null);
     setBusy(true);
     try {
-      const res = await fetch(`/api/tenants/${encodeURIComponent(ownerKey)}`, {
+      const res = await fetch(`/api/tenants/${encodeURIComponent(clientId)}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(form),
@@ -439,7 +434,7 @@ function TenantProfileEditModal({
         setError(data.error || "Ошибка сохранения");
         return;
       }
-      onSaved(data.newOwnerKey);
+      onSaved();
     } finally {
       setBusy(false);
     }
@@ -455,7 +450,8 @@ function TenantProfileEditModal({
           </button>
         </div>
         <p className="text-xs text-ink-400 mb-3">
-          Изменения применятся ко всем записям этого арендатора (все контейнеры/камеры).
+          Правится карточка этого клиента целиком (см. «Клиенты» в базе) — печатные снимки уже
+          выданных документов не меняются задним числом.
         </p>
         <form onSubmit={handleSubmit} className="space-y-3">
           {form.type === "individual" ? (

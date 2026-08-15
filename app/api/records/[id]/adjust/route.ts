@@ -60,6 +60,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   const act = await createAndSaveAct({
     kind: delta > 0 ? "goods_given" : "goods_returned",
     recordId: String(record._id),
+    clientId: String(record.clientId),
     ownerKey: ownerKeyOf(record.goodsOwner),
     ownerLabel: fillData.ownerLabel,
     ownerType: record.goodsOwner.type,

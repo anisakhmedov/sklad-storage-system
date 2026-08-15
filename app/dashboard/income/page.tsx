@@ -37,12 +37,13 @@ interface DebtRecordBreakdown {
   accrued: number;
 }
 
-interface OwnerContainerDebt {
+interface ClientCellDebt {
   ownerType: OwnerType;
-  ownerKey: string;
+  clientId: string;
   ownerLabel: string;
   containerId: string;
   containerName: string;
+  cellNumber: number;
   since: string;
   to: string;
   accrued: number;
@@ -54,7 +55,7 @@ interface OwnerContainerDebt {
 interface IncomeEntry {
   _id: string;
   ownerType: OwnerType;
-  ownerKey: string;
+  clientId: string | null;
   ownerLabel: string;
   containerId: { _id: string; name: string } | string | null;
   cellNumber?: number;
@@ -144,7 +145,7 @@ const todayInput = () => new Date().toISOString().slice(0, 10);
 
 export default function IncomePage() {
   const [toDate, setToDate] = useState(todayInput());
-  const [debts, setDebts] = useState<OwnerContainerDebt[]>([]);
+  const [debts, setDebts] = useState<ClientCellDebt[]>([]);
   const [incomes, setIncomes] = useState<IncomeEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [debtsError, setDebtsError] = useState<string | null>(null);
@@ -613,7 +614,7 @@ export default function IncomePage() {
         </div>
       </div>
 
-      <PaymentForm debts={debts} containers={containers} onSaved={refreshAll} />
+      <PaymentForm debts={debts} onSaved={refreshAll} />
 
       <div className="card mb-6 mt-6">
         <div className="flex flex-wrap items-end justify-between gap-3 mb-4">
@@ -682,6 +683,7 @@ export default function IncomePage() {
                     <th>Владелец</th>
                     <th>Тип</th>
                     <th>Контейнер</th>
+                    <th>Камера</th>
                     <th>С даты</th>
                     <th>Начислено</th>
                     <th>Оплачено</th>
@@ -691,7 +693,7 @@ export default function IncomePage() {
                 </thead>
                 <tbody>
                   {filteredDebts.map((d) => {
-                    const key = `${d.ownerKey}::${d.containerId}`;
+                    const key = `${d.clientId}::${d.containerId}::${d.cellNumber}`;
                     const isOpen = expanded === key;
                     return (
                       <Fragment key={key}>
@@ -701,7 +703,7 @@ export default function IncomePage() {
                         >
                           <td className="font-medium text-ink-800">
                             <Link
-                              href={`/dashboard/tenants/${encodeURIComponent(d.ownerKey)}`}
+                              href={`/dashboard/tenants/${encodeURIComponent(d.clientId)}`}
                               onClick={(e) => e.stopPropagation()}
                               className="hover:text-brand-600"
                             >
@@ -720,6 +722,7 @@ export default function IncomePage() {
                             </span>
                           </td>
                           <td>{d.containerName}</td>
+                          <td className="text-ink-600">{d.cellNumber}</td>
                           <td className="whitespace-nowrap">
                             {new Date(d.since).toLocaleDateString("ru-RU")}
                           </td>
@@ -752,7 +755,7 @@ export default function IncomePage() {
                         </tr>
                         {isOpen && (
                           <tr>
-                            <td colSpan={8} className="bg-ink-50/70">
+                            <td colSpan={9} className="bg-ink-50/70">
                               <div className="text-xs text-ink-600 py-2.5 space-y-1.5">
                                 {d.records.map((r) => (
                                   <div key={r.recordId} className="flex justify-between gap-4">
@@ -909,7 +912,7 @@ export default function IncomePage() {
                         </span>
                       ) : (
                         <Link
-                          href={`/dashboard/tenants/${encodeURIComponent(inc.ownerKey)}`}
+                          href={`/dashboard/tenants/${encodeURIComponent(inc.clientId || "")}`}
                           className="hover:text-brand-600"
                         >
                           {inc.ownerLabel}
@@ -1032,24 +1035,22 @@ export default function IncomePage() {
 
 function PaymentForm({
   debts,
-  containers,
   onSaved,
 }: {
-  debts: OwnerContainerDebt[];
-  containers: ContainerRef[];
+  debts: ClientCellDebt[];
   onSaved: () => void;
 }) {
   const owners = useMemo(() => {
-    const map = new Map<string, { ownerKey: string; ownerType: OwnerType; ownerLabel: string }>();
+    const map = new Map<string, { clientId: string; ownerType: OwnerType; ownerLabel: string }>();
     for (const d of debts) {
-      if (!map.has(d.ownerKey)) {
-        map.set(d.ownerKey, { ownerKey: d.ownerKey, ownerType: d.ownerType, ownerLabel: d.ownerLabel });
+      if (!map.has(d.clientId)) {
+        map.set(d.clientId, { clientId: d.clientId, ownerType: d.ownerType, ownerLabel: d.ownerLabel });
       }
     }
     return Array.from(map.values()).sort((a, b) => a.ownerLabel.localeCompare(b.ownerLabel, "ru"));
   }, [debts]);
 
-  const [ownerKey, setOwnerKey] = useState("");
+  const [clientId, setClientId] = useState("");
   const [containerId, setContainerId] = useState("");
   const [cellNumber, setCellNumber] = useState("");
   const [amount, setAmount] = useState("");
@@ -1059,19 +1060,34 @@ function PaymentForm({
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
-  const containersForOwner = useMemo(
-    () => debts.filter((d) => d.ownerKey === ownerKey),
-    [debts, ownerKey]
+  // Контейнеры клиента — свёрнуты суммой по камерам (см. lib/debt.ts::ClientCellDebt), чтобы
+  // выпадающий список выглядел как раньше ("контейнер — долг по нему целиком").
+  const containersForOwner = useMemo(() => {
+    const map = new Map<string, { containerId: string; containerName: string; balance: number }>();
+    for (const d of debts) {
+      if (d.clientId !== clientId) continue;
+      const existing = map.get(d.containerId);
+      if (existing) existing.balance += d.balance;
+      else map.set(d.containerId, { containerId: d.containerId, containerName: d.containerName, balance: d.balance });
+    }
+    return Array.from(map.values());
+  }, [debts, clientId]);
+
+  // Камеры клиента В ЭТОМ контейнере — только те, где у него реально есть записи (см.
+  // lib/validation.ts::incomeCreateSchema — камера теперь обязательна).
+  const cellsForOwnerContainer = useMemo(
+    () => debts.filter((d) => d.clientId === clientId && d.containerId === containerId).sort((a, b) => a.cellNumber - b.cellNumber),
+    [debts, clientId, containerId]
   );
 
-  const selectedDebt = containersForOwner.find((d) => d.containerId === containerId);
+  const selectedDebt = cellsForOwnerContainer.find((d) => d.cellNumber === Number(cellNumber));
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
-    const owner = owners.find((o) => o.ownerKey === ownerKey);
-    if (!owner || !containerId) {
-      setError("Выберите владельца и контейнер");
+    const owner = owners.find((o) => o.clientId === clientId);
+    if (!owner || !containerId || !cellNumber) {
+      setError("Выберите владельца, контейнер и камеру");
       return;
     }
     setBusy(true);
@@ -1080,11 +1096,9 @@ function PaymentForm({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          ownerType: owner.ownerType,
-          ownerKey: owner.ownerKey,
-          ownerLabel: owner.ownerLabel,
+          clientId: owner.clientId,
           containerId,
-          cellNumber: cellNumber || undefined,
+          cellNumber,
           amount,
           method,
           paidAt,
@@ -1125,15 +1139,16 @@ function PaymentForm({
               <label className="label">Владелец груза</label>
               <select
                 className="input"
-                value={ownerKey}
+                value={clientId}
                 onChange={(e) => {
-                  setOwnerKey(e.target.value);
+                  setClientId(e.target.value);
                   setContainerId("");
+                  setCellNumber("");
                 }}
               >
                 <option value="">Выберите владельца</option>
                 {owners.map((o) => (
-                  <option key={o.ownerKey} value={o.ownerKey}>
+                  <option key={o.clientId} value={o.clientId}>
                     {o.ownerLabel} ({o.ownerType === "individual" ? "физ." : "юр."})
                   </option>
                 ))}
@@ -1144,8 +1159,11 @@ function PaymentForm({
               <select
                 className="input"
                 value={containerId}
-                onChange={(e) => setContainerId(e.target.value)}
-                disabled={!ownerKey}
+                onChange={(e) => {
+                  setContainerId(e.target.value);
+                  setCellNumber("");
+                }}
+                disabled={!clientId}
               >
                 <option value="">Выберите контейнер</option>
                 {containersForOwner.map((d) => (
@@ -1158,9 +1176,27 @@ function PaymentForm({
             </div>
           </div>
 
+          <div>
+            <label className="label">Камера — за какую именно платит клиент</label>
+            <select
+              className="input"
+              value={cellNumber}
+              onChange={(e) => setCellNumber(e.target.value)}
+              disabled={!containerId}
+            >
+              <option value="">Выберите камеру</option>
+              {cellsForOwnerContainer.map((d) => (
+                <option key={d.cellNumber} value={d.cellNumber}>
+                  Камера {d.cellNumber}
+                  {d.balance > 0 ? ` — долг ${money(d.balance)} сум` : " — задолженности нет"}
+                </option>
+              ))}
+            </select>
+          </div>
+
           {selectedDebt && (
             <p className="text-xs text-ink-500 bg-ink-50 rounded-lg px-3 py-2">
-              Текущий остаток по этой связке: начислено {money(selectedDebt.accrued)} сум, оплачено{" "}
+              Текущий остаток по этой камере: начислено {money(selectedDebt.accrued)} сум, оплачено{" "}
               {money(selectedDebt.paid)} сум,{" "}
               {selectedDebt.balance > 0 ? (
                 <span className="text-rose-600 font-medium">долг {money(selectedDebt.balance)} сум</span>
@@ -1184,19 +1220,6 @@ function PaymentForm({
               />
             </div>
             <div>
-              <label className="label">Камера (необязательно)</label>
-              <select className="input" value={cellNumber} onChange={(e) => setCellNumber(e.target.value)}>
-                <option value="">За контейнер в целом</option>
-                {cellNumbersForCount(containers.find((c) => c._id === containerId)?.cellCount || DEFAULT_CELL_COUNT).map((n) => (
-                  <option key={n} value={n}>
-                    Камера {n}
-                  </option>
-                ))}
-              </select>
-            </div>
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div>
               <label className="label">Способ оплаты</label>
               <select className="input" value={method} onChange={(e) => setMethod(e.target.value)}>
                 {SELECTABLE_METHODS.map((m) => (
@@ -1206,6 +1229,8 @@ function PaymentForm({
                 ))}
               </select>
             </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="label">Дата оплаты</label>
               <input
@@ -1215,10 +1240,10 @@ function PaymentForm({
                 onChange={(e) => setPaidAt(e.target.value)}
               />
             </div>
-          </div>
-          <div>
-            <label className="label">Примечание</label>
-            <input className="input" value={note} onChange={(e) => setNote(e.target.value)} />
+            <div>
+              <label className="label">Примечание</label>
+              <input className="input" value={note} onChange={(e) => setNote(e.target.value)} />
+            </div>
           </div>
 
           {error && (
@@ -1493,8 +1518,8 @@ function GeneralIncomeModal({ onClose, onSaved }: { onClose: () => void; onSaved
 
 /**
  * Полное редактирование уже внесённого платежа — раньше платёж можно было только создать.
- * Доступно независимо от способа оплаты (см. app/api/income/[id]/route.ts). ownerKey/ownerType
- * не редактируются здесь — это идентификатор арендатора (см. lib/ownerKey.ts), для исправления
+ * Доступно независимо от способа оплаты (см. app/api/income/[id]/route.ts). clientId не
+ * редактируется здесь — это идентификатор арендатора (см. models/Client.ts), для исправления
  * ФИО/ИНН/паспорта и т.п. служит редактирование карточки на странице "Арендаторы".
  */
 function IncomeEditModal({
@@ -1534,7 +1559,10 @@ function IncomeEditModal({
         body: JSON.stringify({
           ownerLabel,
           containerId,
-          cellNumber: cellNumber ? Number(cellNumber) : null,
+          // Камера обязательна у новых платежей (см. lib/validation.ts::incomeCreateSchema), но
+          // "снять" её при редактировании больше нельзя — не отправляем поле вовсе, если оно не
+          // выбрано (undefined = "не менять"), чтобы не наткнуться на отказ схемы.
+          ...(cellNumber ? { cellNumber: Number(cellNumber) } : {}),
           amount,
           method,
           paidAt,
@@ -1588,9 +1616,9 @@ function IncomeEditModal({
               </select>
             </div>
             <div>
-              <label className="label">Камера (необязательно)</label>
+              <label className="label">Камера</label>
               <select className="input" value={cellNumber} onChange={(e) => setCellNumber(e.target.value)}>
-                <option value="">За контейнер в целом</option>
+                <option value="">{income.cellNumber ? "—" : "Не указана (можно проставить)"}</option>
                 {cellOptions.map((n) => (
                   <option key={n} value={n}>
                     Камера {n}

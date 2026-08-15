@@ -3,12 +3,14 @@ import { connectDB } from "@/lib/db";
 import { InventoryLedgerEntry } from "@/models/InventoryLedgerEntry";
 import { InventoryItem } from "@/models/InventoryItem";
 import { Container } from "@/models/Container";
+import { Client } from "@/models/Client";
 import { requireWebUser } from "@/lib/auth";
 import { jsonError, zodErrorResponse } from "@/lib/apiHelpers";
 import { inventoryLedgerEntryCreateSchema } from "@/lib/validation";
 import { logAudit } from "@/lib/audit";
 import { getOutstandingByAllItems, itemAvailability, getInventoryOutstandingForOwner } from "@/lib/inventoryLedger";
 import { createAndSaveAct } from "@/lib/contract/actPersistence";
+import { denormalizeOwner } from "@/lib/ownerKey";
 
 /**
  * Приход/уход инвентаря по каждому контейнеру и камере — страница app/dashboard/inventory.
@@ -50,12 +52,14 @@ export async function POST(req: NextRequest) {
   if (!parsed.success) return zodErrorResponse(parsed.error);
 
   await connectDB();
-  const [container, item] = await Promise.all([
+  const [container, item, client] = await Promise.all([
     Container.findById(parsed.data.containerId),
     InventoryItem.findById(parsed.data.itemId),
+    Client.findById(parsed.data.clientId),
   ]);
   if (!container) return jsonError("Контейнер не найден", 404);
   if (!item) return jsonError("Позиция инвентаря не найдена", 404);
+  if (!client) return jsonError("Клиент не найден", 404);
   if (item.containerId && String(item.containerId) !== parsed.data.containerId) {
     return jsonError("Эта позиция принадлежит другому контейнеру", 400);
   }
@@ -68,7 +72,7 @@ export async function POST(req: NextRequest) {
     }
   } else {
     const ownerOutstanding = await getInventoryOutstandingForOwner(
-      parsed.data.ownerKey,
+      parsed.data.clientId,
       String(item._id),
       parsed.data.containerId
     );
@@ -80,9 +84,8 @@ export async function POST(req: NextRequest) {
   const entry = await InventoryLedgerEntry.create({
     itemId: item._id,
     itemName: item.name,
-    ownerKey: parsed.data.ownerKey,
-    ownerType: parsed.data.ownerType,
-    ownerLabel: parsed.data.ownerLabel,
+    clientId: client._id,
+    ...denormalizeOwner(client.profile),
     containerId: parsed.data.containerId,
     cellNumber: parsed.data.cellNumber,
     direction: parsed.data.direction,
@@ -98,8 +101,7 @@ export async function POST(req: NextRequest) {
     actorId: user.identifier,
     actorRole: user.role,
     changes: {
-      itemId: String(entry.itemId),
-      ownerKey: entry.ownerKey,
+      clientId: String(entry.clientId),
       containerId: String(entry.containerId),
       direction: entry.direction,
       quantity: entry.quantity,
@@ -108,6 +110,7 @@ export async function POST(req: NextRequest) {
 
   const act = await createAndSaveAct({
     kind: entry.direction === "given" ? "inventory_given" : "inventory_returned",
+    clientId: String(entry.clientId),
     ownerKey: entry.ownerKey,
     ownerLabel: entry.ownerLabel,
     ownerType: entry.ownerType,

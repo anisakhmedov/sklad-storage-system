@@ -5,8 +5,7 @@ import { Container } from "@/models/Container";
 import { Income } from "@/models/Income";
 import { Types } from "mongoose";
 import { PAYMENT_METHOD_LABELS } from "./labels";
-import { ownerKeyForPhone, parseOwnerKey } from "./ownerKey";
-import { getDebtsForOwner } from "./debt";
+import { getDebtsForClient } from "./debt";
 
 export { PAYMENT_METHOD_LABELS };
 
@@ -184,43 +183,75 @@ export interface GoodsOwnerSummary {
 }
 
 /**
- * Агрегирует все StorageRecord физлица с данным (уже нормализованным) телефоном —
- * список товаров по контейнерам плюс начисление/оплата/задолженность на сегодня
- * (см. lib/debt.ts). Используется для сводки в боте (см. lib/telegramBot.ts).
- * Обёртка над getOwnerSummaryByKey — сохраняет исходную сигнатуру для существующего вызова.
+ * Агрегирует ВСЕ StorageRecord физлиц с данным (уже нормализованным) телефоном — список
+ * товаров по контейнерам плюс начисление/оплата/задолженность на сегодня (см. lib/debt.ts).
+ * Используется для сводки в боте (см. lib/telegramBot.ts).
+ *
+ * Телефон — не идентификатор клиента (см. models/Client.ts): в принципе несколько РАЗНЫХ
+ * клиентов могут иметь один телефон. Telegram при "поделиться контактом" даёт только номер, без
+ * возможности узнать, кто из них пишет — поэтому здесь (и только здесь) сознательно
+ * агрегируется по телефону, суммируя долг/оплаты всех клиентов с этим номером, как и раньше.
  */
 export async function getGoodsOwnerSummary(phone: string): Promise<GoodsOwnerSummary> {
-  const summary = await getOwnerSummaryByKey(ownerKeyForPhone(phone));
-  return (
-    summary || {
-      recordCount: 0,
-      containers: [],
-      totalAccrued: 0,
-      totalPaid: 0,
-      totalBalance: 0,
-      to: new Date(),
-    }
+  await connectDB();
+  const records = await StorageRecord.find({ "goodsOwner.type": "individual", "goodsOwner.phone": phone })
+    .select("clientId")
+    .lean();
+  const clientIds = Array.from(new Set(records.map((r) => String(r.clientId))));
+
+  const empty: GoodsOwnerSummary = { recordCount: 0, containers: [], totalAccrued: 0, totalPaid: 0, totalBalance: 0, to: new Date() };
+  if (clientIds.length === 0) return empty;
+
+  const summaries = (await Promise.all(clientIds.map((id) => getClientSummary(id)))).filter(
+    (s): s is GoodsOwnerSummary => s !== null
   );
+  if (summaries.length === 1) return summaries[0];
+
+  // Несколько клиентов с одним телефоном — сливаем построчно по контейнеру (Telegram не может
+  // отличить, кто из них пишет, см. комментарий выше).
+  const containerMap = new Map<string, GoodsOwnerSummaryContainer>();
+  for (const s of summaries) {
+    for (const c of s.containers) {
+      const existing = containerMap.get(c.containerId);
+      if (existing) {
+        existing.items.push(...c.items);
+        existing.accrued += c.accrued;
+        existing.paid += c.paid;
+        existing.balance += c.balance;
+        if (c.lastDate > existing.lastDate) existing.lastDate = c.lastDate;
+        if (c.since < existing.since) existing.since = c.since;
+      } else {
+        containerMap.set(c.containerId, { ...c, items: [...c.items] });
+      }
+    }
+  }
+  const containers = Array.from(containerMap.values());
+  const totalAccrued = containers.reduce((sum, c) => sum + c.accrued, 0);
+  const totalPaid = containers.reduce((sum, c) => sum + c.paid, 0);
+  return {
+    recordCount: summaries.reduce((sum, s) => sum + s.recordCount, 0),
+    containers,
+    totalAccrued,
+    totalPaid,
+    totalBalance: totalAccrued - totalPaid,
+    to: new Date(),
+  };
 }
 
 /**
- * Обобщённая версия getGoodsOwnerSummary — принимает ownerKey (физлицо ИЛИ юрлицо, см.
- * lib/ownerKey.ts) и опционально сужает выборку до определённых контейнеров (для Mini App,
- * где сотрудник видит только свои контейнеры, см. lib/miniAuth.ts::allowedContainerIds).
- * Используется разделом «Клиенты» в Mini App и «Арендаторы» на веб-панели.
+ * Сводка по одному клиенту (models/Client.ts) — опционально сужает выборку до определённых
+ * контейнеров (для Mini App, где сотрудник видит только свои контейнеры, см.
+ * lib/miniAuth.ts::allowedContainerIds). Используется разделом «Клиенты» в Mini App и
+ * «Арендаторы» на веб-панели.
  */
-export async function getOwnerSummaryByKey(
-  ownerKey: string,
+export async function getClientSummary(
+  clientId: string,
   opts: { containerIds?: string[] } = {}
 ): Promise<GoodsOwnerSummary | null> {
-  const parsed = parseOwnerKey(ownerKey);
-  if (!parsed) return null;
+  if (!Types.ObjectId.isValid(clientId)) return null;
   await connectDB();
 
-  const recordFilter: Record<string, unknown> =
-    parsed.type === "individual"
-      ? { "goodsOwner.type": "individual", "goodsOwner.phone": parsed.value }
-      : { "goodsOwner.type": "company", "goodsOwner.inn": parsed.value };
+  const recordFilter: Record<string, unknown> = { clientId };
   if (opts.containerIds) recordFilter.containerId = { $in: opts.containerIds };
 
   const to = new Date();
@@ -229,7 +260,7 @@ export async function getOwnerSummaryByKey(
       .sort({ createdAt: -1 })
       .populate<{ containerId: { _id: Types.ObjectId; name: string } }>("containerId", "name")
       .lean(),
-    getDebtsForOwner(ownerKey, to, opts.containerIds),
+    getDebtsForClient(clientId, to, opts.containerIds),
   ]);
 
   const debtByContainer = new Map(debts.map((d) => [d.containerId, d]));

@@ -21,6 +21,8 @@ export interface IAct {
   actNumber: string; // "12-2026", см. lib/counter.ts::getNextSequence(`act:${year}`)
   kind: ActKind;
   recordId?: Types.ObjectId;
+  /** Ключ агрегации (models/Client.ts) — см. пояснение в models/Income.ts. */
+  clientId: Types.ObjectId;
   ownerKey: string;
   ownerLabel: string;
   ownerType: GoodsOwnerType;
@@ -45,6 +47,7 @@ const ActSchema = new Schema<IAct>({
     required: true,
   },
   recordId: { type: Schema.Types.ObjectId, ref: "StorageRecord" },
+  clientId: { type: Schema.Types.ObjectId, ref: "Client", required: true, index: true },
   ownerKey: { type: String, required: true, index: true },
   ownerLabel: { type: String, required: true, trim: true },
   ownerType: { type: String, enum: ["individual", "company"], required: true },
@@ -63,6 +66,6 @@ const ActSchema = new Schema<IAct>({
 
 // Кнопка "Акты" на записи (по recordId) и общий список по клиенту+контейнеру (инвентарь).
 ActSchema.index({ recordId: 1 });
-ActSchema.index({ ownerKey: 1, containerId: 1 });
+ActSchema.index({ clientId: 1, containerId: 1 });
 
 export const Act: Model<IAct> = models.Act || model<IAct>("Act", ActSchema);

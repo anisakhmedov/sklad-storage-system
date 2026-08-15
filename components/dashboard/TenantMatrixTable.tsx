@@ -22,7 +22,7 @@ interface GoodsCell {
 }
 
 interface TenantMatrixRow {
-  ownerKey: string;
+  clientId: string;
   ownerType: OwnerType;
   ownerLabel: string;
   balance: number;
@@ -77,7 +77,7 @@ type EditTarget =
   | {
       kind: "payment";
       ownerType: OwnerType;
-      ownerKey: string;
+      clientId: string;
       ownerLabel: string;
       containerId: string;
       containerName: string;
@@ -86,7 +86,7 @@ type EditTarget =
   | {
       kind: "inventory";
       ownerType: OwnerType;
-      ownerKey: string;
+      clientId: string;
       ownerLabel: string;
       containerId: string;
       containerName: string;
@@ -264,10 +264,10 @@ export default function TenantMatrixTable({ isOwner, containerId }: { isOwner: b
                     </thead>
                     <tbody>
                       {cell.rows.map((row, idx) => (
-                        <tr key={row.ownerKey}>
+                        <tr key={row.clientId}>
                           <td className="text-ink-400">{idx + 1}</td>
                           <td className="font-medium text-ink-800 whitespace-nowrap">
-                            <Link href={`/dashboard/tenants/${encodeURIComponent(row.ownerKey)}`} className="hover:text-brand-600">
+                            <Link href={`/dashboard/tenants/${encodeURIComponent(row.clientId)}`} className="hover:text-brand-600">
                               {row.ownerLabel}
                             </Link>
                           </td>
@@ -282,7 +282,7 @@ export default function TenantMatrixTable({ isOwner, containerId }: { isOwner: b
                                 setEditing({
                                   kind: "payment",
                                   ownerType: row.ownerType,
-                                  ownerKey: row.ownerKey,
+                                  clientId: row.clientId,
                                   ownerLabel: row.ownerLabel,
                                   containerId: section.containerId,
                                   containerName: section.containerName,
@@ -326,7 +326,7 @@ export default function TenantMatrixTable({ isOwner, containerId }: { isOwner: b
                                   setEditing({
                                     kind: "inventory",
                                     ownerType: row.ownerType,
-                                    ownerKey: row.ownerKey,
+                                    clientId: row.clientId,
                                     ownerLabel: row.ownerLabel,
                                     containerId: section.containerId,
                                     containerName: section.containerName,
@@ -608,9 +608,7 @@ function PaymentForm({
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            ownerType: target.ownerType,
-            ownerKey: target.ownerKey,
-            ownerLabel: target.ownerLabel,
+            clientId: target.clientId,
             containerId: target.containerId,
             cellNumber: target.cellNumber,
             amount,
@@ -700,9 +698,7 @@ function InventoryForm({
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             itemId: item._id,
-            ownerType: target.ownerType,
-            ownerKey: target.ownerKey,
-            ownerLabel: target.ownerLabel,
+            clientId: target.clientId,
             containerId: target.containerId,
             cellNumber: target.cellNumber,
             direction,

@@ -1,13 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireWebUser } from "@/lib/auth";
 import { jsonError } from "@/lib/apiHelpers";
-import { getAllOwnerContainerDebts } from "@/lib/debt";
+import { getAllClientCellDebts } from "@/lib/debt";
 
 /**
- * Задолженность по всем связкам «владелец + контейнер» на дату `to` (по умолчанию —
- * сегодня). Тот же ответ используется на веб-панели и для выпадающих списков
- * "человек → его контейнер" в форме записи оплаты (см. app/dashboard/income/page.tsx),
- * и для получения задолженности через бота (см. lib/goodsOwnerBot.ts).
+ * Задолженность по всем связкам «клиент + контейнер + камера» на дату `to` (по умолчанию —
+ * сегодня) — детализация до камеры (см. lib/debt.ts), а не только до контейнера, чтобы суммы
+ * в форме оплаты и в таблицах «Арендаторы» реально сходились по камерам, а не дублировали общий
+ * итог по контейнеру на каждой камере. Тот же ответ используется на веб-панели и для выпадающих
+ * списков "человек → его контейнер → его камера" в форме записи оплаты (см.
+ * app/dashboard/income/page.tsx).
  */
 export async function GET(req: NextRequest) {
   const user = await requireWebUser();
@@ -23,6 +25,6 @@ export async function GET(req: NextRequest) {
     to = parsed;
   }
 
-  const debts = await getAllOwnerContainerDebts({ to });
+  const debts = await getAllClientCellDebts({ to });
   return NextResponse.json({ debts, to: to.toISOString() });
 }

@@ -9,6 +9,7 @@ import "@/models/Container";
 export interface InventoryBalance {
   itemId: string;
   itemName: string;
+  clientId: string;
   ownerKey: string;
   ownerType: IInventoryLedgerEntry["ownerType"];
   ownerLabel: string;
@@ -64,11 +65,11 @@ export async function getOutstandingByAllItems(): Promise<Map<string, number>> {
  * проверка была только на "given" — на весь свободный остаток склада, а не на "returned").
  */
 export async function getInventoryOutstandingForOwner(
-  ownerKey: string,
+  clientId: string,
   itemId: string,
   containerId: string
 ): Promise<number> {
-  const balances = await getAllInventoryBalances(ownerKey);
+  const balances = await getAllInventoryBalances(clientId);
   return balances.find((b) => b.itemId === itemId && b.containerId === containerId)?.outstanding || 0;
 }
 
@@ -76,9 +77,9 @@ export async function getInventoryOutstandingForOwner(
  * Баланс инвентаря по каждой связке клиент+позиция+контейнер — для страницы "Инвентарь" и
  * профиля клиента.
  */
-export async function getAllInventoryBalances(ownerKey?: string): Promise<InventoryBalance[]> {
+export async function getAllInventoryBalances(clientId?: string): Promise<InventoryBalance[]> {
   await connectDB();
-  const filter = ownerKey ? { ownerKey } : {};
+  const filter = clientId ? { clientId } : {};
   const entries = (await InventoryLedgerEntry.find(filter)
     .sort({ createdAt: 1 })
     .populate("containerId", "name")
@@ -88,11 +89,12 @@ export async function getAllInventoryBalances(ownerKey?: string): Promise<Invent
   for (const e of entries) {
     const containerRef = e.containerId as { _id: unknown; name: string } | null;
     const containerId = String(containerRef?._id ?? e.containerId);
-    const key = `${e.ownerKey}::${String(e.itemId)}::${containerId}`;
+    const key = `${String(e.clientId)}::${String(e.itemId)}::${containerId}`;
     if (!groups.has(key)) {
       groups.set(key, {
         itemId: String(e.itemId),
         itemName: e.itemName,
+        clientId: String(e.clientId),
         ownerKey: e.ownerKey,
         ownerType: e.ownerType,
         ownerLabel: e.ownerLabel,

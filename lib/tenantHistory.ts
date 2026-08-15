@@ -37,13 +37,13 @@ export interface TenantHistoryEvent {
 }
 
 export async function getTenantHistory(
-  ownerKey: string,
+  clientId: string,
   opts: { containerId?: string; limit?: number } = {}
 ): Promise<TenantHistoryEvent[]> {
   await connectDB();
 
-  const actFilter: Record<string, unknown> = { ownerKey };
-  const incomeFilter: Record<string, unknown> = { ownerKey };
+  const actFilter: Record<string, unknown> = { clientId };
+  const incomeFilter: Record<string, unknown> = { clientId };
   if (opts.containerId) {
     actFilter.containerId = opts.containerId;
     incomeFilter.containerId = opts.containerId;

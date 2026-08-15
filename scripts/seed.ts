@@ -12,6 +12,8 @@ import { Container } from "../models/Container";
 import { StorageRecord } from "../models/StorageRecord";
 import { WebAccess } from "../models/WebAccess";
 import { Income } from "../models/Income";
+import { Client } from "../models/Client";
+import { denormalizeOwner } from "../lib/ownerKey";
 
 const daysAgo = (n: number) => new Date(Date.now() - n * 24 * 60 * 60 * 1000);
 
@@ -91,6 +93,65 @@ async function main() {
   // первого запуска будет равно нулю (тариф начисляется с даты создания записи, см.
   // README → «Тарифы, оплата и задолженность»), и проверить задолженность будет не на чем.
   // В записях сознательно использованы все 4 типа тарифа — для проверки каждого.
+  // --- Тестовые клиенты (models/Client.ts) — Иванов заведён ОДНИМ клиентом с двумя записями в
+  // разных камерах containerA (проверка агрегации долга по clientId), Сидорова и фирма —
+  // отдельными клиентами. Реальный сценарий бага "разные люди с одним запасным номером"
+  // намеренно НЕ воспроизводится тестовыми данными — сид показывает штатный случай.
+  const ivanov = await Client.findOneAndUpdate(
+    { "profile.type": "individual", "profile.phone": "+998901234567" },
+    {
+      profile: {
+        type: "individual",
+        fullName: "Иванов Иван Иванович",
+        phone: "+998901234567",
+        passportData: "AB1234567",
+        pinfl: "12345678901234",
+        passportIssueDate: "12.05.2020",
+        passportIssuedBy: "Самаркандский областной ОВД",
+      },
+      createdBy: ownerIdentifier,
+    },
+    { upsert: true, new: true }
+  );
+  const sidorova = await Client.findOneAndUpdate(
+    { "profile.type": "individual", "profile.phone": "+998909876543" },
+    {
+      profile: {
+        type: "individual",
+        fullName: "Сидорова Анна Владимировна",
+        phone: "+998909876543",
+        passportData: "EF1122334",
+        pinfl: "56789012345678",
+        passportIssueDate: "03.11.2018",
+        passportIssuedBy: "Булунгурский районный ОВД",
+      },
+      createdBy: ownerIdentifier,
+    },
+    { upsert: true, new: true }
+  );
+  const agroTrade = await Client.findOneAndUpdate(
+    { "profile.type": "company", "profile.inn": "305874112" },
+    {
+      profile: {
+        type: "company",
+        companyName: 'ООО "Samarqand Agro Trade"',
+        inn: "305874112",
+        directorName: "Каримов Бахтиёр Рустамович",
+      },
+      createdBy: ownerIdentifier,
+    },
+    { upsert: true, new: true }
+  );
+  console.log("Тестовые клиенты готовы:", ivanov.profile.type === "individual" ? ivanov.profile.fullName : "", sidorova.profile.type === "individual" ? sidorova.profile.fullName : "", agroTrade.profile.type === "company" ? agroTrade.profile.companyName : "");
+
+  // --- Тестовые записи ---
+  // Телефон первой записи (+998901234567) сознательно тот же, что стоит указать в
+  // Telegram-профиле при ручной проверке идентификации владельца груза через бота
+  // (см. README → «Уведомления и сводка владельцам груза», раздел «Как проверить руками»).
+  // createdAt намеренно "в прошлом" (не сейчас) — иначе начисление по тарифу на момент
+  // первого запуска будет равно нулю (тариф начисляется с даты создания записи, см.
+  // README → «Тарифы, оплата и задолженность»), и проверить задолженность будет не на чем.
+  // В записях сознательно использованы все 4 типа тарифа — для проверки каждого.
   const existingRecords = await StorageRecord.countDocuments();
   let records: Array<InstanceType<typeof StorageRecord>> = [];
   if (existingRecords === 0) {
@@ -98,18 +159,11 @@ async function main() {
       {
         containerId: containerA._id,
         cellNumber: 1,
+        clientId: ivanov._id,
         productName: "Яблоки",
         quantity: 5,
         unit: "tonne",
-        goodsOwner: {
-          type: "individual",
-          fullName: "Иванов Иван Иванович",
-          phone: "+998901234567",
-          passportData: "AB1234567",
-          pinfl: "12345678901234",
-          passportIssueDate: "12.05.2020",
-          passportIssuedBy: "Самаркандский областной ОВД",
-        },
+        goodsOwner: ivanov.profile,
         tariff: { type: "per_day", rate: 30 },
         createdByEmployeeId: employee._id,
         createdAt: daysAgo(40),
@@ -117,18 +171,11 @@ async function main() {
       {
         containerId: containerA._id,
         cellNumber: 2,
+        clientId: ivanov._id,
         productName: "Картофель",
         quantity: 120,
         unit: "box",
-        goodsOwner: {
-          type: "individual",
-          fullName: "Иванов Иван Иванович",
-          phone: "+998901234567",
-          passportData: "AB1234567",
-          pinfl: "12345678901234",
-          passportIssueDate: "12.05.2020",
-          passportIssuedBy: "Самаркандский областной ОВД",
-        },
+        goodsOwner: ivanov.profile,
         tariff: { type: "per_month", rate: 9000 },
         createdByEmployeeId: employee._id,
         createdAt: daysAgo(15),
@@ -136,18 +183,11 @@ async function main() {
       {
         containerId: containerB._id,
         cellNumber: 1,
+        clientId: sidorova._id,
         productName: "Мука",
         quantity: 2000,
         unit: "kg",
-        goodsOwner: {
-          type: "individual",
-          fullName: "Сидорова Анна Владимировна",
-          phone: "+998909876543",
-          passportData: "EF1122334",
-          pinfl: "56789012345678",
-          passportIssueDate: "03.11.2018",
-          passportIssuedBy: "Булунгурский районный ОВД",
-        },
+        goodsOwner: sidorova.profile,
         tariff: { type: "per_kg_month", rate: 250 },
         createdByEmployeeId: employee._id,
         createdAt: daysAgo(25),
@@ -155,15 +195,11 @@ async function main() {
       {
         containerId: containerB._id,
         cellNumber: 3,
+        clientId: agroTrade._id,
         productName: "Рис",
         quantity: 1500,
         unit: "kg",
-        goodsOwner: {
-          type: "company",
-          companyName: 'ООО "Samarqand Agro Trade"',
-          inn: "305874112",
-          directorName: "Каримов Бахтиёр Рустамович",
-        },
+        goodsOwner: agroTrade.profile,
         tariff: { type: "per_kg_6_months", rate: 1000 },
         createdByEmployeeId: employee._id,
         createdAt: daysAgo(50),
@@ -180,10 +216,11 @@ async function main() {
   if (existingIncomes === 0 && records.length > 0) {
     await Income.create([
       {
-        // Частичная оплата Иванова за containerA (начислено ~1200 + ~4500 сум на дату сидинга).
-        ownerType: "individual",
-        ownerKey: "individual:+998901234567",
-        ownerLabel: "Иванов Иван Иванович",
+        // Частичная оплата Иванова за containerA — БЕЗ указания камеры (легаси-сценарий):
+        // проверяет автоматическое распределение "безадресного" платежа между его камерами 1 и 2
+        // в этом контейнере (см. lib/debt.ts::allocateUnassignedPaid).
+        clientId: ivanov._id,
+        ...denormalizeOwner(ivanov.profile),
         containerId: containerA._id,
         amount: 3000,
         method: "cash",
@@ -192,11 +229,11 @@ async function main() {
         recordedBy: ownerIdentifier,
       },
       {
-        // Переплата Сидоровой за containerB — демонстрирует случай "задолженности нет".
-        ownerType: "individual",
-        ownerKey: "individual:+998909876543",
-        ownerLabel: "Сидорова Анна Владимировна",
+        // Переплата Сидоровой за containerB, камера 1 — демонстрирует случай "задолженности нет".
+        clientId: sidorova._id,
+        ...denormalizeOwner(sidorova.profile),
         containerId: containerB._id,
+        cellNumber: 1,
         amount: 500000,
         method: "transfer",
         paidAt: daysAgo(2),

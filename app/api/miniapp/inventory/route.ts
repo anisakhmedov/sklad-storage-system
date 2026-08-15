@@ -3,6 +3,7 @@ import { connectDB } from "@/lib/db";
 import { InventoryItem } from "@/models/InventoryItem";
 import { InventoryLedgerEntry } from "@/models/InventoryLedgerEntry";
 import { Container } from "@/models/Container";
+import { Client } from "@/models/Client";
 import { resolveEmployee, employeeCanAccessContainer } from "@/lib/miniAuth";
 import { jsonError, zodErrorResponse } from "@/lib/apiHelpers";
 import { inventoryLedgerEntryCreateSchema } from "@/lib/validation";
@@ -10,6 +11,7 @@ import { logAudit } from "@/lib/audit";
 import { getOutstandingByAllItems, itemAvailability, getInventoryOutstandingForOwner } from "@/lib/inventoryLedger";
 import { createAndSaveAct } from "@/lib/contract/actPersistence";
 import { sendActToEmployee } from "@/lib/telegramNotify";
+import { denormalizeOwner } from "@/lib/ownerKey";
 
 /**
  * Список позиций инвентаря с остатком — для формы выдачи/приёма в Mini App. У каждого
@@ -70,12 +72,14 @@ export async function POST(req: NextRequest) {
     }
 
     await connectDB();
-    const [container, item] = await Promise.all([
+    const [container, item, client] = await Promise.all([
       Container.findById(parsed.data.containerId),
       InventoryItem.findById(parsed.data.itemId),
+      Client.findById(parsed.data.clientId),
     ]);
     if (!container) return jsonError("Контейнер не найден", 404);
     if (!item) return jsonError("Позиция инвентаря не найдена", 404);
+    if (!client) return jsonError("Клиент не найден", 404);
     // У позиции, уже привязанной к контейнеру (не старая непривязанная), нельзя оформить
     // выдачу/приём через чужой контейнер — у каждого холодильника свой инвентарь (см.
     // models/InventoryItem.ts::containerId).
@@ -91,7 +95,7 @@ export async function POST(req: NextRequest) {
       }
     } else {
       const ownerOutstanding = await getInventoryOutstandingForOwner(
-        parsed.data.ownerKey,
+        parsed.data.clientId,
         String(item._id),
         parsed.data.containerId
       );
@@ -103,9 +107,8 @@ export async function POST(req: NextRequest) {
     const entry = await InventoryLedgerEntry.create({
       itemId: item._id,
       itemName: item.name,
-      ownerKey: parsed.data.ownerKey,
-      ownerType: parsed.data.ownerType,
-      ownerLabel: parsed.data.ownerLabel,
+      clientId: client._id,
+      ...denormalizeOwner(client.profile),
       containerId: parsed.data.containerId,
       cellNumber: parsed.data.cellNumber,
       direction: parsed.data.direction,
@@ -121,8 +124,7 @@ export async function POST(req: NextRequest) {
       actorId: String(employee._id),
       actorRole: "employee",
       changes: {
-        itemId: String(entry.itemId),
-        ownerKey: entry.ownerKey,
+        clientId: String(entry.clientId),
         containerId: String(entry.containerId),
         direction: entry.direction,
         quantity: entry.quantity,
@@ -133,6 +135,7 @@ export async function POST(req: NextRequest) {
     // сотруднику в Telegram (best-effort), см. lib/contract/actPersistence.ts.
     const act = await createAndSaveAct({
       kind: entry.direction === "given" ? "inventory_given" : "inventory_returned",
+      clientId: String(entry.clientId),
       ownerKey: entry.ownerKey,
       ownerLabel: entry.ownerLabel,
       ownerType: entry.ownerType,

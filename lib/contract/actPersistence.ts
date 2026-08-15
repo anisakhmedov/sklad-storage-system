@@ -17,6 +17,7 @@ const KIND_TO_SUBJECT: Record<ActKind, { subject: ActSubject; direction: ActDire
 export interface CreateAndSaveActInput {
   kind: ActKind;
   recordId?: string;
+  clientId: string;
   ownerKey: string;
   ownerLabel: string;
   ownerType: GoodsOwnerType;
@@ -73,6 +74,7 @@ export async function createAndSaveAct(input: CreateAndSaveActInput): Promise<IA
     actNumber,
     kind: input.kind,
     recordId: input.recordId ? new Types.ObjectId(input.recordId) : undefined,
+    clientId: new Types.ObjectId(input.clientId),
     ownerKey: input.ownerKey,
     ownerLabel: input.ownerLabel,
     ownerType: input.ownerType,

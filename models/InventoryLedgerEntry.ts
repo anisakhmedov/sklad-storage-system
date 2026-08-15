@@ -22,6 +22,8 @@ export interface IInventoryLedgerEntry {
   _id: Types.ObjectId;
   itemId: Types.ObjectId;
   itemName: string; // денормализовано на момент операции — для отображения без join
+  /** Ключ агрегации (models/Client.ts) — см. пояснение в models/Income.ts. */
+  clientId: Types.ObjectId;
   ownerKey: string;
   ownerType: GoodsOwnerType;
   ownerLabel: string;
@@ -38,6 +40,7 @@ export interface IInventoryLedgerEntry {
 const InventoryLedgerEntrySchema = new Schema<IInventoryLedgerEntry>({
   itemId: { type: Schema.Types.ObjectId, ref: "InventoryItem", required: true, index: true },
   itemName: { type: String, required: true, trim: true },
+  clientId: { type: Schema.Types.ObjectId, ref: "Client", required: true, index: true },
   ownerKey: { type: String, required: true, index: true },
   ownerType: { type: String, enum: ["individual", "company"], required: true },
   ownerLabel: { type: String, required: true, trim: true },

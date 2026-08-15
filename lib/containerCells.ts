@@ -1,12 +1,12 @@
 import { connectDB } from "./db";
 import { Container } from "@/models/Container";
 import { StorageRecord } from "@/models/StorageRecord";
-import { ownerKeyOf, ownerLabelOf } from "./ownerKey";
+import { ownerLabelOf } from "./ownerKey";
 import { DEFAULT_CELL_COUNT, cellNumbersForCount } from "./cells";
 import type { IGoodsOwner, GoodsOwnerType } from "@/models/StorageRecord";
 
 export interface CellOccupant {
-  ownerKey: string;
+  clientId: string;
   ownerLabel: string;
   ownerType: GoodsOwnerType;
   /** Краткая сводка того, что арендатор хранит в этой камере, напр. "Яблоки, Картофель". */
@@ -33,7 +33,7 @@ export interface ContainerCellsGrid {
  * одного или нескольких контейнеров. Занятость камеры вычисляется из активных (quantity > 0) StorageRecord —
  * записи с обнулённым количеством (см. app/api/miniapp/records/[id]/adjust/route.ts)
  * считаются вывезенными и не занимают камеру. Один арендатор с несколькими записями в
- * одной камере схлопывается в одного occupant (по ownerKeyOf), как и в lib/debt.ts.
+ * одной камере схлопывается в одного occupant (по clientId), как и в lib/debt.ts.
  *
  * containerIds — undefined = все контейнеры (веб-дашборд, app/api/containers/cells/route.ts);
  * массив из одного id = один контейнер (mini app, ограничен доступом сотрудника через
@@ -50,29 +50,30 @@ export async function getCellsGrid(containerIds?: string[]): Promise<ContainerCe
     containerId: { $in: containers.map((c) => c._id) },
     quantity: { $gt: 0 },
   })
-    .select("containerId cellNumber productName goodsOwner")
+    .select("containerId cellNumber productName goodsOwner clientId")
     .lean()) as unknown as {
     containerId: unknown;
     cellNumber: number;
     productName: string;
     goodsOwner: IGoodsOwner;
+    clientId: unknown;
   }[];
 
-  // containerId -> cellNumber -> ownerKey -> { occupant, products[] }
+  // containerId -> cellNumber -> clientId -> { occupant, products[] }
   type BucketOccupant = Omit<CellOccupant, "productSummary">;
   type Bucket = Map<string, Map<number, Map<string, { occupant: BucketOccupant; products: string[] }>>>;
   const byContainer: Bucket = new Map();
 
   for (const r of records) {
     const containerId = String(r.containerId);
-    const key = ownerKeyOf(r.goodsOwner);
+    const key = String(r.clientId);
     if (!byContainer.has(containerId)) byContainer.set(containerId, new Map());
     const byCell = byContainer.get(containerId)!;
     if (!byCell.has(r.cellNumber)) byCell.set(r.cellNumber, new Map());
     const byOwner = byCell.get(r.cellNumber)!;
     if (!byOwner.has(key)) {
       byOwner.set(key, {
-        occupant: { ownerKey: key, ownerLabel: ownerLabelOf(r.goodsOwner), ownerType: r.goodsOwner.type },
+        occupant: { clientId: key, ownerLabel: ownerLabelOf(r.goodsOwner), ownerType: r.goodsOwner.type },
         products: [],
       });
     }

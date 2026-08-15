@@ -3,15 +3,16 @@ import { connectDB } from "@/lib/db";
 import { Income } from "@/models/Income";
 import { Container } from "@/models/Container";
 import { StorageRecord } from "@/models/StorageRecord";
+import { Client } from "@/models/Client";
 import { resolveEmployee, employeeCanAccessContainer } from "@/lib/miniAuth";
 import { jsonError, zodErrorResponse } from "@/lib/apiHelpers";
 import { incomeCreateSchemaEmployee } from "@/lib/validation";
 import { logAudit } from "@/lib/audit";
-import { parseOwnerKey } from "@/lib/ownerKey";
+import { denormalizeOwner } from "@/lib/ownerKey";
 
 /**
  * Запись фактической оплаты сотрудником из Mini App — тот же путь данных, что и
- * POST /api/income на веб-панели (владелец+контейнер должны иметь хотя бы одну
+ * POST /api/income на веб-панели (клиент+контейнер+камера должны иметь хотя бы одну
  * StorageRecord, иначе задолженность в lib/debt.ts никогда не найдёт платёж), но
  * авторизация через Telegram initData (resolveEmployee), а не веб-сессию.
  */
@@ -38,27 +39,24 @@ export async function POST(req: NextRequest) {
   const container = await Container.findById(parsed.data.containerId);
   if (!container) return jsonError("Контейнер не найден", 404);
 
-  const ownerKeyParsed = parseOwnerKey(parsed.data.ownerKey);
-  if (!ownerKeyParsed || ownerKeyParsed.type !== parsed.data.ownerType) {
-    return jsonError("Некорректный идентификатор владельца груза", 400);
-  }
+  const client = await Client.findById(parsed.data.clientId).lean();
+  if (!client) return jsonError("Клиент не найден", 404);
 
-  const ownerRecordFilter =
-    ownerKeyParsed.type === "individual"
-      ? { "goodsOwner.type": "individual", "goodsOwner.phone": ownerKeyParsed.value }
-      : { "goodsOwner.type": "company", "goodsOwner.inn": ownerKeyParsed.value };
-  const hasRecord = await StorageRecord.exists({
-    ...ownerRecordFilter,
+  // Камера обязательна (см. lib/validation.ts::incomeCreateSchema) и должна совпадать с одной
+  // из камер, где у этого клиента реально есть запись в этом контейнере — защита от опечаток
+  // и от оплаты за камеру, которую клиент не занимает.
+  const hasRecordInCell = await StorageRecord.exists({
+    clientId: parsed.data.clientId,
     containerId: parsed.data.containerId,
+    cellNumber: parsed.data.cellNumber,
   });
-  if (!hasRecord) {
-    return jsonError("Не найдено ни одной записи с таким владельцем в этом контейнере", 404);
+  if (!hasRecordInCell) {
+    return jsonError("У этого клиента нет записей в выбранной камере этого контейнера", 404);
   }
 
   const income = await Income.create({
-    ownerType: parsed.data.ownerType,
-    ownerKey: parsed.data.ownerKey,
-    ownerLabel: parsed.data.ownerLabel,
+    clientId: client._id,
+    ...denormalizeOwner(client.profile),
     containerId: parsed.data.containerId,
     cellNumber: parsed.data.cellNumber,
     amount: parsed.data.amount,
@@ -75,7 +73,7 @@ export async function POST(req: NextRequest) {
     actorId: String(employee._id),
     actorRole: "employee",
     changes: {
-      ownerKey: income.ownerKey,
+      clientId: String(income.clientId),
       ownerLabel: income.ownerLabel,
       containerId: String(income.containerId),
       amount: income.amount,

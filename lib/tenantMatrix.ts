@@ -4,9 +4,9 @@ import { StorageRecord, GoodsOwnerType, Unit } from "@/models/StorageRecord";
 // Побочный эффект: регистрирует схему "Container" до populate() ниже (см. пояснение в
 // lib/contract/contractService.ts).
 import "@/models/Container";
-import { getAllOwnerContainerDebts } from "./debt";
+import { getAllClientCellDebts } from "./debt";
 import { getAllInventoryBalances } from "./inventoryLedger";
-import { ownerKeyOf, ownerLabelOf } from "./ownerKey";
+import { ownerLabelOf } from "./ownerKey";
 
 /**
  * Сводная таблица «Арендаторы по камерам» (см. app/dashboard/tenants/page.tsx, вид «Таблица по
@@ -37,7 +37,7 @@ export interface GoodsCell {
 }
 
 export interface TenantMatrixRow {
-  ownerKey: string;
+  clientId: string;
   ownerType: GoodsOwnerType;
   ownerLabel: string;
   balance: number;
@@ -79,29 +79,32 @@ export async function getTenantMatrix(): Promise<TenantMatrixSection[]> {
     // Закрытые записи ("товар забран", см. models/StorageRecord.ts::closedAt) в этой сводной
     // таблице не показываются — они "переехали" в историю (страница арендатора), а не лежат
     // в камере физически. Остаток по ним, если есть, всё равно виден на странице оплаты
-    // (getAllOwnerContainerDebts ниже не фильтрует закрытые — деньги продолжают числиться).
+    // (getAllClientCellDebts ниже не фильтрует закрытые — деньги продолжают числиться).
     StorageRecord.find({ closedAt: { $exists: false } })
       .sort({ createdAt: 1 })
       .populate<{ containerId: { _id: unknown; name: string } | null }>("containerId", "name")
       .lean(),
-    getAllOwnerContainerDebts(),
+    getAllClientCellDebts(),
     getAllInventoryBalances(),
   ]);
 
+  // Ключ clientId::containerId::cellNumber — КАЖДАЯ камера получает СВОЮ долю долга/оплаты, а
+  // не копию общей суммы по контейнеру (см. lib/debt.ts — там же и распределение "безадресных"
+  // платежей между камерами).
   const balanceByGroup = new Map<string, { balance: number; paid: number }>();
   for (const d of debts) {
-    balanceByGroup.set(`${d.ownerKey}::${d.containerId}`, { balance: d.balance, paid: d.paid });
+    balanceByGroup.set(`${d.clientId}::${d.containerId}::${d.cellNumber}`, { balance: d.balance, paid: d.paid });
   }
 
   // Инвентарь не привязан к камере (InventoryLedgerEntry.cellNumber — не всегда задан), поэтому
-  // считается на уровне владелец+контейнер и показывается одинаково во всех камера-секциях
-  // этого владельца в этом контейнере.
-  const inventoryByOwnerContainer = new Map<string, Map<string, number>>(); // ownerKey::containerId -> itemName -> outstanding
+  // считается на уровне клиент+контейнер и показывается одинаково во всех камера-секциях этого
+  // клиента в этом контейнере.
+  const inventoryByClientContainer = new Map<string, Map<string, number>>(); // clientId::containerId -> itemName -> outstanding
   const inventoryColumnsByContainer = new Map<string, Set<string>>();
   for (const b of inventoryBalances) {
-    const groupKey = `${b.ownerKey}::${b.containerId}`;
-    if (!inventoryByOwnerContainer.has(groupKey)) inventoryByOwnerContainer.set(groupKey, new Map());
-    inventoryByOwnerContainer.get(groupKey)!.set(b.itemName, b.outstanding);
+    const groupKey = `${b.clientId}::${b.containerId}`;
+    if (!inventoryByClientContainer.has(groupKey)) inventoryByClientContainer.set(groupKey, new Map());
+    inventoryByClientContainer.get(groupKey)!.set(b.itemName, b.outstanding);
     if (!inventoryColumnsByContainer.has(b.containerId)) inventoryColumnsByContainer.set(b.containerId, new Set());
     inventoryColumnsByContainer.get(b.containerId)!.add(b.itemName);
   }
@@ -111,7 +114,7 @@ export async function getTenantMatrix(): Promise<TenantMatrixSection[]> {
   // того, как обработаны ВСЕ записи.
   const contractNumberByRecordId = new Map<string, string | undefined>();
 
-  // containerId -> cellNumber -> ownerKey -> row-in-progress
+  // containerId -> cellNumber -> clientId -> row-in-progress
   interface ContainerAgg {
     containerName: string;
     goodsColumns: Set<string>;
@@ -124,7 +127,7 @@ export async function getTenantMatrix(): Promise<TenantMatrixSection[]> {
     if (!containerRef) continue; // контейнер удалён — запись сиротская, в сводную таблицу не попадает
     const containerId = String(containerRef._id);
     const containerName = containerRef.name || "—";
-    const ownerKey = ownerKeyOf(r.goodsOwner);
+    const clientId = String(r.clientId);
     const ownerLabel = ownerLabelOf(r.goodsOwner);
 
     if (!containers.has(containerId)) {
@@ -135,12 +138,13 @@ export async function getTenantMatrix(): Promise<TenantMatrixSection[]> {
     if (!agg.cells.has(r.cellNumber)) agg.cells.set(r.cellNumber, new Map());
     const rowsInCell = agg.cells.get(r.cellNumber)!;
 
-    if (!rowsInCell.has(ownerKey)) {
-      const groupKey = `${ownerKey}::${containerId}`;
-      const balanceInfo = balanceByGroup.get(groupKey);
-      const inventoryMap = inventoryByOwnerContainer.get(groupKey);
-      rowsInCell.set(ownerKey, {
-        ownerKey,
+    if (!rowsInCell.has(clientId)) {
+      const cellGroupKey = `${clientId}::${containerId}::${r.cellNumber}`;
+      const inventoryGroupKey = `${clientId}::${containerId}`;
+      const balanceInfo = balanceByGroup.get(cellGroupKey);
+      const inventoryMap = inventoryByClientContainer.get(inventoryGroupKey);
+      rowsInCell.set(clientId, {
+        clientId,
         ownerType: r.goodsOwner.type,
         ownerLabel,
         balance: balanceInfo?.balance || 0,
@@ -149,7 +153,7 @@ export async function getTenantMatrix(): Promise<TenantMatrixSection[]> {
         inventory: inventoryMap ? Object.fromEntries(inventoryMap) : {},
       });
     }
-    const row = rowsInCell.get(ownerKey)!;
+    const row = rowsInCell.get(clientId)!;
     contractNumberByRecordId.set(String(r._id), r.contractNumber);
 
     if (r.unit === "kg" || r.unit === "tonne") {

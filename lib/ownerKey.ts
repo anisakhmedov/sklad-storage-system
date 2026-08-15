@@ -1,11 +1,18 @@
 import type { IGoodsOwner, GoodsOwnerType } from "@/models/StorageRecord";
 
 /**
- * Устойчивый идентификатор арендатора для агрегации задолженности/платежей поверх
- * нескольких StorageRecord (см. lib/debt.ts). Для физлиц — нормализованный телефон
- * (goodsOwner.phone уже нормализован на входе, см. lib/validation.ts), для юрлиц — ИНН
- * (у юрлиц нет телефона в схеме). Формат `${type}:${значение}`, чтобы совпадающие по
+ * Телефон/ИНН-ключ владельца груза — ФОРМАТ `${type}:${значение}`, чтобы совпадающие по
  * значению номер и ИНН никогда не схлопнулись в один ключ.
+ *
+ * ВАЖНО: с появлением models/Client.ts это БОЛЬШЕ НЕ идентификатор арендатора для агрегации —
+ * этой ролью теперь обладает исключительно `clientId` (см. lib/debt.ts, lib/tenants.ts).
+ * Раньше (до Client) эта строка сама была ключом агрегации — это ломалось, когда двум разным
+ * людям без своего телефона вписывали один и тот же "запасной" номер: они автоматически
+ * считались одним арендатором. Сейчас функции здесь используются только там, где это уместно:
+ * денормализованное поле для отображения (Income.ownerKey и т.п.), поиск/предупреждение о
+ * дубликате телефона при заведении нового клиента (см. GET /api/miniapp/clients/search) и
+ * идентификация в Telegram-боте, которому в принципе доступен только номер телефона (см.
+ * lib/goodsOwnerBot.ts) — там несколько клиентов с одним телефоном принципиально неразличимы.
  *
  * Сигнатура намеренно упрощена (не Pick<IGoodsOwner,...>): некоторые клиентские компоненты
  * (напр. app/dashboard/records/page.tsx) держат собственную локальную копию типа goodsOwner
@@ -41,4 +48,12 @@ export function parseOwnerKey(key: string): { type: GoodsOwnerType; value: strin
   const value = key.slice(idx + 1);
   if (type !== "individual" && type !== "company") return null;
   return { type, value };
+}
+
+/** Денормализованная тройка полей (ownerKey/ownerLabel/ownerType), которую хранят Income/
+ * InventoryLedgerEntry/Act ТОЛЬКО для отображения без join — вычисляется из карточки клиента
+ * (models/Client.ts) на сервере, никогда не принимается от клиента напрямую (см. models/Client.ts,
+ * lib/validation.ts::incomeCreateSchema/inventoryLedgerEntryCreateSchema). */
+export function denormalizeOwner(profile: IGoodsOwner): { ownerKey: string; ownerLabel: string; ownerType: GoodsOwnerType } {
+  return { ownerKey: ownerKeyOf(profile), ownerLabel: ownerLabelOf(profile), ownerType: profile.type };
 }

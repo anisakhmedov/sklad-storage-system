@@ -1,29 +1,32 @@
 import ExcelJS from "exceljs";
 import { connectDB } from "./db";
 import { StorageRecord, GoodsOwnerType, IGoodsOwner } from "@/models/StorageRecord";
+import { Client } from "@/models/Client";
 import { Income, IIncome } from "@/models/Income";
 import { GoodsOwnerLink } from "@/models/GoodsOwnerLink";
 // Побочный эффект: регистрирует схемы "Container"/"Employee" до populate("containerId")/
 // populate("createdByEmployeeId") ниже (см. пояснение в lib/contract/contractService.ts) —
 // без этого импорта mongoose падает с MissingSchemaError при первом же открытии карточки
-// арендатора (GET /api/tenants/[ownerKey]).
+// арендатора (GET /api/tenants/[clientId]).
 import "@/models/Container";
 import "@/models/Employee";
 import { Types } from "mongoose";
-import { parseOwnerKey } from "./ownerKey";
-import { getAllOwnerContainerDebts, OwnerContainerDebt } from "./debt";
+import { getAllClientContainerDebts, ClientContainerDebt } from "./debt";
 import { UNIT_LABELS, PAYMENT_METHOD_LABELS } from "./labels";
 import { formatTariffText } from "./tariff";
 
 /**
  * Раздел «Арендаторы» на веб-панели (п.8 доработок) — полная аналитика по каждому клиенту,
  * доступная и как страница (getTenantDetail), и как выгрузка .xlsx (buildTenantWorkbook). В
- * отличие от Mini App («Клиенты», см. lib/reports.ts::getOwnerSummaryByKey), здесь доступ не
+ * отличие от Mini App («Клиенты», см. lib/reports.ts::getClientSummary), здесь доступ не
  * ограничен контейнерами сотрудника — веб-панель видит арендатора целиком, по всем контейнерам.
+ *
+ * Ключ — clientId (models/Client.ts), НЕ ownerKey (телефон/ИНН) — см. пояснение в
+ * models/Client.ts и lib/ownerKey.ts.
  */
 
 export interface TenantListItem {
-  ownerKey: string;
+  clientId: string;
   ownerType: GoodsOwnerType;
   ownerLabel: string;
   phoneOrInn: string;
@@ -36,21 +39,20 @@ export interface TenantListItem {
 }
 
 /**
- * Сводный список арендаторов, агрегированный по всем связкам владелец+контейнер.
+ * Сводный список арендаторов, агрегированный по всем связкам клиент+контейнер.
  * `containerId` сужает агрегацию до одного контейнера — арендатор, у которого нет записей в
  * этом контейнере, в список не попадает вовсе (см. GET /api/tenants, страница "Арендаторы").
  */
 export async function getAllTenants(opts: { containerId?: string } = {}): Promise<TenantListItem[]> {
-  const debts = await getAllOwnerContainerDebts(opts.containerId ? { containerIds: [opts.containerId] } : {});
+  const debts = await getAllClientContainerDebts(opts.containerId ? { containerIds: [opts.containerId] } : {});
 
   const map = new Map<string, TenantListItem>();
   for (const d of debts) {
-    const parsed = parseOwnerKey(d.ownerKey);
     const lastRecordDate = d.records.reduce(
       (max, r) => (r.since > max ? r.since : max),
       d.since
     );
-    const existing = map.get(d.ownerKey);
+    const existing = map.get(d.clientId);
     if (existing) {
       existing.containerCount += 1;
       existing.recordCount += d.records.length;
@@ -59,11 +61,11 @@ export async function getAllTenants(opts: { containerId?: string } = {}): Promis
       existing.totalBalance += d.balance;
       if (lastRecordDate > existing.lastActivity) existing.lastActivity = lastRecordDate;
     } else {
-      map.set(d.ownerKey, {
-        ownerKey: d.ownerKey,
+      map.set(d.clientId, {
+        clientId: d.clientId,
         ownerType: d.ownerType,
         ownerLabel: d.ownerLabel,
-        phoneOrInn: parsed?.value || "—",
+        phoneOrInn: "—", // подставляется ниже из Client.profile
         containerCount: 1,
         recordCount: d.records.length,
         totalAccrued: d.accrued,
@@ -74,7 +76,19 @@ export async function getAllTenants(opts: { containerId?: string } = {}): Promis
     }
   }
 
-  return Array.from(map.values()).sort((a, b) => b.lastActivity.getTime() - a.lastActivity.getTime());
+  const items = Array.from(map.values());
+  if (items.length > 0) {
+    await connectDB();
+    const clients = await Client.find({ _id: { $in: items.map((i) => i.clientId) } })
+      .select("profile")
+      .lean();
+    const phoneOrInnByClientId = new Map(
+      clients.map((c) => [String(c._id), c.profile.type === "individual" ? c.profile.phone : c.profile.inn])
+    );
+    for (const item of items) item.phoneOrInn = phoneOrInnByClientId.get(item.clientId) || "—";
+  }
+
+  return items.sort((a, b) => b.lastActivity.getTime() - a.lastActivity.getTime());
 }
 
 type RecordWithContainer = {
@@ -98,50 +112,45 @@ export interface TenantTelegramInfo {
 }
 
 export interface TenantDetail {
-  ownerKey: string;
+  clientId: string;
   ownerType: GoodsOwnerType;
   profile: IGoodsOwner;
   telegram: TenantTelegramInfo | null;
   records: RecordWithContainer[];
   incomes: (IIncome & { containerId: { _id: Types.ObjectId; name: string } | null })[];
-  debts: OwnerContainerDebt[];
+  debts: ClientContainerDebt[];
   totals: { accrued: number; paid: number; balance: number };
 }
 
 /** Полные карточки всех арендаторов — источник для «одного файла со всеми» (buildAllTenantsWorkbook). */
 export async function getAllTenantDetails(): Promise<TenantDetail[]> {
   const tenants = await getAllTenants();
-  const details = await Promise.all(tenants.map((t) => getTenantDetail(t.ownerKey)));
+  const details = await Promise.all(tenants.map((t) => getTenantDetail(t.clientId)));
   return details.filter((d): d is TenantDetail => d !== null);
 }
 
 /** Полная карточка арендатора — источник и для онлайн-страницы, и для Excel-выгрузки. */
-export async function getTenantDetail(ownerKey: string): Promise<TenantDetail | null> {
-  const parsed = parseOwnerKey(ownerKey);
-  if (!parsed) return null;
+export async function getTenantDetail(clientId: string): Promise<TenantDetail | null> {
+  if (!Types.ObjectId.isValid(clientId)) return null;
   await connectDB();
 
-  const recordFilter =
-    parsed.type === "individual"
-      ? { "goodsOwner.type": "individual", "goodsOwner.phone": parsed.value }
-      : { "goodsOwner.type": "company", "goodsOwner.inn": parsed.value };
+  const client = await Client.findById(clientId).lean();
+  if (!client) return null;
 
   const [records, incomes, debts, telegramLink] = await Promise.all([
-    StorageRecord.find(recordFilter)
+    StorageRecord.find({ clientId })
       .sort({ createdAt: -1 })
       .populate("containerId", "name")
       .populate("createdByEmployeeId", "name phone")
       .lean() as unknown as Promise<RecordWithContainer[]>,
-    Income.find({ ownerKey })
+    Income.find({ clientId })
       .sort({ paidAt: -1 })
       .populate("containerId", "name")
       .lean() as unknown as Promise<(IIncome & { containerId: { _id: Types.ObjectId; name: string } | null })[]>,
-    getAllOwnerContainerDebts({ ownerKey }),
+    getAllClientContainerDebts({ clientId }),
     // Привязка к Telegram (см. models/GoodsOwnerLink.ts) есть только у физлиц.
-    parsed.type === "individual" ? GoodsOwnerLink.findOne({ phone: parsed.value }).lean() : Promise.resolve(null),
+    client.profile.type === "individual" ? GoodsOwnerLink.findOne({ phone: client.profile.phone }).lean() : Promise.resolve(null),
   ]);
-
-  if (records.length === 0) return null;
 
   const totals = debts.reduce(
     (acc, d) => ({ accrued: acc.accrued + d.accrued, paid: acc.paid + d.paid, balance: acc.balance + d.balance }),
@@ -149,9 +158,9 @@ export async function getTenantDetail(ownerKey: string): Promise<TenantDetail | 
   );
 
   return {
-    ownerKey,
-    ownerType: parsed.type,
-    profile: records[0].goodsOwner,
+    clientId,
+    ownerType: client.profile.type,
+    profile: client.profile,
     telegram: telegramLink ? { telegramId: telegramLink.telegramId, linkedAt: telegramLink.linkedAt } : null,
     records,
     incomes,
@@ -296,7 +305,7 @@ function debtColumns(withOwner = false): Partial<ExcelJS.Column>[] {
   ];
 }
 
-function debtRow(d: OwnerContainerDebt, ownerLabel?: string) {
+function debtRow(d: ClientContainerDebt, ownerLabel?: string) {
   return {
     ...(ownerLabel !== undefined ? { owner: ownerLabel } : {}),
     container: d.containerName,

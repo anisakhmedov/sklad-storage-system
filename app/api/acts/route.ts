@@ -16,13 +16,13 @@ export async function GET(req: NextRequest) {
   if (!user) return jsonError("Не авторизован", 401);
 
   const recordId = req.nextUrl.searchParams.get("recordId");
-  const ownerKey = req.nextUrl.searchParams.get("ownerKey");
+  const clientId = req.nextUrl.searchParams.get("clientId");
   const containerId = req.nextUrl.searchParams.get("containerId");
 
   const or: Record<string, unknown>[] = [];
   if (recordId && Types.ObjectId.isValid(recordId)) or.push({ recordId });
-  if (ownerKey && containerId) or.push({ ownerKey, containerId });
-  if (or.length === 0) return jsonError("Укажите recordId или ownerKey+containerId", 400);
+  if (clientId && containerId) or.push({ clientId, containerId });
+  if (or.length === 0) return jsonError("Укажите recordId или clientId+containerId", 400);
 
   await connectDB();
   const acts = await Act.find({ $or: or })

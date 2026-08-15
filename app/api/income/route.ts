@@ -8,7 +8,8 @@ import { requireWebUser } from "@/lib/auth";
 import { jsonError, zodErrorResponse } from "@/lib/apiHelpers";
 import { incomeCreateSchema } from "@/lib/validation";
 import { logAudit } from "@/lib/audit";
-import { parseOwnerKey } from "@/lib/ownerKey";
+import { Client } from "@/models/Client";
+import { denormalizeOwner } from "@/lib/ownerKey";
 
 export async function GET(req: NextRequest) {
   const user = await requireWebUser();
@@ -17,9 +18,9 @@ export async function GET(req: NextRequest) {
   await connectDB();
   const sp = req.nextUrl.searchParams;
   const filter: Record<string, unknown> = {};
-  const ownerKey = sp.get("ownerKey");
+  const clientId = sp.get("clientId");
   const containerId = sp.get("containerId");
-  if (ownerKey) filter.ownerKey = ownerKey;
+  if (clientId) filter.clientId = clientId;
   if (containerId) filter.containerId = containerId;
 
   const incomes = await Income.find(filter)
@@ -32,7 +33,7 @@ export async function GET(req: NextRequest) {
   // арендатору/контейнеру — подмешиваем в общий список платежей только когда запрашивается
   // весь список без фильтра по конкретному арендатору/контейнеру (страница "Оплаты"), иначе
   // список платежей конкретного арендатора не должен "видеть" чужие внешние приходы.
-  if (ownerKey || containerId) {
+  if (clientId || containerId) {
     return NextResponse.json({ incomes: incomes.map((e) => ({ ...e, source: "tenant" as const })) });
   }
 
@@ -42,7 +43,7 @@ export async function GET(req: NextRequest) {
     ...generalEntries.map((e) => ({
       ...e,
       ownerType: "company" as const,
-      ownerKey: "__general__",
+      clientId: null,
       ownerLabel: "Внешний приход (холодильник)",
       containerId: null,
       cellNumber: undefined,
@@ -66,30 +67,25 @@ export async function POST(req: NextRequest) {
   const container = await Container.findById(parsed.data.containerId);
   if (!container) return jsonError("Контейнер не найден", 404);
 
-  const ownerKeyParsed = parseOwnerKey(parsed.data.ownerKey);
-  if (!ownerKeyParsed || ownerKeyParsed.type !== parsed.data.ownerType) {
-    return jsonError("Некорректный идентификатор владельца груза", 400);
-  }
+  const client = await Client.findById(parsed.data.clientId).lean();
+  if (!client) return jsonError("Клиент не найден", 404);
 
-  // Защита от опечаток/произвольного ownerKey: платёж можно завести только на связку
-  // владелец+контейнер, для которой реально существует хотя бы одна StorageRecord —
-  // иначе задолженность (lib/debt.ts) никогда не найдёт этот платёж и он "потеряется".
-  const ownerRecordFilter =
-    ownerKeyParsed.type === "individual"
-      ? { "goodsOwner.type": "individual", "goodsOwner.phone": ownerKeyParsed.value }
-      : { "goodsOwner.type": "company", "goodsOwner.inn": ownerKeyParsed.value };
-  const hasRecord = await StorageRecord.exists({
-    ...ownerRecordFilter,
+  // Камера обязательна (см. lib/validation.ts::incomeCreateSchema) и должна совпадать с одной
+  // из камер, где у этого клиента реально есть запись в этом контейнере — защита от опечаток
+  // и от оплаты за камеру, которую клиент не занимает (раньше проверялась только связка
+  // владелец+контейнер, без камеры — задолженность иначе никогда не найдёт этот платёж).
+  const hasRecordInCell = await StorageRecord.exists({
+    clientId: parsed.data.clientId,
     containerId: parsed.data.containerId,
+    cellNumber: parsed.data.cellNumber,
   });
-  if (!hasRecord) {
-    return jsonError("Не найдено ни одной записи с таким владельцем в этом контейнере", 404);
+  if (!hasRecordInCell) {
+    return jsonError("У этого клиента нет записей в выбранной камере этого контейнера", 404);
   }
 
   const income = await Income.create({
-    ownerType: parsed.data.ownerType,
-    ownerKey: parsed.data.ownerKey,
-    ownerLabel: parsed.data.ownerLabel,
+    clientId: client._id,
+    ...denormalizeOwner(client.profile),
     containerId: parsed.data.containerId,
     cellNumber: parsed.data.cellNumber,
     amount: parsed.data.amount,
@@ -106,7 +102,7 @@ export async function POST(req: NextRequest) {
     actorId: user.identifier,
     actorRole: user.role,
     changes: {
-      ownerKey: income.ownerKey,
+      clientId: String(income.clientId),
       ownerLabel: income.ownerLabel,
       containerId: String(income.containerId),
       amount: income.amount,

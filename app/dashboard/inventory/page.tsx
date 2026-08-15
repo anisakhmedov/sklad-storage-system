@@ -20,8 +20,8 @@ interface ContainerRef {
   cellCount?: number;
 }
 
-interface OwnerContainerDebt {
-  ownerKey: string;
+interface ClientCellDebt {
+  clientId: string;
   ownerType: "individual" | "company";
   ownerLabel: string;
   containerId: string;
@@ -53,7 +53,7 @@ export default function InventoryLedgerPage() {
   // основного списка, требуют ручной привязки (см. models/InventoryItem.ts::containerId).
   const [unassignedItems, setUnassignedItems] = useState<InventoryRow[]>([]);
   const [containers, setContainers] = useState<ContainerRef[]>([]);
-  const [debts, setDebts] = useState<OwnerContainerDebt[]>([]);
+  const [debts, setDebts] = useState<ClientCellDebt[]>([]);
   const [entries, setEntries] = useState<LedgerEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [filters, setFilters] = useState({ containerId: "", cellNumber: "" });
@@ -331,18 +331,18 @@ function LendModal({
   onSaved,
 }: {
   item: InventoryRow;
-  debts: OwnerContainerDebt[];
+  debts: ClientCellDebt[];
   containers: ContainerRef[];
   onClose: () => void;
   onSaved: () => void;
 }) {
   const owners = useMemo(() => {
-    const map = new Map<string, OwnerContainerDebt>();
-    for (const d of debts) if (!map.has(d.ownerKey)) map.set(d.ownerKey, d);
+    const map = new Map<string, ClientCellDebt>();
+    for (const d of debts) if (!map.has(d.clientId)) map.set(d.clientId, d);
     return Array.from(map.values()).sort((a, b) => a.ownerLabel.localeCompare(b.ownerLabel, "ru"));
   }, [debts]);
 
-  const [ownerKey, setOwnerKey] = useState("");
+  const [clientId, setClientId] = useState("");
   // Позиция привязана к своему контейнеру (см. models/InventoryItem.ts::containerId) —
   // контейнер операции фиксирован и дальше не выбирается. У старых непривязанных позиций
   // поле остаётся редактируемым (см. select ниже).
@@ -354,7 +354,7 @@ function LendModal({
   const [busy, setBusy] = useState(false);
 
   async function submit() {
-    const owner = owners.find((o) => o.ownerKey === ownerKey);
+    const owner = owners.find((o) => o.clientId === clientId);
     if (!owner || !containerId) {
       setError("Выберите клиента и контейнер");
       return;
@@ -367,9 +367,7 @@ function LendModal({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           itemId: item._id,
-          ownerKey: owner.ownerKey,
-          ownerType: owner.ownerType,
-          ownerLabel: owner.ownerLabel,
+          clientId: owner.clientId,
           containerId,
           cellNumber: cellNumber || undefined,
           direction,
@@ -420,10 +418,10 @@ function LendModal({
 
           <div>
             <label className="label">Клиент</label>
-            <select className="input" value={ownerKey} onChange={(e) => setOwnerKey(e.target.value)}>
+            <select className="input" value={clientId} onChange={(e) => setClientId(e.target.value)}>
               <option value="">Выберите клиента</option>
               {owners.map((o) => (
-                <option key={o.ownerKey} value={o.ownerKey}>
+                <option key={o.clientId} value={o.clientId}>
                   {o.ownerLabel}
                 </option>
               ))}

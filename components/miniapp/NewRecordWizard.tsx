@@ -54,10 +54,10 @@ interface Firm {
 type Unit = "tonne" | "kg" | "box" | "piece";
 type OwnerType = "individual" | "company";
 
-/** Один результат GET /api/miniapp/owners/search — goodsOwner как он хранится на записи
- * (см. models/StorageRecord.ts::IGoodsOwner), плюс ownerKey для React key/выбора. */
+/** Один результат GET /api/miniapp/clients/search — goodsOwner как он хранится в карточке
+ * клиента (см. models/Client.ts::profile), плюс clientId для React key/выбора. */
 type OwnerSearchResult = {
-  ownerKey: string;
+  clientId: string;
   goodsOwner:
     | {
         type: "individual";
@@ -173,13 +173,18 @@ export default function NewRecordWizard({ onExit }: { onExit: () => void }) {
   const [busy, setBusy] = useState(false);
   const [savedScreen, setSavedScreen] = useState(false);
 
-  // Поиск уже существовавших владельцев груза на шаге "owner" — повторное назначение клиента
-  // без ввода паспорта/реквизитов с нуля (см. GET /api/miniapp/owners/search). Отдельное от
-  // form состояние — сам поисковый запрос не сохраняется в записи.
+  // Поиск уже существующих клиентов на шаге "owner" — повторное назначение клиента без ввода
+  // паспорта/реквизитов с нуля (см. GET /api/miniapp/clients/search). Отдельное от form
+  // состояние — сам поисковый запрос не сохраняется в записи.
   const [ownerQuery, setOwnerQuery] = useState("");
   const [ownerResults, setOwnerResults] = useState<OwnerSearchResult[]>([]);
   const [ownerSearching, setOwnerSearching] = useState(false);
-  const [ownerPicked, setOwnerPicked] = useState<string | null>(null); // ownerKey выбранного — прячет список после выбора
+  // clientId выбранного существующего клиента — ЕДИНСТВЕННЫЙ способ переиспользовать чью-то
+  // карточку (см. models/Client.ts). Пока не пусто — поля профиля ниже только для просмотра
+  // (не редактируются), чтобы случайно не завести дубликат/не "угнать" чужую карточку.
+  // null — новый клиент, заводится с нуля прямо этой записью, даже если телефон у кого-то
+  // уже есть (см. README).
+  const [pickedClientId, setPickedClientId] = useState<string | null>(null);
 
   const steps = stepsFor(form.ownerType, firms.length);
   const kind = steps[step];
@@ -189,19 +194,19 @@ export default function NewRecordWizard({ onExit }: { onExit: () => void }) {
   // telegram.ts::useTelegramBackButton).
   useTelegramBackButton(savedScreen ? null : step === 0 ? onExit : back);
 
-  // Debounce 300мс, минимум 2 символа (см. GET /api/miniapp/owners/search — сервер тоже
+  // Debounce 300мс, минимум 2 символа (см. GET /api/miniapp/clients/search — сервер тоже
   // отсекает короткие запросы).
   useEffect(() => {
-    setOwnerPicked(null);
+    setPickedClientId(null);
     if (ownerQuery.trim().length < 2) {
       setOwnerResults([]);
       return;
     }
     setOwnerSearching(true);
     const timer = setTimeout(() => {
-      miniAppFetch(`/api/miniapp/owners/search?q=${encodeURIComponent(ownerQuery.trim())}`)
+      miniAppFetch(`/api/miniapp/clients/search?q=${encodeURIComponent(ownerQuery.trim())}`)
         .then((r) => r.json())
-        .then((d) => setOwnerResults(d.owners || []))
+        .then((d) => setOwnerResults(d.clients || []))
         .catch(() => setOwnerResults([]))
         .finally(() => setOwnerSearching(false));
     }, 300);
@@ -209,7 +214,7 @@ export default function NewRecordWizard({ onExit }: { onExit: () => void }) {
   }, [ownerQuery]);
 
   function pickOwner(picked: OwnerSearchResult) {
-    setOwnerPicked(picked.ownerKey);
+    setPickedClientId(picked.clientId);
     setOwnerResults([]);
     if (picked.goodsOwner.type === "individual") {
       setForm({
@@ -231,6 +236,14 @@ export default function NewRecordWizard({ onExit }: { onExit: () => void }) {
         companyDirector: picked.goodsOwner.directorName,
       });
     }
+  }
+
+  /** Отвязать выбранного существующего клиента и начать заполнение нового с нуля (те же поля,
+   * что уже были на экране, просто теперь редактируемые и уходящие как newClient). */
+  function detachPickedOwner() {
+    setPickedClientId(null);
+    setOwnerQuery("");
+    setOwnerResults([]);
   }
 
   useEffect(() => {
@@ -330,7 +343,7 @@ export default function NewRecordWizard({ onExit }: { onExit: () => void }) {
     setBusy(true);
     setError(null);
     try {
-      const goodsOwner =
+      const newClient =
         form.ownerType === "individual"
           ? {
               type: "individual" as const,
@@ -356,7 +369,10 @@ export default function NewRecordWizard({ onExit }: { onExit: () => void }) {
           productName: form.productName,
           quantity: form.quantity,
           unit: form.unit,
-          goodsOwner,
+          // РОВНО одно из двух — см. lib/validation.ts::storageRecordCreateSchema,
+          // models/Client.ts: pickedClientId проставлен, только если клиент выбран из поиска
+          // (pickOwner выше), иначе всегда заводим новую карточку клиента.
+          ...(pickedClientId ? { clientId: pickedClientId } : { newClient }),
           tariff: { type: form.tariffType, rate: form.tariffRate },
           // Подпись обязательна для физлиц — проверено на предыдущем шаге ("signature") и
           // ещё раз на сервере (lib/validation.ts::storageRecordCreateSchema).
@@ -382,6 +398,9 @@ export default function NewRecordWizard({ onExit }: { onExit: () => void }) {
 
   function startAnother(keepContainer: boolean) {
     setForm({ ...emptyForm, containerId: keepContainer ? form.containerId : "" });
+    setPickedClientId(null);
+    setOwnerQuery("");
+    setOwnerResults([]);
     setStep(0);
     setSavedScreen(false);
   }
@@ -624,7 +643,7 @@ export default function NewRecordWizard({ onExit }: { onExit: () => void }) {
               <div className="mt-1.5 space-y-1.5">
                 {ownerResults.map((o) => (
                   <button
-                    key={o.ownerKey}
+                    key={o.clientId}
                     type="button"
                     onClick={() => {
                       haptic.selection();
@@ -642,13 +661,22 @@ export default function NewRecordWizard({ onExit }: { onExit: () => void }) {
                 ))}
               </div>
             )}
-            {!ownerSearching && ownerQuery.trim().length >= 2 && ownerResults.length === 0 && !ownerPicked && (
+            {!ownerSearching && ownerQuery.trim().length >= 2 && ownerResults.length === 0 && !pickedClientId && (
               <p className="text-xs text-ink-400 mt-1.5">{t("newRecord.noOwnersFound")}</p>
             )}
-            {ownerPicked && (
-              <p className="text-xs text-emerald-600 mt-1.5 flex items-center gap-1">
-                <CheckCircle2 className="h-3.5 w-3.5" strokeWidth={2} /> {t("newRecord.ownerFilled")}
-              </p>
+            {pickedClientId && (
+              <div className="mt-1.5 flex items-center justify-between gap-2">
+                <p className="text-xs text-emerald-600 flex items-center gap-1">
+                  <CheckCircle2 className="h-3.5 w-3.5" strokeWidth={2} /> {t("newRecord.ownerFilled")}
+                </p>
+                <button
+                  type="button"
+                  className="text-xs font-medium text-brand-600 hover:text-brand-700"
+                  onClick={detachPickedOwner}
+                >
+                  {t("newRecord.ownerPickAnother")}
+                </button>
+              </div>
             )}
           </div>
 
@@ -656,11 +684,12 @@ export default function NewRecordWizard({ onExit }: { onExit: () => void }) {
           <div className="flex gap-2">
             <button
               type="button"
+              disabled={!!pickedClientId}
               className={`flex-1 flex items-center justify-center gap-1.5 rounded-xl border px-3 py-2.5 text-sm font-medium transition-colors ${
                 form.ownerType === "individual"
                   ? "border-brand-600 bg-brand-50 text-brand-700"
                   : "border-ink-200 bg-white text-ink-500"
-              }`}
+              } ${pickedClientId ? "opacity-70" : ""}`}
               onClick={() => setForm({ ...form, ownerType: "individual" })}
             >
               <UserRound className="h-4 w-4" strokeWidth={2} />
@@ -668,11 +697,12 @@ export default function NewRecordWizard({ onExit }: { onExit: () => void }) {
             </button>
             <button
               type="button"
+              disabled={!!pickedClientId}
               className={`flex-1 flex items-center justify-center gap-1.5 rounded-xl border px-3 py-2.5 text-sm font-medium transition-colors ${
                 form.ownerType === "company"
                   ? "border-brand-600 bg-brand-50 text-brand-700"
                   : "border-ink-200 bg-white text-ink-500"
-              }`}
+              } ${pickedClientId ? "opacity-70" : ""}`}
               onClick={() => setForm({ ...form, ownerType: "company" })}
             >
               <Building2 className="h-4 w-4" strokeWidth={2} />
@@ -680,13 +710,18 @@ export default function NewRecordWizard({ onExit }: { onExit: () => void }) {
             </button>
           </div>
 
+          {pickedClientId && (
+            <p className="text-xs text-ink-400 leading-relaxed">{t("newRecord.pickedOwnerHint")}</p>
+          )}
+
           {form.ownerType === "individual" ? (
             <>
-              <p className="text-xs text-ink-400 leading-relaxed">{t("newRecord.individualHint")}</p>
+              {!pickedClientId && <p className="text-xs text-ink-400 leading-relaxed">{t("newRecord.individualHint")}</p>}
               <div>
                 <label className="label">{t("newRecord.fullNameLabel")}</label>
                 <input
                   className="input"
+                  disabled={!!pickedClientId}
                   value={form.ownerFullName}
                   onChange={(e) => setForm({ ...form, ownerFullName: e.target.value })}
                 />
@@ -697,6 +732,7 @@ export default function NewRecordWizard({ onExit }: { onExit: () => void }) {
                   className="input"
                   type="tel"
                   inputMode="tel"
+                  disabled={!!pickedClientId}
                   value={form.ownerPhone}
                   onChange={(e) => setForm({ ...form, ownerPhone: onlyPhoneChars(e.target.value) })}
                   placeholder="+998901234567"
@@ -707,6 +743,7 @@ export default function NewRecordWizard({ onExit }: { onExit: () => void }) {
                 <label className="label">{t("newRecord.passportLabel")}</label>
                 <input
                   className="input"
+                  disabled={!!pickedClientId}
                   value={form.ownerPassport}
                   onChange={(e) => setForm({ ...form, ownerPassport: e.target.value })}
                   placeholder="AB1234567"
@@ -718,6 +755,7 @@ export default function NewRecordWizard({ onExit }: { onExit: () => void }) {
                   className="input"
                   inputMode="numeric"
                   pattern="[0-9]*"
+                  disabled={!!pickedClientId}
                   value={form.ownerPinfl}
                   onChange={(e) => setForm({ ...form, ownerPinfl: onlyDigits(e.target.value) })}
                   maxLength={14}
@@ -728,6 +766,7 @@ export default function NewRecordWizard({ onExit }: { onExit: () => void }) {
                 <input
                   className="input"
                   type="date"
+                  disabled={!!pickedClientId}
                   value={ddmmyyyyToDateInputValue(form.ownerPassportIssueDate)}
                   onChange={(e) => setForm({ ...form, ownerPassportIssueDate: dateInputValueToDdmmyyyy(e.target.value) })}
                 />
@@ -736,6 +775,7 @@ export default function NewRecordWizard({ onExit }: { onExit: () => void }) {
                 <label className="label">{t("newRecord.passportIssuedByLabel")}</label>
                 <input
                   className="input"
+                  disabled={!!pickedClientId}
                   value={form.ownerPassportIssuedBy}
                   onChange={(e) => setForm({ ...form, ownerPassportIssuedBy: e.target.value })}
                 />
@@ -743,11 +783,12 @@ export default function NewRecordWizard({ onExit }: { onExit: () => void }) {
             </>
           ) : (
             <>
-              <p className="text-xs text-ink-400 leading-relaxed">{t("newRecord.companyHint")}</p>
+              {!pickedClientId && <p className="text-xs text-ink-400 leading-relaxed">{t("newRecord.companyHint")}</p>}
               <div>
                 <label className="label">{t("newRecord.companyNameLabel")}</label>
                 <input
                   className="input"
+                  disabled={!!pickedClientId}
                   value={form.companyName}
                   onChange={(e) => setForm({ ...form, companyName: e.target.value })}
                 />
@@ -758,6 +799,7 @@ export default function NewRecordWizard({ onExit }: { onExit: () => void }) {
                   className="input"
                   inputMode="numeric"
                   pattern="[0-9]*"
+                  disabled={!!pickedClientId}
                   value={form.companyInn}
                   onChange={(e) => setForm({ ...form, companyInn: onlyDigits(e.target.value) })}
                   maxLength={9}
@@ -767,6 +809,7 @@ export default function NewRecordWizard({ onExit }: { onExit: () => void }) {
                 <label className="label">{t("newRecord.companyDirectorLabel")}</label>
                 <input
                   className="input"
+                  disabled={!!pickedClientId}
                   value={form.companyDirector}
                   onChange={(e) => setForm({ ...form, companyDirector: e.target.value })}
                 />

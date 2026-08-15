@@ -105,13 +105,16 @@ export const tariffSchema = z.object({
   rate: z.coerce.number().min(0, "Ставка не может быть отрицательной"),
 });
 
+// 24-hex-символьный идентификатор Mongo ObjectId — используется, где клиент присылает ссылку
+// на уже существующий документ (Client и т.п.), а не его данные целиком.
+const objectIdSchema = z.string().regex(/^[0-9a-fA-F]{24}$/, "Некорректный идентификатор");
+
 const storageRecordBaseSchema = z.object({
   containerId: z.string().min(1, "Выберите контейнер"),
   cellNumber: z.coerce.number().int().min(1, "Выберите камеру").max(MAX_CELL_COUNT, "Некорректный номер камеры"),
   productName: z.string().min(1, "Укажите наименование товара").max(300),
   quantity: z.coerce.number().positive("Количество должно быть больше 0"),
   unit: unitEnum,
-  goodsOwner: goodsOwnerSchema,
   tariff: tariffSchema,
   // PNG data URL подписи клиента, нарисованной на экране сотрудника в Mini App (см.
   // components/miniapp/SignaturePad.tsx). Обязательна для физлиц — см. superRefine ниже
@@ -127,36 +130,66 @@ const storageRecordBaseSchema = z.object({
   expectedEndDate: z.coerce.date().optional(),
 });
 
-// "За кг" тарифы требуют известного веса — доступны только для unit "kg"/"tonne".
-// Проверка на уровне создания (все поля точно присутствуют вместе); при частичном
-// обновлении (PATCH) эта же проверка дублируется на уровне Mongoose-модели поверх
-// уже смёрженного документа, см. models/StorageRecord.ts.
-export const storageRecordCreateSchema = storageRecordBaseSchema.superRefine((data, ctx) => {
-  const needsWeight = data.tariff.type === "per_kg_month" || data.tariff.type === "per_kg_6_months";
-  if (needsWeight && data.unit !== "kg" && data.unit !== "tonne") {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
-      path: ["tariff", "type"],
-      message: 'Тариф "за кг" применим только к записям с единицей измерения "kg" или "tonne"',
-    });
-  }
-  // Договор формируется только для физлиц (см. lib/contract/generateContract.ts) — для них
-  // клиент обязан расписаться на экране сотрудника перед сохранением записи (см. шаг
-  // "Подпись" в components/miniapp/NewRecordWizard.tsx). Юрлицам подпись не нужна.
-  if (data.goodsOwner.type === "individual" && !data.clientSignaturePng) {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
-      path: ["clientSignaturePng"],
-      message: "Клиент должен подписать договор",
-    });
-  }
-});
+// Владелец груза при СОЗДАНИИ записи — РОВНО одно из двух (см. models/Client.ts):
+// - clientId: сотрудник явно выбрал существующего клиента из поиска (GET
+//   /api/miniapp/clients/search) — переиспользуем его карточку как есть, без слияния по
+//   совпадению телефона;
+// - newClient: сотрудник заполнил форму с нуля — ВСЕГДА заводит НОВУЮ карточку клиента, даже
+//   если телефон совпал с чьим-то ещё (без явного выбора из поиска совпадение по телефону
+//   больше не схлопывает разных людей в одного арендатора — см. README).
+export const storageRecordCreateSchema = storageRecordBaseSchema
+  .extend({
+    clientId: objectIdSchema.optional(),
+    newClient: goodsOwnerSchema.optional(),
+  })
+  .superRefine((data, ctx) => {
+    const needsWeight = data.tariff.type === "per_kg_month" || data.tariff.type === "per_kg_6_months";
+    if (needsWeight && data.unit !== "kg" && data.unit !== "tonne") {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["tariff", "type"],
+        message: 'Тариф "за кг" применим только к записям с единицей измерения "kg" или "tonne"',
+      });
+    }
+    if (!data.clientId && !data.newClient) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["clientId"],
+        message: "Выберите существующего клиента или заполните данные нового",
+      });
+    }
+    if (data.clientId && data.newClient) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["newClient"],
+        message: "Нельзя одновременно выбрать существующего клиента и завести нового",
+      });
+    }
+    // Договор формируется только для физлиц (см. lib/contract/generateContract.ts) — для НОВОГО
+    // клиента-физлица обязательна подпись на экране сотрудника перед сохранением записи (см. шаг
+    // "Подпись" в components/miniapp/NewRecordWizard.tsx). Для уже существующего клиента подпись
+    // проверяется отдельно — см. superRefine в app/api/miniapp/records/route.ts, где известен
+    // тип уже сохранённого профиля.
+    if (data.newClient?.type === "individual" && !data.clientSignaturePng) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["clientSignaturePng"],
+        message: "Клиент должен подписать договор",
+      });
+    }
+  });
 
 // createdAt отдельно от storageRecordBaseSchema: это дата договора, а не поле, вводимое при
 // создании записи (при создании она всегда "сейчас") — редактируется только владельцем/доверенным
 // лицом на веб-панели (см. app/dashboard/records/page.tsx), и напрямую влияет на дату начала
 // начисления по тарифу (accrueTariff берёт `from: record.createdAt`, см. lib/tariff.ts).
+//
+// goodsOwner здесь — НЕ смена клиента (для этого нет clientId/newClient, как в create): это
+// правка ПЕЧАТНОГО СНИМКА конкретной записи (см. StorageRecord.goodsOwner) — не влияет на
+// clientId и, следовательно, не переносит запись к другому арендатору и не меняет агрегацию
+// долга/оплат. Смена самого клиента карточки — на странице «Арендаторы» (PATCH /api/tenants/[clientId]).
 export const storageRecordUpdateSchema = storageRecordBaseSchema.partial().extend({
+  goodsOwner: goodsOwnerSchema.optional(),
   createdAt: z.coerce.date().optional(),
 });
 
@@ -274,11 +307,12 @@ export const inventoryItemUpdateSchema = z.object({
 
 // Выдать/принять инвентарь клиенту (см. models/InventoryLedgerEntry.ts, lib/inventoryLedger.ts) —
 // без ставки/стоимости (в отличие от прежнего параллельного учёта ящиков, упразднённого).
+// ownerType/ownerLabel/ownerKey (денормализованные поля отображения на самой записи) сервер
+// заполняет сам из карточки клиента (models/Client.ts) по clientId — не принимает их от клиента,
+// чтобы это всегда была одна и та же карточка, а не то, что клиент прислал в запросе.
 export const inventoryLedgerEntryCreateSchema = z.object({
   itemId: z.string().min(1, "Выберите позицию инвентаря"),
-  ownerKey: z.string().min(1, "Не выбран владелец груза"),
-  ownerType: goodsOwnerTypeEnum,
-  ownerLabel: z.string().min(1, "Не указано имя/наименование владельца").max(300),
+  clientId: objectIdSchema,
   containerId: z.string().min(1, "Выберите контейнер"),
   cellNumber: z.coerce.number().int().min(1).max(MAX_CELL_COUNT).optional(),
   direction: z.enum(["given", "returned"]),
@@ -303,18 +337,22 @@ export const withdrawalCreateSchema = z.object({
   note: z.string().max(500).optional().default(""),
 });
 
-// Запись фактической оплаты (см. models/Income.ts). ownerKey/ownerLabel/ownerType приходят
-// с клиента из того же списка, что и таблица задолженности (GET /api/debts) — так выбор
-// "человек → его контейнер" в форме однозначно соответствует существующей связке
-// владелец+контейнер, найденной по реальным StorageRecord (сервер дополнительно проверяет
-// это в app/api/income/route.ts, чтобы нельзя было создать доход на несуществующую связку).
+// Запись фактической оплаты (см. models/Income.ts). clientId приходит с клиента из того же
+// списка, что и таблица задолженности (GET /api/debts) — так выбор "человек → его контейнер"
+// в форме однозначно соответствует существующей связке клиент+контейнер, найденной по реальным
+// StorageRecord (сервер дополнительно проверяет это в app/api/income/route.ts, чтобы нельзя
+// было создать доход на несуществующую связку). ownerType/ownerLabel/ownerKey сервер заполняет
+// сам из карточки клиента — см. комментарий у inventoryLedgerEntryCreateSchema выше.
+//
+// cellNumber ОБЯЗАТЕЛЕН — платёж "за контейнер в целом" (без камеры) раньше приводил к тому,
+// что таблица "Арендаторы по камерам" не могла честно разбить оплату между камерами клиента и
+// показывала одну и ту же общую сумму на каждой (см. README, lib/tenantMatrix.ts). Платежи,
+// внесённые до этого требования, остаются без камеры — lib/debt.ts распределяет их между
+// камерами клиента автоматически (см. allocateUnassignedPaid).
 export const incomeCreateSchema = z.object({
-  ownerType: goodsOwnerTypeEnum,
-  ownerKey: z.string().min(1, "Не выбран владелец груза"),
-  ownerLabel: z.string().min(1, "Не указано имя/наименование владельца").max(300),
+  clientId: objectIdSchema,
   containerId: z.string().min(1, "Выберите контейнер"),
-  // Необязательно — платёж может быть "за контейнер в целом" (см. models/Income.ts).
-  cellNumber: z.coerce.number().int().min(1).max(MAX_CELL_COUNT).optional(),
+  cellNumber: z.coerce.number().int().min(1, "Выберите камеру").max(MAX_CELL_COUNT, "Некорректный номер камеры"),
   amount: z.coerce.number().positive("Сумма должна быть больше 0"),
   method: incomePaymentMethodEnum,
   paidAt: z.coerce.date().optional(),
@@ -322,15 +360,16 @@ export const incomeCreateSchema = z.object({
 });
 
 // Полное редактирование уже внесённого платежа (веб-панель) — раньше редактирования не было
-// вовсе, доступно независимо от способа оплаты. ownerKey/ownerType сознательно НЕ включены —
-// это идентификатор арендатора (см. lib/ownerKey.ts), его смена ломала бы привязку к
-// задолженности; исправить имя владельца можно через ownerLabel (просто отображаемая подпись)
-// или через редактирование карточки арендатора (см. app/api/tenants/[ownerKey]/route.ts).
+// вовсе, доступно независимо от способа оплаты. clientId сознательно НЕ включён — это
+// идентификатор арендатора (models/Client.ts), его смена ломала бы привязку к задолженности;
+// исправить имя владельца можно через ownerLabel (просто отображаемая подпись) или через
+// редактирование карточки арендатора (см. app/api/tenants/[clientId]/route.ts).
 export const incomeUpdateSchema = z.object({
   ownerLabel: z.string().min(1, "Не указано имя/наименование владельца").max(300).optional(),
   containerId: z.string().min(1, "Выберите контейнер").optional(),
-  // null — явно очистить камеру (платёж "за контейнер в целом"); undefined — не менять.
-  cellNumber: z.union([z.coerce.number().int().min(1).max(MAX_CELL_COUNT), z.null()]).optional(),
+  // Камера обязательна у новых платежей (см. incomeCreateSchema выше) — при редактировании её
+  // можно поменять на другую (не обнулить): z.null() сознательно не в union.
+  cellNumber: z.coerce.number().int().min(1).max(MAX_CELL_COUNT).optional(),
   amount: z.coerce.number().positive("Сумма должна быть больше 0").optional(),
   method: incomePaymentMethodEnum.optional(),
   paidAt: z.coerce.date().optional(),

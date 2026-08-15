@@ -8,6 +8,7 @@
     "start": "next start",
     "lint": "next lint",
     "seed": "tsx scripts/seed.ts",
+    "migrate-clients": "tsx scripts/migrateClients.ts",
     "set-webhook": "tsx scripts/setWebhook.ts",
     "extract-contract-template": "node scripts/extractContractTemplate.js"
   },

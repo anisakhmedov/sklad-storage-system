@@ -5,7 +5,7 @@ import Link from "next/link";
 import { Boxes, Lock, X } from "lucide-react";
 
 interface CellOccupant {
-  ownerKey: string;
+  clientId: string;
   ownerLabel: string;
   ownerType: "individual" | "company";
   productSummary: string;
@@ -132,8 +132,8 @@ export default function ContainerCellsGrid() {
             <div className="space-y-2 mt-3">
               {modalFor.cell.occupants.map((o) => (
                 <Link
-                  key={o.ownerKey}
-                  href={`/dashboard/tenants/${encodeURIComponent(o.ownerKey)}`}
+                  key={o.clientId}
+                  href={`/dashboard/tenants/${encodeURIComponent(o.clientId)}`}
                   className="block rounded-xl border border-ink-200 px-3.5 py-2.5 hover:border-brand-300 hover:bg-brand-50/40 transition-colors"
                 >
                   <div className="font-medium text-ink-900">{o.ownerLabel}</div>

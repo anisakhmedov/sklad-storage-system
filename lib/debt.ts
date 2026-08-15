@@ -5,12 +5,25 @@ import { Income } from "@/models/Income";
 // (см. пояснение в lib/contract/contractService.ts).
 import "@/models/Container";
 import { accrueTariff } from "@/lib/tariff";
-import { ownerKeyOf, ownerLabelOf, parseOwnerKey } from "@/lib/ownerKey";
+import { ownerLabelOf } from "@/lib/ownerKey";
 
 /**
- * Задолженность = начислено по тарифу (сумма по всем записям владельца в этом контейнере,
- * с даты создания КАЖДОЙ записи по `to`) минус фактически оплачено (Income с paidAt ≤ `to`).
+ * Задолженность = начислено по тарифу (сумма по всем записям клиента в этой КАМЕРЕ, с даты
+ * создания КАЖДОЙ записи по `to`) минус фактически оплачено (Income с paidAt ≤ `to`).
  * Если конечная дата не задана — берётся сегодня (см. README → «Тарифы, оплата и задолженность»).
+ *
+ * Ключ агрегации — clientId (models/Client.ts), а не телефон/ИНН (см. историческое пояснение в
+ * models/Client.ts): раньше два разных человека без своего телефона, вписанные с одним и тем
+ * же "запасным" номером, автоматически считались одним арендатором.
+ *
+ * Детализация — до КАМЕРЫ (cellNumber), а не только до контейнера: начисление у каждой
+ * StorageRecord уже привязано к конкретной камере, поэтому считается однозначно. Оплата
+ * (Income) не всегда фиксируется с указанием камеры — новые платежи это поле требуют (см.
+ * lib/validation.ts::incomeCreateSchema), но платежи, заведённые раньше, могли быть "за
+ * контейнер в целом". Такие суммы распределяются между камерами того же клиента в этом же
+ * контейнере автоматически: сначала гасится самая старая камера (по дате первой записи в ней),
+ * остаток (переплата) приписывается самой новой — см. allocateUnassignedPaid ниже. Сумма по
+ * камерам всегда точно сходится с общей суммой по клиенту+контейнеру.
  */
 export interface DebtRecordBreakdown {
   recordId: string;
@@ -20,14 +33,32 @@ export interface DebtRecordBreakdown {
   tariff: ITariff;
   since: Date;
   accrued: number;
-  /** Проставлена, если запись закрыта ("товар забран") — начисление остановлено на эту дату,
-   * см. models/StorageRecord.ts::closedAt. undefined — запись активна. */
+  /** Проставлена, если запись закрыта ("товар забран", см. models/StorageRecord.ts::closedAt) —
+   * начисление остановлено на эту дату. undefined — запись активна. */
   closedAt?: Date;
 }
 
-export interface OwnerContainerDebt {
+/** Долг клиента по ОДНОЙ камере одного контейнера — самая мелкая единица агрегации. */
+export interface ClientCellDebt {
+  clientId: string;
   ownerType: GoodsOwnerType;
-  ownerKey: string;
+  ownerLabel: string;
+  containerId: string;
+  containerName: string;
+  cellNumber: number;
+  since: Date;
+  to: Date;
+  accrued: number;
+  paid: number;
+  balance: number;
+  records: DebtRecordBreakdown[];
+}
+
+/** Долг клиента по контейнеру ЦЕЛИКОМ — сумма по всем его камерам в этом контейнере, плюс сами
+ * камеры (для мест, где нужна детализация без отдельного запроса). */
+export interface ClientContainerDebt {
+  clientId: string;
+  ownerType: GoodsOwnerType;
   ownerLabel: string;
   containerId: string;
   containerName: string;
@@ -37,70 +68,95 @@ export interface OwnerContainerDebt {
   paid: number;
   balance: number;
   records: DebtRecordBreakdown[];
+  cells: ClientCellDebt[];
 }
 
-interface Group {
+interface CellGroup {
+  clientId: string;
   ownerType: GoodsOwnerType;
-  ownerKey: string;
   ownerLabel: string;
   containerId: string;
   containerName: string;
+  cellNumber: number;
   since: Date;
   records: DebtRecordBreakdown[];
+  paid: number;
 }
 
 /**
- * Все связки «владелец + контейнер» с начислением/оплатой/остатком на дату `to`.
- * `ownerKey` сужает выборку до одного владельца (по его телефону/ИНН) — используется ботом
- * и веб-панелью, когда не нужна сводка по всем сразу.
+ * Оплаты без указанной камеры (легаси, см. комментарий выше) распределяются между камерами того
+ * же клиента+контейнера: сначала гасится камера с самой ранней `since` (первая запись в ней) —
+ * пока её (начислено − уже оплачено явно) не покроется, потом следующая по дате, и т.д. Остаток
+ * пула (если он больше суммарного долга — переплата) целиком уходит в самую новую камеру.
+ * Считается на лету при каждом запросе — сами документы Income не меняются.
  */
-export async function getAllOwnerContainerDebts(
-  opts: { to?: Date; ownerKey?: string; containerIds?: string[] } = {}
-): Promise<OwnerContainerDebt[]> {
+function allocateUnassignedPaid(pool: number, cellsSortedBySince: CellGroup[], accruedByCell: Map<string, number>): void {
+  let remaining = pool;
+  for (const cell of cellsSortedBySince) {
+    if (remaining <= 0) break;
+    const key = `${cell.containerId}::${cell.cellNumber}`;
+    const accrued = accruedByCell.get(key) || 0;
+    const owedHere = Math.max(0, accrued - cell.paid);
+    const take = Math.min(remaining, owedHere);
+    if (take > 0) {
+      cell.paid += take;
+      remaining -= take;
+    }
+  }
+  if (remaining > 0 && cellsSortedBySince.length > 0) {
+    cellsSortedBySince[cellsSortedBySince.length - 1].paid += remaining;
+  }
+}
+
+/**
+ * Все связки «клиент + контейнер + камера» с начислением/оплатой/остатком на дату `to`.
+ * `clientId` сужает выборку до одного клиента — используется ботом (нет, бот работает по
+ * телефону — см. lib/goodsOwnerBot.ts) и веб-панелью/Mini App, когда не нужна сводка по всем
+ * сразу.
+ */
+export async function getAllClientCellDebts(
+  opts: { to?: Date; clientId?: string; containerIds?: string[] } = {}
+): Promise<ClientCellDebt[]> {
   const to = opts.to || new Date();
   await connectDB();
 
   const recordFilter: Record<string, unknown> = {};
   if (opts.containerIds) {
     // Ограничение по доступным сотруднику контейнерам (см. lib/miniAuth.ts::allowedContainerIds).
-    // undefined в opts.containerIds означает "без ограничения" — сюда попадает только массив.
     recordFilter.containerId = { $in: opts.containerIds };
   }
-  if (opts.ownerKey) {
-    const parsed = parseOwnerKey(opts.ownerKey);
-    if (parsed?.type === "individual") {
-      recordFilter["goodsOwner.type"] = "individual";
-      recordFilter["goodsOwner.phone"] = parsed.value;
-    } else if (parsed?.type === "company") {
-      recordFilter["goodsOwner.type"] = "company";
-      recordFilter["goodsOwner.inn"] = parsed.value;
-    } else {
-      // Некорректный ownerKey — заведомо пустой результат вместо всех записей подряд.
-      return [];
-    }
-  }
+  if (opts.clientId) recordFilter.clientId = opts.clientId;
 
   const records = await StorageRecord.find(recordFilter)
     .populate<{ containerId: { _id: unknown; name: string } }>("containerId", "name")
     .lean();
 
-  const groups = new Map<string, Group>();
+  const groups = new Map<string, CellGroup>();
+  // clientId::containerId -> список ключей камер (для распределения "безадресных" платежей).
+  const cellsByClientContainer = new Map<string, CellGroup[]>();
+
   for (const r of records as any[]) {
-    const ownerKey = ownerKeyOf(r.goodsOwner);
+    const clientId = String(r.clientId);
     const containerRef = r.containerId as { _id: unknown; name: string } | null;
     const containerId = String(containerRef?._id ?? r.containerId);
-    const groupKey = `${ownerKey}::${containerId}`;
+    const groupKey = `${clientId}::${containerId}::${r.cellNumber}`;
 
     if (!groups.has(groupKey)) {
-      groups.set(groupKey, {
+      const group: CellGroup = {
+        clientId,
         ownerType: r.goodsOwner.type,
-        ownerKey,
         ownerLabel: ownerLabelOf(r.goodsOwner),
         containerId,
         containerName: containerRef?.name || "—",
+        cellNumber: r.cellNumber,
         since: r.createdAt,
         records: [],
-      });
+        paid: 0,
+      };
+      groups.set(groupKey, group);
+      const ccKey = `${clientId}::${containerId}`;
+      if (!cellsByClientContainer.has(ccKey)) cellsByClientContainer.set(ccKey, []);
+      cellsByClientContainer.get(ccKey)!.push(group);
     }
     const g = groups.get(groupKey)!;
     if (r.createdAt < g.since) g.since = r.createdAt;
@@ -112,11 +168,7 @@ export async function getAllOwnerContainerDebts(
     const accrualTo = r.closedAt && r.closedAt < to ? r.closedAt : to;
 
     // Записи, созданные до появления поля "тариф" (ранние тестовые/сид-записи), не имеют
-    // r.tariff — раньше это роняло весь расчёт задолженности исключением (Cannot read
-    // properties of undefined) для ВСЕХ владельцев и контейнеров разом, из-за чего
-    // /api/debts и /api/miniapp/debts отдавали ошибку, а фронтенд молча показывал "записей
-    // нет" (см. диагностику бага). Такая запись просто не начисляет долг (accrued: 0),
-    // а не ломает остальные.
+    // r.tariff — такая запись просто не начисляет долг (accrued: 0), а не ломает остальные.
     const accrued = r.tariff
       ? accrueTariff({
           type: r.tariff.type,
@@ -139,31 +191,56 @@ export async function getAllOwnerContainerDebts(
     });
   }
 
-  const incomeFilter: Record<string, unknown> = { paidAt: { $lte: to } };
-  if (opts.ownerKey) incomeFilter.ownerKey = opts.ownerKey;
-  const incomes = await Income.find(incomeFilter).lean();
-
-  const paidByGroup = new Map<string, number>();
-  for (const inc of incomes) {
-    const key = `${inc.ownerKey}::${String(inc.containerId)}`;
-    paidByGroup.set(key, (paidByGroup.get(key) || 0) + inc.amount);
+  const accruedByCell = new Map<string, number>();
+  for (const g of groups.values()) {
+    accruedByCell.set(`${g.containerId}::${g.cellNumber}`, g.records.reduce((sum, r) => sum + r.accrued, 0));
   }
 
-  const result: OwnerContainerDebt[] = [];
-  for (const [key, g] of groups) {
+  const incomeFilter: Record<string, unknown> = { paidAt: { $lte: to } };
+  if (opts.clientId) incomeFilter.clientId = opts.clientId;
+  const incomes = await Income.find(incomeFilter).lean();
+
+  // Платежи с явно указанной камерой — начисляются напрямую на неё.
+  const unassignedPoolByClientContainer = new Map<string, number>();
+  for (const inc of incomes) {
+    const clientId = String(inc.clientId);
+    const containerId = String(inc.containerId);
+    if (inc.cellNumber) {
+      const g = groups.get(`${clientId}::${containerId}::${inc.cellNumber}`);
+      // Если группы нет (напр. клиент оплатил камеру, где у него уже нет активных/закрытых
+      // записей в этом контейнере — легаси-данные) — деньги не теряются молча, а уходят в общий
+      // пул контейнера, как и "безадресные" платежи ниже.
+      if (g) {
+        g.paid += inc.amount;
+        continue;
+      }
+    }
+    const ccKey = `${clientId}::${containerId}`;
+    unassignedPoolByClientContainer.set(ccKey, (unassignedPoolByClientContainer.get(ccKey) || 0) + inc.amount);
+  }
+
+  for (const [ccKey, pool] of unassignedPoolByClientContainer) {
+    const cells = cellsByClientContainer.get(ccKey);
+    if (!cells || cells.length === 0) continue; // платёж на связку без единой записи — отбрасываем
+    const sorted = [...cells].sort((a, b) => a.since.getTime() - b.since.getTime());
+    allocateUnassignedPaid(pool, sorted, accruedByCell);
+  }
+
+  const result: ClientCellDebt[] = [];
+  for (const g of groups.values()) {
     const accrued = g.records.reduce((sum, r) => sum + r.accrued, 0);
-    const paid = paidByGroup.get(key) || 0;
     result.push({
+      clientId: g.clientId,
       ownerType: g.ownerType,
-      ownerKey: g.ownerKey,
       ownerLabel: g.ownerLabel,
       containerId: g.containerId,
       containerName: g.containerName,
+      cellNumber: g.cellNumber,
       since: g.since,
       to,
       accrued,
-      paid,
-      balance: accrued - paid,
+      paid: g.paid,
+      balance: accrued - g.paid,
       records: g.records.sort((a, b) => a.since.getTime() - b.since.getTime()),
     });
   }
@@ -171,19 +248,59 @@ export async function getAllOwnerContainerDebts(
   return result.sort((a, b) => b.balance - a.balance);
 }
 
-export async function getOwnerContainerDebt(
-  ownerKey: string,
+/** То же самое, свёрнутое до уровня клиент+контейнер (без разбивки по камерам) — для мест,
+ * которым детализация до камеры не нужна (карточка арендатора, шаг "контейнер" в мастере
+ * оплаты). Внутри каждой записи остаётся `cells` — на случай, если детализация всё же нужна. */
+export async function getAllClientContainerDebts(
+  opts: { to?: Date; clientId?: string; containerIds?: string[] } = {}
+): Promise<ClientContainerDebt[]> {
+  const cellDebts = await getAllClientCellDebts(opts);
+
+  const map = new Map<string, ClientContainerDebt>();
+  for (const c of cellDebts) {
+    const key = `${c.clientId}::${c.containerId}`;
+    const existing = map.get(key);
+    if (existing) {
+      existing.accrued += c.accrued;
+      existing.paid += c.paid;
+      existing.balance += c.balance;
+      existing.records.push(...c.records);
+      existing.cells.push(c);
+      if (c.since < existing.since) existing.since = c.since;
+    } else {
+      map.set(key, {
+        clientId: c.clientId,
+        ownerType: c.ownerType,
+        ownerLabel: c.ownerLabel,
+        containerId: c.containerId,
+        containerName: c.containerName,
+        since: c.since,
+        to: c.to,
+        accrued: c.accrued,
+        paid: c.paid,
+        balance: c.balance,
+        records: [...c.records],
+        cells: [c],
+      });
+    }
+  }
+
+  return Array.from(map.values()).sort((a, b) => b.balance - a.balance);
+}
+
+export async function getClientContainerDebt(
+  clientId: string,
   containerId: string,
   to: Date = new Date()
-): Promise<OwnerContainerDebt | null> {
-  const debts = await getAllOwnerContainerDebts({ to, ownerKey });
+): Promise<ClientContainerDebt | null> {
+  const debts = await getAllClientContainerDebts({ to, clientId });
   return debts.find((d) => d.containerId === containerId) || null;
 }
 
-export async function getDebtsForOwner(
-  ownerKey: string,
+export async function getDebtsForClient(
+  clientId: string,
   to: Date = new Date(),
   containerIds?: string[]
-): Promise<OwnerContainerDebt[]> {
-  return getAllOwnerContainerDebts({ to, ownerKey, containerIds });
+): Promise<ClientContainerDebt[]> {
+  return getAllClientContainerDebts({ to, clientId, containerIds });
 }

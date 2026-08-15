@@ -9,15 +9,15 @@ import { Search, UserRound, Building2, ChevronRight, Users, TriangleAlert } from
 
 type OwnerType = "individual" | "company";
 
-interface OwnerContainerDebt {
+interface ClientCellDebt {
   ownerType: OwnerType;
-  ownerKey: string;
+  clientId: string;
   ownerLabel: string;
   balance: number;
 }
 
 interface OwnerRow {
-  ownerKey: string;
+  clientId: string;
   ownerType: OwnerType;
   ownerLabel: string;
   balance: number;
@@ -26,11 +26,11 @@ interface OwnerRow {
 /**
  * Список клиентов (владельцев груза) — переиспользует GET /api/miniapp/debts (уже
  * отфильтрован по доступным сотруднику контейнерам, см. lib/miniAuth.ts::allowedContainerIds)
- * и группирует по ownerKey, как это уже делает AddIncomeWizard.tsx.
+ * и группирует по clientId, как это уже делает AddIncomeWizard.tsx.
  */
 export default function ClientsList({ onExit }: { onExit: () => void }) {
   const { t } = useI18n();
-  const [debts, setDebts] = useState<OwnerContainerDebt[]>([]);
+  const [debts, setDebts] = useState<ClientCellDebt[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
@@ -54,9 +54,9 @@ export default function ClientsList({ onExit }: { onExit: () => void }) {
   const owners = useMemo(() => {
     const map = new Map<string, OwnerRow>();
     for (const d of debts) {
-      const existing = map.get(d.ownerKey);
+      const existing = map.get(d.clientId);
       if (existing) existing.balance += d.balance;
-      else map.set(d.ownerKey, { ownerKey: d.ownerKey, ownerType: d.ownerType, ownerLabel: d.ownerLabel, balance: d.balance });
+      else map.set(d.clientId, { clientId: d.clientId, ownerType: d.ownerType, ownerLabel: d.ownerLabel, balance: d.balance });
     }
     return Array.from(map.values()).sort((a, b) => a.ownerLabel.localeCompare(b.ownerLabel, "ru"));
   }, [debts]);
@@ -110,7 +110,7 @@ export default function ClientsList({ onExit }: { onExit: () => void }) {
             const Icon = o.ownerType === "individual" ? UserRound : Building2;
             return (
               <button
-                key={o.ownerKey}
+                key={o.clientId}
                 onClick={() => {
                   haptic.selection();
                   setSelected(o);

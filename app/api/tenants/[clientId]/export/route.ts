@@ -6,13 +6,13 @@ import { getTenantDetail, buildTenantWorkbook } from "@/lib/tenants";
 export const runtime = "nodejs";
 
 /** Скачивание полной карточки арендатора в .xlsx — та же информация, что и в онлайн-версии. */
-export async function GET(_req: NextRequest, { params }: { params: { ownerKey: string } }) {
+export async function GET(_req: NextRequest, { params }: { params: { clientId: string } }) {
   const user = await requireWebUser();
   if (!user) return jsonError("Не авторизован", 401);
 
   try {
-    const ownerKey = decodeURIComponent(params.ownerKey);
-    const detail = await getTenantDetail(ownerKey);
+    const clientId = decodeURIComponent(params.clientId);
+    const detail = await getTenantDetail(clientId);
     if (!detail) return jsonError("Арендатор не найден", 404);
 
     const buffer = await buildTenantWorkbook(detail);
@@ -27,7 +27,7 @@ export async function GET(_req: NextRequest, { params }: { params: { ownerKey: s
       },
     });
   } catch (err) {
-    console.error("GET /api/tenants/[ownerKey]/export:", err);
+    console.error("GET /api/tenants/[clientId]/export:", err);
     return jsonError("Не удалось сформировать Excel-файл", 500);
   }
 }

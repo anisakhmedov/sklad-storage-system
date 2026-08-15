@@ -6,7 +6,7 @@ import { haptic } from "./telegram";
 
 export interface CellGridCell {
   number: number;
-  occupants: { ownerKey: string; ownerLabel: string; ownerType: "individual" | "company"; productSummary: string }[];
+  occupants: { clientId: string; ownerLabel: string; ownerType: "individual" | "company"; productSummary: string }[];
   isFull: boolean;
 }
 

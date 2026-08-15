@@ -58,6 +58,20 @@ export interface IStorageRecord {
   productName: string;
   quantity: number;
   unit: Unit;
+  /**
+   * Ссылка на карточку клиента (models/Client.ts) — ЕДИНСТВЕННЫЙ идентификатор личности
+   * арендатора для агрегации долга/оплат/истории (см. lib/debt.ts, lib/tenants.ts). ДО этого
+   * поля личность вычислялась из goodsOwner.phone/inn (см. lib/ownerKey.ts) — это ломалось,
+   * когда двум разным людям без своего телефона вписывали один и тот же "запасной" номер:
+   * система считала их одним арендатором. clientId проставляется один раз при создании записи
+   * и не пересчитывается по goodsOwner ниже.
+   */
+  clientId: Types.ObjectId;
+  /**
+   * Снимок профиля клиента НА МОМЕНТ создания записи — не источник истины (им теперь является
+   * Client.profile), нужен только для того, чтобы уже выданный PDF договора не менялся задним
+   * числом при последующем редактировании карточки клиента (см. lib/contract/generateContract.ts).
+   */
   goodsOwner: IGoodsOwner;
   tariff: ITariff;
   createdByEmployeeId: Types.ObjectId;
@@ -125,7 +139,9 @@ export interface IStorageRecord {
 // полей по типу проверяется в pre("validate") ниже; основную проверку формы делает zod
 // на уровне API (lib/validation.ts, storageRecordCreateSchema) — как и везде в проекте,
 // API не доверяет клиенту, а модель — второй рубеж защиты.
-const GoodsOwnerSchema = new Schema<IGoodsOwner>(
+// Экспортирована — переиспользуется в models/Client.ts как схема профиля клиента (см. README →
+// «Клиенты и задолженность»): один и тот же формат данных, одна и та же валидация.
+export const GoodsOwnerSchema = new Schema<IGoodsOwner>(
   {
     type: { type: String, enum: ["individual", "company"], required: true },
     // — физическое лицо —
@@ -182,6 +198,7 @@ const StorageRecordSchema = new Schema<IStorageRecord>({
   // Верхняя граница — общий MAX_CELL_COUNT (второй рубеж защиты); реальный лимит для
   // конкретного контейнера — его собственный cellCount (см. models/Container.ts).
   cellNumber: { type: Number, required: true, min: 1, max: MAX_CELL_COUNT },
+  clientId: { type: Schema.Types.ObjectId, ref: "Client", required: true, index: true },
   productName: { type: String, required: true, trim: true },
   quantity: { type: Number, required: true, min: 0 },
   unit: { type: String, enum: ["tonne", "kg", "box", "piece"], required: true },

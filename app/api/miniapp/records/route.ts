@@ -3,6 +3,7 @@ import { connectDB } from "@/lib/db";
 import { StorageRecord } from "@/models/StorageRecord";
 import { Container } from "@/models/Container";
 import { Firm } from "@/models/Firm";
+import { Client } from "@/models/Client";
 import { resolveEmployee, employeeCanAccessContainer } from "@/lib/miniAuth";
 import { storageRecordCreateSchema } from "@/lib/validation";
 import { jsonError, zodErrorResponse } from "@/lib/apiHelpers";
@@ -40,12 +41,30 @@ export async function POST(req: NextRequest) {
     return jsonError("Камера отмечена как заполненная — выберите другую", 409);
   }
 
-  // Подпись клиента (см. components/miniapp/SignaturePad.tsx) обязательна для физлиц —
-  // storageRecordCreateSchema уже это проверила (superRefine, lib/validation.ts), здесь
-  // только декодируем PNG data URL в Buffer для сохранения на записи.
+  // Клиент — РОВНО один из двух (см. lib/validation.ts::storageRecordCreateSchema,
+  // models/Client.ts): либо уже существующая карточка (сотрудник выбрал из поиска — см. GET
+  // /api/miniapp/clients/search), либо новая заводится прямо здесь. Без явного выбора из поиска
+  // совпадение телефона с чьей-то ещё карточкой НИКОГДА не подставляет чужого клиента молча.
+  let client;
+  if (parsed.data.clientId) {
+    client = await Client.findById(parsed.data.clientId);
+    if (!client) return jsonError("Клиент не найден — обновите поиск и выберите заново", 404);
+  } else {
+    client = await Client.create({
+      profile: parsed.data.newClient,
+      createdBy: employee.name,
+    });
+  }
+  const goodsOwner = client.profile;
+
+  // Подпись клиента (см. components/miniapp/SignaturePad.tsx) обязательна для физлиц — для
+  // нового клиента это уже проверила storageRecordCreateSchema (superRefine), а для уже
+  // существующего клиента (clientId, тип известен только после его загрузки выше) проверяем
+  // здесь — тем же способом, каким раньше пользовался общий superRefine.
   let clientSignatureBuffer: Buffer | undefined;
-  if (parsed.data.goodsOwner.type === "individual") {
-    const decoded = decodePngDataUrl(parsed.data.clientSignaturePng!);
+  if (goodsOwner.type === "individual") {
+    if (!parsed.data.clientSignaturePng) return jsonError("Клиент должен подписать договор", 400);
+    const decoded = decodePngDataUrl(parsed.data.clientSignaturePng);
     if (!decoded) return jsonError("Некорректный формат подписи клиента", 400);
     if (decoded.length > MAX_SIGNATURE_BYTES) return jsonError("Файл подписи слишком большой", 400);
     clientSignatureBuffer = decoded;
@@ -55,7 +74,7 @@ export async function POST(req: NextRequest) {
   // договор, см. lib/contract/generateContract.ts) — последовательность по текущему году
   // (см. lib/counter.ts, README → «Номер договора»).
   const contractNumber =
-    parsed.data.goodsOwner.type === "individual"
+    goodsOwner.type === "individual"
       ? `${await getNextSequence(`contract:${new Date().getFullYear()}`)}-${new Date().getFullYear()}`
       : undefined;
 
@@ -83,10 +102,12 @@ export async function POST(req: NextRequest) {
   const record = await StorageRecord.create({
     containerId: parsed.data.containerId,
     cellNumber: parsed.data.cellNumber,
+    clientId: client._id,
     productName: parsed.data.productName,
     quantity: parsed.data.quantity,
     unit: parsed.data.unit,
-    goodsOwner: parsed.data.goodsOwner,
+    // Снимок профиля клиента НА МОМЕНТ создания записи — см. models/StorageRecord.ts::goodsOwner.
+    goodsOwner,
     tariff: parsed.data.tariff,
     createdByEmployeeId: employee._id,
     contractNumber,

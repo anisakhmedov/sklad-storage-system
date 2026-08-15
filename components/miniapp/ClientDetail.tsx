@@ -86,7 +86,7 @@ export default function ClientDetail({
   owner,
   onBack,
 }: {
-  owner: { ownerKey: string; ownerLabel: string; ownerType: OwnerType };
+  owner: { clientId: string; ownerLabel: string; ownerType: OwnerType };
   onBack: () => void;
 }) {
   const { t } = useI18n();
@@ -105,8 +105,8 @@ export default function ClientDetail({
     setError(null);
     try {
       const [summaryRes, inventoryRes] = await Promise.all([
-        miniAppFetch(`/api/miniapp/clients/${encodeURIComponent(owner.ownerKey)}`),
-        miniAppFetch(`/api/miniapp/inventory/${encodeURIComponent(owner.ownerKey)}`),
+        miniAppFetch(`/api/miniapp/clients/${encodeURIComponent(owner.clientId)}`),
+        miniAppFetch(`/api/miniapp/inventory/${encodeURIComponent(owner.clientId)}`),
       ]);
       const data = await summaryRes.json().catch(() => ({}));
       if (!summaryRes.ok) {
@@ -132,7 +132,7 @@ export default function ClientDetail({
       setLoading(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [owner.ownerKey]);
+  }, [owner.clientId]);
 
   useEffect(() => {
     load();
@@ -161,7 +161,7 @@ export default function ClientDetail({
         </div>
       </div>
 
-      <HistorySection ownerKey={owner.ownerKey} />
+      <HistorySection clientId={owner.clientId} />
 
       {loading ? (
         <div className="space-y-2.5">
@@ -210,11 +210,11 @@ export default function ClientDetail({
 
 /**
  * Единая хронологическая история клиента (приём/отдача товара, выдача/возврат инвентаря,
- * оплаты) — см. GET /api/miniapp/clients/[ownerKey]/history, lib/tenantHistory.ts.
+ * оплаты) — см. GET /api/miniapp/clients/[clientId]/history, lib/tenantHistory.ts.
  * Свёрнута по умолчанию и подгружается по клику — сама карточка клиента и так тяжёлая,
  * не грузим историю, пока сотрудник её явно не запросил.
  */
-function HistorySection({ ownerKey }: { ownerKey: string }) {
+function HistorySection({ clientId }: { clientId: string }) {
   const { t } = useI18n();
   const money = (n: number) => Math.round(n).toLocaleString("ru-RU");
   const METHOD_LABELS: Record<string, string> = {
@@ -234,7 +234,7 @@ function HistorySection({ ownerKey }: { ownerKey: string }) {
     if (next && !loaded) {
       setLoading(true);
       try {
-        const res = await miniAppFetch(`/api/miniapp/clients/${encodeURIComponent(ownerKey)}/history`);
+        const res = await miniAppFetch(`/api/miniapp/clients/${encodeURIComponent(clientId)}/history`);
         const data = await res.json().catch(() => ({}));
         setEvents(res.ok ? data.events || [] : []);
         setLoaded(true);
@@ -299,7 +299,7 @@ function ContainerCard({
   onChanged,
 }: {
   container: SummaryContainer;
-  owner: { ownerKey: string; ownerLabel: string; ownerType: OwnerType };
+  owner: { clientId: string; ownerLabel: string; ownerType: OwnerType };
   inventoryBalances: InventoryBalance[];
   inventoryItems: InventoryItemRef[];
   onChanged: () => void;

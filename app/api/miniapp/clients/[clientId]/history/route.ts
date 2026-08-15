@@ -5,11 +5,11 @@ import { getTenantHistory } from "@/lib/tenantHistory";
 
 /**
  * Единая хронологическая история операций клиента — Mini App, тот же смысл, что и
- * app/api/tenants/[ownerKey]/history на веб-панели (см. lib/tenantHistory.ts). Сужена до
+ * app/api/tenants/[clientId]/history на веб-панели (см. lib/tenantHistory.ts). Сужена до
  * контейнеров, доступных сотруднику (см. lib/miniAuth.ts::allowedContainerIds) — как и карточка
- * клиента (app/api/miniapp/clients/[ownerKey]/route.ts).
+ * клиента (app/api/miniapp/clients/[clientId]/route.ts).
  */
-export async function GET(req: NextRequest, { params }: { params: { ownerKey: string } }) {
+export async function GET(req: NextRequest, { params }: { params: { clientId: string } }) {
   try {
     const { tgUser, employee } = await resolveEmployee(req);
     if (!tgUser) return jsonError("Не удалось проверить данные Telegram", 401);
@@ -24,12 +24,12 @@ export async function GET(req: NextRequest, { params }: { params: { ownerKey: st
 
     const limitParam = req.nextUrl.searchParams.get("limit");
     const limit = limitParam ? Number(limitParam) : undefined;
-    const events = await getTenantHistory(decodeURIComponent(params.ownerKey), { containerId, limit });
+    const events = await getTenantHistory(decodeURIComponent(params.clientId), { containerId, limit });
     const allowed = allowedContainerIds(employee);
     const visible = allowed ? events.filter((e) => allowed.includes(e.containerId)) : events;
     return NextResponse.json({ events: visible });
   } catch (err) {
-    console.error("GET /api/miniapp/clients/[ownerKey]/history:", err);
+    console.error("GET /api/miniapp/clients/[clientId]/history:", err);
     return jsonError("Внутренняя ошибка сервера", 500);
   }
 }

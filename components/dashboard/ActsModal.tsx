@@ -24,18 +24,18 @@ const KIND_LABELS: Record<string, string> = {
 /**
  * Список всех актов по записи и/или по клиенту+контейнеру (товарные + инвентарные) —
  * кнопка "Акты" на app/dashboard/records/page.tsx, а также на
- * app/dashboard/inventory/page.tsx (там recordId не передаётся — ищем только по ownerKey+
+ * app/dashboard/inventory/page.tsx (там recordId не передаётся — ищем только по clientId+
  * containerId, см. app/api/acts/route.ts). Данные — app/api/acts/route.ts, PDF —
  * app/api/acts/[id]/pdf/route.ts (сохранённый файл, открывается мгновенно).
  */
 export default function ActsModal({
   recordId = "",
-  ownerKey,
+  clientId,
   containerId,
   onClose,
 }: {
   recordId?: string;
-  ownerKey: string;
+  clientId: string;
   containerId: string;
   onClose: () => void;
 }) {
@@ -43,12 +43,12 @@ export default function ActsModal({
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const params = new URLSearchParams({ recordId, ownerKey, containerId });
+    const params = new URLSearchParams({ recordId, clientId, containerId });
     fetch(`/api/acts?${params.toString()}`)
       .then((r) => r.json())
       .then((d) => setActs(d.acts || []))
       .finally(() => setLoading(false));
-  }, [recordId, ownerKey, containerId]);
+  }, [recordId, clientId, containerId]);
 
   return (
     <div className="modal-backdrop overflow-y-auto py-8" onClick={onClose}>

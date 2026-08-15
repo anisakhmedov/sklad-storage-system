@@ -6,7 +6,7 @@ import { UserRound, Building2, Users, Boxes, Download, LayoutList, Table2 } from
 import TenantMatrixTable from "@/components/dashboard/TenantMatrixTable";
 
 interface TenantRow {
-  ownerKey: string;
+  clientId: string;
   ownerType: "individual" | "company";
   ownerLabel: string;
   phoneOrInn: string;
@@ -153,10 +153,10 @@ export default function TenantsPage() {
               {filtered.map((t) => {
                 const Icon = t.ownerType === "individual" ? UserRound : Building2;
                 return (
-                  <tr key={t.ownerKey}>
+                  <tr key={t.clientId}>
                     <td>
                       <Link
-                        href={`/dashboard/tenants/${encodeURIComponent(t.ownerKey)}`}
+                        href={`/dashboard/tenants/${encodeURIComponent(t.clientId)}`}
                         className="flex items-center gap-2.5 hover:text-brand-600"
                       >
                         <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-brand-50 text-brand-600">
