@@ -172,8 +172,14 @@ export default function ReportsPage() {
                 <BarChart data={data.monthlyVolume}>
                   <CartesianGrid strokeDasharray="3 3" stroke={CHART_CHROME.grid} vertical={false} />
                   <XAxis dataKey="month" stroke={CHART_CHROME.axis} tick={{ fontSize: 12 }} axisLine={{ stroke: CHART_CHROME.grid }} tickLine={false} />
-                  <YAxis stroke={CHART_CHROME.axis} tick={{ fontSize: 12 }} axisLine={false} tickLine={false} />
-                  <Tooltip {...tooltipStyle} />
+                  <YAxis
+                    stroke={CHART_CHROME.axis}
+                    tick={{ fontSize: 12 }}
+                    axisLine={false}
+                    tickLine={false}
+                    tickFormatter={(v: number) => v.toLocaleString("ru-RU")}
+                  />
+                  <Tooltip {...tooltipStyle} formatter={(v: number) => v.toLocaleString("ru-RU")} />
                   <Legend formatter={(v) => UNIT_LABELS[v] || v} wrapperStyle={{ fontSize: 12.5 }} />
                   {Object.keys(UNIT_COLORS).map((unit) => (
                     <Bar key={unit} dataKey={unit} name={unit} fill={UNIT_COLORS[unit]} radius={[4, 4, 0, 0]} maxBarSize={42} />
@@ -195,8 +201,14 @@ export default function ReportsPage() {
                 <BarChart data={data.containerLoad}>
                   <CartesianGrid strokeDasharray="3 3" stroke={CHART_CHROME.grid} vertical={false} />
                   <XAxis dataKey="container" stroke={CHART_CHROME.axis} tick={{ fontSize: 12 }} axisLine={{ stroke: CHART_CHROME.grid }} tickLine={false} />
-                  <YAxis stroke={CHART_CHROME.axis} tick={{ fontSize: 12 }} axisLine={false} tickLine={false} />
-                  <Tooltip {...tooltipStyle} />
+                  <YAxis
+                    stroke={CHART_CHROME.axis}
+                    tick={{ fontSize: 12 }}
+                    axisLine={false}
+                    tickLine={false}
+                    tickFormatter={(v: number) => v.toLocaleString("ru-RU")}
+                  />
+                  <Tooltip {...tooltipStyle} formatter={(v: number) => v.toLocaleString("ru-RU")} />
                   <Legend formatter={(v) => UNIT_LABELS[v] || v} wrapperStyle={{ fontSize: 12.5 }} />
                   {Object.keys(UNIT_COLORS).map((unit) => (
                     <Bar key={unit} dataKey={unit} name={unit} fill={UNIT_COLORS[unit]} radius={[4, 4, 0, 0]} maxBarSize={42} />
@@ -215,7 +227,13 @@ export default function ReportsPage() {
                 <BarChart data={data.paymentsByMethod}>
                   <CartesianGrid strokeDasharray="3 3" stroke={CHART_CHROME.grid} vertical={false} />
                   <XAxis dataKey="method" stroke={CHART_CHROME.axis} tick={{ fontSize: 12 }} axisLine={{ stroke: CHART_CHROME.grid }} tickLine={false} />
-                  <YAxis stroke={CHART_CHROME.axis} tick={{ fontSize: 12 }} axisLine={false} tickLine={false} />
+                  <YAxis
+                    stroke={CHART_CHROME.axis}
+                    tick={{ fontSize: 12 }}
+                    axisLine={false}
+                    tickLine={false}
+                    tickFormatter={(v: number) => v.toLocaleString("ru-RU")}
+                  />
                   <Tooltip {...tooltipStyle} formatter={(v: number) => v.toLocaleString("ru-RU")} />
                   <Bar dataKey="amount" name="Сумма" radius={[4, 4, 0, 0]} maxBarSize={56}>
                     {data.paymentsByMethod.map((entry) => (

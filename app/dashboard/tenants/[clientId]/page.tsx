@@ -22,6 +22,7 @@ import {
   TARIFF_LABELS,
   isTariffCompatibleWithUnit,
   suggestedEndDate,
+  formatTariffText,
   TariffType,
 } from "@/lib/tariff";
 import { DEFAULT_CELL_COUNT, cellNumbersForCount } from "@/lib/cells";
@@ -586,7 +587,7 @@ export default function TenantDetailPage({ params }: { params: { clientId: strin
                 <td className="tabular-nums text-ink-500">
                   {r.quantity} {UNIT_LABELS[r.unit] || r.unit}
                 </td>
-                <td className="text-ink-500">{r.tariff.rate} / {r.tariff.type}</td>
+                <td className="text-ink-500 whitespace-nowrap">{r.tariff ? formatTariffText(r.tariff) : "—"}</td>
                 <td className="text-ink-500">{r.contractNumber || "—"}</td>
                 <td className="text-ink-500">{r.createdByEmployeeId?.name || "—"}</td>
                 <td className="text-ink-500 whitespace-nowrap">

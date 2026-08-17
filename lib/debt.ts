@@ -61,8 +61,22 @@ export interface ClientCellDebt {
    * новую оплату (см. components/miniapp/AddIncomeWizard.tsx, PaymentForm в
    * app/dashboard/income/page.tsx) — архивному клиенту оплату больше не принимают через этот
    * список, независимо от того, есть за ним долг или нет.
+   *
+   * ВАЖНО: это флаг по КЛИЕНТУ целиком (across все его камеры) — если хотя бы ОДНА камера
+   * открыта, active === true на ВСЕХ его строках, включая уже закрытые камеры. Чтобы скрыть
+   * именно отдельную закрытую камеру (а не всего клиента), см. cellActive ниже.
    */
   active: boolean;
+  /**
+   * Эта КОНКРЕТНАЯ камера (clientId+containerId+cellNumber) ещё занята — среди записей именно
+   * этой связки есть хотя бы одна незакрытая. false — камера архивная: клиент из неё съехал
+   * (все записи в ней закрыты), даже если у него есть другие открытые камеры в другом
+   * контейнере/этом же контейнере — active выше в этом случае остаётся true, а cellActive
+   * именно у ЭТОЙ строки — false. Используется, чтобы такая камера не предлагалась для приёма
+   * оплаты (шаг "Камера" в AddIncomeWizard/PaymentForm) — оплату за неё больше не принимают
+   * нигде, независимо от долга (см. те же места, что и active).
+   */
+  cellActive: boolean;
 }
 
 /** Долг клиента по контейнеру ЦЕЛИКОМ — сумма по всем его камерам в этом контейнере, плюс сами
@@ -265,6 +279,8 @@ export async function getAllClientCellDebts(
       balance: accrued - g.paid,
       records: g.records.sort((a, b) => a.since.getTime() - b.since.getTime()),
       active: clientActive.get(g.clientId) ?? true,
+      // В отличие от active выше — только про ЭТУ камеру (см. ClientCellDebt.cellActive).
+      cellActive: g.records.some((r) => !r.closedAt),
     });
   }
 

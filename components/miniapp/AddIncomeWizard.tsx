@@ -50,6 +50,10 @@ interface ClientCellDebt {
    * скрыт из шага "Кто платит" ниже независимо от долга: съехавшему больше не принимают оплату
    * через этот список (см. README/обсуждение с владельцем). */
   active: boolean;
+  /** false — именно ЭТА камера архивная (клиент из неё съехал, см.
+   * lib/debt.ts::ClientCellDebt.cellActive), даже если у клиента есть другие открытые камеры.
+   * Такая камера не предлагается на шагах "Контейнер"/"Камера" ниже, а также в фильтре шага 0. */
+  cellActive: boolean;
 }
 
 const money = (n: number) => Math.round(n).toLocaleString("ru-RU");
@@ -133,33 +137,35 @@ export default function AddIncomeWizard({ onExit }: { onExit: () => void }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Архивная камера (клиент из неё съехал, см. lib/debt.ts::ClientCellDebt.cellActive) не
+  // предлагается для приёма оплаты нигде дальше по мастеру — ни в фильтре шага 0, ни на шагах
+  // "Контейнер"/"Камера" — независимо от долга по ней, даже если у клиента есть другие открытые
+  // камеры (тогда он сам остаётся в списке "Кто платит", просто без этой конкретной камеры).
+  const payableDebts = useMemo(() => debts.filter((d) => d.cellActive), [debts]);
+
   // Контейнеры/камеры для фильтра шага 0 — только те, где у сотрудника реально есть доступные
   // должники (не полный список контейнеров склада, а срез по debts, как и everywhere в этом
   // мастере), плюс сузка камер под уже выбранный контейнер фильтра.
   const filterContainers = useMemo(() => {
     const map = new Map<string, string>();
-    for (const d of debts) if (d.active) map.set(d.containerId, d.containerName);
+    for (const d of payableDebts) map.set(d.containerId, d.containerName);
     return Array.from(map.entries())
       .map(([id, name]) => ({ id, name }))
       .sort((a, b) => a.name.localeCompare(b.name, "ru"));
-  }, [debts]);
+  }, [payableDebts]);
 
   const filterCells = useMemo(() => {
     const set = new Set<number>();
-    for (const d of debts) {
-      if (!d.active) continue;
+    for (const d of payableDebts) {
       if (filterContainerId && d.containerId !== filterContainerId) continue;
       set.add(d.cellNumber);
     }
     return Array.from(set).sort((a, b) => a - b);
-  }, [debts, filterContainerId]);
+  }, [payableDebts, filterContainerId]);
 
   const owners = useMemo(() => {
     const map = new Map<string, { clientId: string; ownerType: OwnerType; ownerLabel: string }>();
-    for (const d of debts) {
-      // Архивный клиент (съехал, см. ClientCellDebt.active выше) не показывается в этом списке
-      // вообще — не важно, есть за ним долг или нет.
-      if (!d.active) continue;
+    for (const d of payableDebts) {
       if (filterContainerId && d.containerId !== filterContainerId) continue;
       if (filterCellNumber && d.cellNumber !== Number(filterCellNumber)) continue;
       if (!map.has(d.clientId)) {
@@ -167,13 +173,13 @@ export default function AddIncomeWizard({ onExit }: { onExit: () => void }) {
       }
     }
     return Array.from(map.values()).sort((a, b) => a.ownerLabel.localeCompare(b.ownerLabel, "ru"));
-  }, [debts, filterContainerId, filterCellNumber]);
+  }, [payableDebts, filterContainerId, filterCellNumber]);
 
   // Контейнеры клиента — сворачиваем камеры суммой (д.balance/accrued/paid по камерам этого
   // контейнера), чтобы шаг 1 выглядел как раньше ("выберите контейнер, вот долг по нему").
   const containersForOwner = useMemo(() => {
     const map = new Map<string, { containerId: string; containerName: string; accrued: number; paid: number; balance: number }>();
-    for (const d of debts) {
+    for (const d of payableDebts) {
       if (d.clientId !== clientId) continue;
       const existing = map.get(d.containerId);
       if (existing) {
@@ -185,13 +191,13 @@ export default function AddIncomeWizard({ onExit }: { onExit: () => void }) {
       }
     }
     return Array.from(map.values());
-  }, [debts, clientId]);
+  }, [payableDebts, clientId]);
 
   // Камеры клиента В ЭТОМ контейнере — только те, где у него реально есть записи (не 1..cellCount
   // подряд), с собственным долгом на каждой (см. lib/debt.ts).
   const cellsForOwnerContainer = useMemo(
-    () => debts.filter((d) => d.clientId === clientId && d.containerId === containerId).sort((a, b) => a.cellNumber - b.cellNumber),
-    [debts, clientId, containerId]
+    () => payableDebts.filter((d) => d.clientId === clientId && d.containerId === containerId).sort((a, b) => a.cellNumber - b.cellNumber),
+    [payableDebts, clientId, containerId]
   );
 
   const selectedOwner = owners.find((o) => o.clientId === clientId);

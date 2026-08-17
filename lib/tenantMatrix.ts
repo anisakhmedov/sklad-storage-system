@@ -258,8 +258,14 @@ export async function buildTenantMatrixWorkbook(sections: TenantMatrixSection[])
         c.border = { bottom: { style: "thin" } };
       });
 
+      // Денежные столбцы — фиксированные позиции 3 ("Остаток денег") и 4 ("Оплачено"), плюс
+      // последний столбец ("К получению", позиция зависит от числа динамических столбцов
+      // товара/инвентаря выше) — разряды тысяч видны сразу в Excel, как и на веб-странице
+      // (см. components/dashboard/TenantMatrixTable.tsx::money).
+      const moneyCols = [3, 4, headers.length];
+
       cell.rows.forEach((row, idx) => {
-        sheet.addRow([
+        const dataRow = sheet.addRow([
           idx + 1,
           row.ownerLabel,
           Math.round(row.balance),
@@ -269,6 +275,7 @@ export async function buildTenantMatrixWorkbook(sections: TenantMatrixSection[])
           ...section.inventoryColumns.map((col) => row.inventory[col] || ""),
           Math.round(row.balance),
         ]);
+        for (const c of moneyCols) dataRow.getCell(c).numFmt = "#,##0";
       });
 
       // "Итого по камере" — сумма каждого числового столбца по всем клиентам этой камеры (та же
@@ -285,6 +292,7 @@ export async function buildTenantMatrixWorkbook(sections: TenantMatrixSection[])
         sumCol((r) => r.balance),
       ]);
       totalsRow.font = { bold: true };
+      for (const c of moneyCols) totalsRow.getCell(c).numFmt = "#,##0";
       totalsRow.eachCell((c) => {
         c.border = { top: { style: "thin" } };
       });

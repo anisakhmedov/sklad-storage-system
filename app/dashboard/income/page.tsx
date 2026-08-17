@@ -55,6 +55,10 @@ interface ClientCellDebt {
    * скрыт из выпадающего списка «Записать оплату» ниже независимо от долга. Таблицу
    * «Задолженность по владельцам» это не затрагивает — там архивные по-прежнему видны. */
   active: boolean;
+  /** false — именно ЭТА камера архивная (клиент из неё съехал, см.
+   * lib/debt.ts::ClientCellDebt.cellActive), даже если у клиента есть другие открытые камеры.
+   * Такая камера не предлагается в форме «Записать оплату» (шаги «Контейнер»/«Камера» ниже). */
+  cellActive: boolean;
 }
 
 interface IncomeEntry {
@@ -1275,24 +1279,30 @@ function PaymentForm({
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
+  // Архивная камера (клиент из неё съехал, см. lib/debt.ts::ClientCellDebt.cellActive) не
+  // предлагается для приёма оплаты нигде в этой форме — ни на шаге "Контейнер" (если у клиента
+  // в контейнере не осталось ни одной открытой камеры, контейнер вообще не показывается), ни на
+  // шаге "Камера" — независимо от долга по ней.
+  const payableDebts = useMemo(() => debts.filter((d) => d.cellActive), [debts]);
+
   // Контейнеры клиента — свёрнуты суммой по камерам (см. lib/debt.ts::ClientCellDebt), чтобы
   // выпадающий список выглядел как раньше ("контейнер — долг по нему целиком").
   const containersForOwner = useMemo(() => {
     const map = new Map<string, { containerId: string; containerName: string; balance: number }>();
-    for (const d of debts) {
+    for (const d of payableDebts) {
       if (d.clientId !== clientId) continue;
       const existing = map.get(d.containerId);
       if (existing) existing.balance += d.balance;
       else map.set(d.containerId, { containerId: d.containerId, containerName: d.containerName, balance: d.balance });
     }
     return Array.from(map.values());
-  }, [debts, clientId]);
+  }, [payableDebts, clientId]);
 
   // Камеры клиента В ЭТОМ контейнере — только те, где у него реально есть записи (см.
   // lib/validation.ts::incomeCreateSchema — камера теперь обязательна).
   const cellsForOwnerContainer = useMemo(
-    () => debts.filter((d) => d.clientId === clientId && d.containerId === containerId).sort((a, b) => a.cellNumber - b.cellNumber),
-    [debts, clientId, containerId]
+    () => payableDebts.filter((d) => d.clientId === clientId && d.containerId === containerId).sort((a, b) => a.cellNumber - b.cellNumber),
+    [payableDebts, clientId, containerId]
   );
 
   const selectedDebt = cellsForOwnerContainer.find((d) => d.cellNumber === Number(cellNumber));

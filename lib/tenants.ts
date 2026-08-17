@@ -232,6 +232,7 @@ export async function buildTenantWorkbook(detail: TenantDetail): Promise<ExcelJS
       { field: "Привязан к боту с", value: new Date(detail.telegram.linkedAt).toLocaleString("ru-RU") },
     ]);
   }
+  const firstMoneyRow = profile.rowCount + 3; // "Контейнеров"/"Записей" — не деньги, дальше идут 3 денежные строки
   profile.addRows([
     { field: "Контейнеров", value: new Set(detail.records.map((r) => r.containerId?._id ? String(r.containerId._id) : "")).size },
     { field: "Записей", value: detail.records.length },
@@ -239,6 +240,11 @@ export async function buildTenantWorkbook(detail: TenantDetail): Promise<ExcelJS
     { field: "Всего оплачено", value: Math.round(detail.totals.paid) },
     { field: "Итоговая задолженность", value: Math.round(detail.totals.balance) },
   ]);
+  // Разряды тысяч только на 3 денежных строках выше (не на "Контейнеров"/"Записей" — это
+  // счётчики, не суммы, см. столбец "value" — общий для всей смешанной таблицы поле/значение).
+  for (let row = firstMoneyRow; row <= profile.rowCount; row++) {
+    profile.getCell(`B${row}`).numFmt = "#,##0";
+  }
   profile.getRow(1).font = { bold: true };
 
   const recordsSheet = wb.addWorksheet("Записи");
@@ -303,7 +309,9 @@ function incomeColumns(withOwner = false): Partial<ExcelJS.Column>[] {
     ...(withOwner ? [{ header: "Арендатор", key: "owner", width: 26 }] : []),
     { header: "Дата оплаты", key: "date", width: 18 },
     { header: "Контейнер", key: "container", width: 20 },
-    { header: "Сумма", key: "amount", width: 14 },
+    // "#,##0" — разряды тысяч видны сразу в Excel, а не только на веб-странице/в боте (см.
+    // money() в app/dashboard/*, formatMoney в lib/goodsOwnerBot.ts).
+    { header: "Сумма", key: "amount", width: 14, numFmt: "#,##0" },
     { header: "Способ", key: "method", width: 14 },
     { header: "Примечание", key: "note", width: 26 },
     { header: "Кто зафиксировал", key: "recordedBy", width: 20 },
@@ -327,9 +335,9 @@ function debtColumns(withOwner = false): Partial<ExcelJS.Column>[] {
     ...(withOwner ? [{ header: "Арендатор", key: "owner", width: 26 }] : []),
     { header: "Контейнер", key: "container", width: 20 },
     { header: "С даты", key: "since", width: 18 },
-    { header: "Начислено", key: "accrued", width: 14 },
-    { header: "Оплачено", key: "paid", width: 14 },
-    { header: "Остаток", key: "balance", width: 14 },
+    { header: "Начислено", key: "accrued", width: 14, numFmt: "#,##0" },
+    { header: "Оплачено", key: "paid", width: 14, numFmt: "#,##0" },
+    { header: "Остаток", key: "balance", width: 14, numFmt: "#,##0" },
   ];
 }
 
@@ -362,9 +370,9 @@ export async function buildAllTenantsWorkbook(details: TenantDetail[]): Promise<
     { header: "Телефон / ИНН", key: "contact", width: 20 },
     { header: "Контейнеров", key: "containers", width: 14 },
     { header: "Записей", key: "records", width: 12 },
-    { header: "Начислено", key: "accrued", width: 14 },
-    { header: "Оплачено", key: "paid", width: 14 },
-    { header: "Задолженность", key: "balance", width: 16 },
+    { header: "Начислено", key: "accrued", width: 14, numFmt: "#,##0" },
+    { header: "Оплачено", key: "paid", width: 14, numFmt: "#,##0" },
+    { header: "Задолженность", key: "balance", width: 16, numFmt: "#,##0" },
   ];
   for (const d of details) {
     summary.addRow({
