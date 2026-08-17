@@ -52,6 +52,17 @@ export interface ClientCellDebt {
   paid: number;
   balance: number;
   records: DebtRecordBreakdown[];
+  /**
+   * У клиента есть хотя бы одна незакрытая запись где-либо в запрошенной области (см.
+   * lib/tenants.ts::TenantListItem.active — то же самое понятие "съехал"/архив, посчитанное
+   * здесь же, чтобы не делать отдельный запрос). false — клиент архивный: НЕ убирается из этого
+   * списка (долг по нему как считался, так и считается — задолженность не списывается сама
+   * собой), но используется, чтобы скрыть архивных клиентов там, где выбирают, КОМУ принять
+   * новую оплату (см. components/miniapp/AddIncomeWizard.tsx, PaymentForm в
+   * app/dashboard/income/page.tsx) — архивному клиенту оплату больше не принимают через этот
+   * список, независимо от того, есть за ним долг или нет.
+   */
+  active: boolean;
 }
 
 /** Долг клиента по контейнеру ЦЕЛИКОМ — сумма по всем его камерам в этом контейнере, плюс сами
@@ -69,6 +80,8 @@ export interface ClientContainerDebt {
   balance: number;
   records: DebtRecordBreakdown[];
   cells: ClientCellDebt[];
+  /** См. ClientCellDebt.active выше — одинаково для всех камер одного клиента. */
+  active: boolean;
 }
 
 interface CellGroup {
@@ -226,6 +239,15 @@ export async function getAllClientCellDebts(
     allocateUnassignedPaid(pool, sorted, accruedByCell);
   }
 
+  // "Активен" — считается по КЛИЕНТУ целиком (across все его камеры/контейнеры в этой выборке),
+  // не по отдельной камере: клиент, у которого закрыта одна камера, но открыта другая, всё ещё
+  // активен (см. ClientCellDebt.active выше — то же понятие, что и lib/tenants.ts::getAllTenants).
+  const clientActive = new Map<string, boolean>();
+  for (const g of groups.values()) {
+    const hasOpenRecord = g.records.some((r) => !r.closedAt);
+    clientActive.set(g.clientId, (clientActive.get(g.clientId) || false) || hasOpenRecord);
+  }
+
   const result: ClientCellDebt[] = [];
   for (const g of groups.values()) {
     const accrued = g.records.reduce((sum, r) => sum + r.accrued, 0);
@@ -242,6 +264,7 @@ export async function getAllClientCellDebts(
       paid: g.paid,
       balance: accrued - g.paid,
       records: g.records.sort((a, b) => a.since.getTime() - b.since.getTime()),
+      active: clientActive.get(g.clientId) ?? true,
     });
   }
 
@@ -281,6 +304,7 @@ export async function getAllClientContainerDebts(
         balance: c.balance,
         records: [...c.records],
         cells: [c],
+        active: c.active,
       });
     }
   }

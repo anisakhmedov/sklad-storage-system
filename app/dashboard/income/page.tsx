@@ -51,6 +51,10 @@ interface ClientCellDebt {
   paid: number;
   balance: number;
   records: DebtRecordBreakdown[];
+  /** false — клиент архивный (все его записи закрыты, см. lib/debt.ts::ClientCellDebt.active) —
+   * скрыт из выпадающего списка «Записать оплату» ниже независимо от долга. Таблицу
+   * «Задолженность по владельцам» это не затрагивает — там архивные по-прежнему видны. */
+  active: boolean;
 }
 
 interface IncomeEntry {
@@ -314,12 +318,23 @@ export default function IncomePage() {
     await refreshAll();
   }
 
-  // Общий фильтр по контейнерам (incomeFilter.containerId) — применяется и к задолженности
-  // здесь, и к "Последним платежам" ниже (см. filteredIncomes), одним и тем же выбором.
-  const filteredDebts = useMemo(
-    () => (incomeFilter.containerId ? debts.filter((d) => d.containerId === incomeFilter.containerId) : debts),
-    [debts, incomeFilter.containerId]
-  );
+  async function handleDeleteGeneralIncome(inc: IncomeEntry) {
+    if (!confirm(`Удалить внешний приход на сумму ${money(inc.amount)} сум? Это действие необратимо.`)) return;
+    await fetch(`/api/general-income/${inc._id}`, { method: "DELETE" });
+    await refreshAll();
+  }
+
+  // Общий фильтр по контейнерам и камерам (incomeFilter.containerId/cellNumber) — применяется и к
+  // задолженности здесь, и к "Последним платежам"/"По холодильникам и камерам" ниже (см.
+  // filteredIncomes, filteredBreakdown), одним и тем же выбором — селекты в каждой секции читают
+  // и пишут одно и то же состояние, поэтому остаются синхронными между собой.
+  const filteredDebts = useMemo(() => {
+    return debts.filter((d) => {
+      if (incomeFilter.containerId && d.containerId !== incomeFilter.containerId) return false;
+      if (incomeFilter.cellNumber && String(d.cellNumber) !== incomeFilter.cellNumber) return false;
+      return true;
+    });
+  }, [debts, incomeFilter.containerId, incomeFilter.cellNumber]);
   const totalBalance = useMemo(() => filteredDebts.reduce((s, d) => s + d.balance, 0), [filteredDebts]);
   const totalAccrued = useMemo(() => filteredDebts.reduce((s, d) => s + d.accrued, 0), [filteredDebts]);
   const totalPaid = useMemo(() => filteredDebts.reduce((s, d) => s + d.paid, 0), [filteredDebts]);
@@ -347,6 +362,18 @@ export default function IncomePage() {
       return true;
     });
   }, [expenses, expenseFilter]);
+
+  // Тот же общий фильтр контейнер+камера (см. комментарий у filteredDebts выше) — для таблицы
+  // "По холодильникам и камерам". cellNumber в этой таблице может быть null (платежи "за
+  // контейнер в целом", без камеры, см. lib/finance.ts::getIncomeBreakdown) — такие строки
+  // скрываются, если выбрана конкретная камера (это не то же самое, что "нет фильтра").
+  const filteredBreakdown = useMemo(() => {
+    return breakdown.filter((b) => {
+      if (incomeFilter.containerId && b.containerId !== incomeFilter.containerId) return false;
+      if (incomeFilter.cellNumber && String(b.cellNumber ?? "") !== incomeFilter.cellNumber) return false;
+      return true;
+    });
+  }, [breakdown, incomeFilter.containerId, incomeFilter.cellNumber]);
 
   const hasIncomeFilter = !!(
     incomeFilter.method ||
@@ -749,6 +776,21 @@ export default function IncomePage() {
               </select>
             </div>
             <div>
+              <label className="label">Камера</label>
+              <select
+                className="input"
+                value={incomeFilter.cellNumber}
+                onChange={(e) => setIncomeFilter({ ...incomeFilter, cellNumber: e.target.value })}
+              >
+                <option value="">Все</option>
+                {filterCellOptions.map((n) => (
+                  <option key={n} value={n}>
+                    Камера {n}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
               <label className="label">По дату</label>
               <div className="input-icon-wrap">
                 <CalendarClock className="input-icon h-4 w-4" strokeWidth={2} />
@@ -1045,9 +1087,21 @@ export default function IncomePage() {
                     <td className="whitespace-nowrap">
                       {/* Полное редактирование — независимо от способа оплаты (см.
                           app/api/income/[id]/route.ts). Записи "Приход на холодильник" здесь не
-                          редактируются — у них нет своего PATCH-эндпоинта, править/удалять такую
-                          запись пока можно только напрямую в БД. */}
-                      {inc.source !== "general" && (
+                          редактируются (у них нет своего PATCH-эндпоинта), но их можно удалить —
+                          только владелец (см. app/api/general-income/[id]/route.ts). */}
+                      {inc.source === "general" ? (
+                        isOwner && (
+                          <div className="flex justify-end gap-1.5">
+                            <button
+                              className="btn-icon btn-danger-ghost"
+                              title="Удалить внешний приход"
+                              onClick={() => handleDeleteGeneralIncome(inc)}
+                            >
+                              <Trash2 className="h-3.5 w-3.5" strokeWidth={2} />
+                            </button>
+                          </div>
+                        )
+                      ) : (
                         <div className="flex justify-end gap-1.5">
                           <button
                             className="btn-icon btn-secondary"
@@ -1075,13 +1129,53 @@ export default function IncomePage() {
       </div>
 
       <div className="card overflow-x-auto mt-8">
-        <h2 className="card-title mb-1">По холодильникам и камерам</h2>
-        <p className="card-subtitle mb-3">
-          Сумма фактически полученных платежей (Income), сгруппированная по контейнеру и камере.
-        </p>
+        <div className="flex flex-wrap items-end justify-between gap-3 mb-3">
+          <div>
+            <h2 className="card-title mb-1">По холодильникам и камерам</h2>
+            <p className="card-subtitle">
+              Сумма фактически полученных платежей (Income), сгруппированная по контейнеру и камере.
+            </p>
+          </div>
+          <div className="flex items-end gap-2">
+            <div>
+              <label className="label">Контейнер</label>
+              <select
+                className="input"
+                value={incomeFilter.containerId}
+                onChange={(e) => setIncomeFilter({ ...incomeFilter, containerId: e.target.value })}
+              >
+                <option value="">Все</option>
+                {containers.map((c) => (
+                  <option key={c._id} value={c._id}>
+                    {c.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="label">Камера</label>
+              <select
+                className="input"
+                value={incomeFilter.cellNumber}
+                onChange={(e) => setIncomeFilter({ ...incomeFilter, cellNumber: e.target.value })}
+              >
+                <option value="">Все</option>
+                {filterCellOptions.map((n) => (
+                  <option key={n} value={n}>
+                    Камера {n}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+        </div>
         {breakdown.length === 0 ? (
           <div className="empty-state">
             <p className="text-sm text-ink-500">Платежей ещё не было.</p>
+          </div>
+        ) : filteredBreakdown.length === 0 ? (
+          <div className="empty-state">
+            <p className="text-sm text-ink-500">По этому фильтру платежей не найдено.</p>
           </div>
         ) : (
           <table className="table-base">
@@ -1093,7 +1187,7 @@ export default function IncomePage() {
               </tr>
             </thead>
             <tbody>
-              {breakdown.map((b) => (
+              {filteredBreakdown.map((b) => (
                 <tr key={`${b.containerId}::${b.cellNumber ?? "none"}`}>
                   <td className="text-ink-800">{b.containerName}</td>
                   <td className="text-ink-600">{b.cellNumber ?? "За контейнер в целом"}</td>
@@ -1161,6 +1255,9 @@ function PaymentForm({
   const owners = useMemo(() => {
     const map = new Map<string, { clientId: string; ownerType: OwnerType; ownerLabel: string }>();
     for (const d of debts) {
+      // Архивный клиент (съехал) не показывается в списке "Кому принять оплату" вообще — не
+      // важно, есть за ним долг или нет (см. ClientCellDebt.active выше).
+      if (!d.active) continue;
       if (!map.has(d.clientId)) {
         map.set(d.clientId, { clientId: d.clientId, ownerType: d.ownerType, ownerLabel: d.ownerLabel });
       }

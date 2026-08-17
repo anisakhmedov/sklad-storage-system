@@ -46,6 +46,10 @@ interface ClientCellDebt {
   accrued: number;
   paid: number;
   balance: number;
+  /** false — клиент архивный (все его записи закрыты, см. lib/debt.ts::ClientCellDebt.active) —
+   * скрыт из шага "Кто платит" ниже независимо от долга: съехавшему больше не принимают оплату
+   * через этот список (см. README/обсуждение с владельцем). */
+  active: boolean;
 }
 
 const money = (n: number) => Math.round(n).toLocaleString("ru-RU");
@@ -77,6 +81,12 @@ export default function AddIncomeWizard({ onExit }: { onExit: () => void }) {
   const [loadingDebts, setLoadingDebts] = useState(true);
   const [step, setStep] = useState(0);
   const [clientId, setClientId] = useState("");
+  // Фильтр списка "Кто платит" (шаг 0) по контейнеру/камере — отдельно от containerId/cellNumber
+  // ниже (те выбираются уже ПОСЛЕ владельца, на шагах 1/2, и означают "за что именно платит").
+  // Нужен, когда список должников большой — сузить его до конкретного холодильника/камеры,
+  // прежде чем искать нужного человека.
+  const [filterContainerId, setFilterContainerId] = useState("");
+  const [filterCellNumber, setFilterCellNumber] = useState("");
   const [containerId, setContainerId] = useState("");
   const [cellNumber, setCellNumber] = useState<number | null>(null);
   const [amount, setAmount] = useState("");
@@ -123,15 +133,41 @@ export default function AddIncomeWizard({ onExit }: { onExit: () => void }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Контейнеры/камеры для фильтра шага 0 — только те, где у сотрудника реально есть доступные
+  // должники (не полный список контейнеров склада, а срез по debts, как и everywhere в этом
+  // мастере), плюс сузка камер под уже выбранный контейнер фильтра.
+  const filterContainers = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const d of debts) if (d.active) map.set(d.containerId, d.containerName);
+    return Array.from(map.entries())
+      .map(([id, name]) => ({ id, name }))
+      .sort((a, b) => a.name.localeCompare(b.name, "ru"));
+  }, [debts]);
+
+  const filterCells = useMemo(() => {
+    const set = new Set<number>();
+    for (const d of debts) {
+      if (!d.active) continue;
+      if (filterContainerId && d.containerId !== filterContainerId) continue;
+      set.add(d.cellNumber);
+    }
+    return Array.from(set).sort((a, b) => a - b);
+  }, [debts, filterContainerId]);
+
   const owners = useMemo(() => {
     const map = new Map<string, { clientId: string; ownerType: OwnerType; ownerLabel: string }>();
     for (const d of debts) {
+      // Архивный клиент (съехал, см. ClientCellDebt.active выше) не показывается в этом списке
+      // вообще — не важно, есть за ним долг или нет.
+      if (!d.active) continue;
+      if (filterContainerId && d.containerId !== filterContainerId) continue;
+      if (filterCellNumber && d.cellNumber !== Number(filterCellNumber)) continue;
       if (!map.has(d.clientId)) {
         map.set(d.clientId, { clientId: d.clientId, ownerType: d.ownerType, ownerLabel: d.ownerLabel });
       }
     }
     return Array.from(map.values()).sort((a, b) => a.ownerLabel.localeCompare(b.ownerLabel, "ru"));
-  }, [debts]);
+  }, [debts, filterContainerId, filterCellNumber]);
 
   // Контейнеры клиента — сворачиваем камеры суммой (д.balance/accrued/paid по камерам этого
   // контейнера), чтобы шаг 1 выглядел как раньше ("выберите контейнер, вот долг по нему").
@@ -280,6 +316,47 @@ export default function AddIncomeWizard({ onExit }: { onExit: () => void }) {
 
       {step === 0 && (
         <div className="space-y-2">
+          {!loadingDebts && !loadError && filterContainers.length > 0 && (
+            <div className="grid grid-cols-2 gap-2 mb-1">
+              <div>
+                <label className="label">{t("income.filterContainerLabel")}</label>
+                <select
+                  className="input"
+                  value={filterContainerId}
+                  onChange={(e) => {
+                    haptic.selection();
+                    setFilterContainerId(e.target.value);
+                    setFilterCellNumber("");
+                  }}
+                >
+                  <option value="">{t("income.filterAll")}</option>
+                  {filterContainers.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="label">{t("income.filterCellLabel")}</label>
+                <select
+                  className="input"
+                  value={filterCellNumber}
+                  onChange={(e) => {
+                    haptic.selection();
+                    setFilterCellNumber(e.target.value);
+                  }}
+                >
+                  <option value="">{t("income.filterAll")}</option>
+                  {filterCells.map((n) => (
+                    <option key={n} value={n}>
+                      {t("income.cellOption", { n })}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+          )}
           {loadingDebts ? (
             <div className="space-y-2.5">
               {[...Array(3)].map((_, i) => (
@@ -293,7 +370,9 @@ export default function AddIncomeWizard({ onExit }: { onExit: () => void }) {
               <div className="empty-state-icon">
                 <UserRound className="h-5 w-5" strokeWidth={1.8} />
               </div>
-              <p className="text-sm text-ink-500">{t("income.noRecords")}</p>
+              <p className="text-sm text-ink-500">
+                {filterContainerId || filterCellNumber ? t("income.filterNoMatch") : t("income.noRecords")}
+              </p>
             </div>
           ) : (
             owners.map((o) => (
