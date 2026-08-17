@@ -20,6 +20,7 @@ import {
   Package,
   PackageMinus,
   Landmark,
+  Archive,
 } from "lucide-react";
 
 const links = [
@@ -35,6 +36,7 @@ const links = [
   { href: "/dashboard/tenants", label: "Арендаторы", icon: UserRound },
   { href: "/dashboard/patrols", label: "Обходы", icon: Thermometer },
   { href: "/dashboard/reports", label: "Отчётность", icon: BarChart3 },
+  { href: "/dashboard/archive", label: "Архив", icon: Archive },
   { href: "/dashboard/audit", label: "Активность", icon: History },
 ];
 

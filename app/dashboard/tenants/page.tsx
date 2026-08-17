@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { UserRound, Building2, Users, Boxes, Download, LayoutList, Table2 } from "lucide-react";
+import { UserRound, Building2, Users, Boxes, Download, LayoutList, Table2, Archive } from "lucide-react";
 import TenantMatrixTable from "@/components/dashboard/TenantMatrixTable";
 
 interface TenantRow {
@@ -16,6 +16,9 @@ interface TenantRow {
   totalPaid: number;
   totalBalance: number;
   lastActivity: string;
+  /** Есть ли ещё незакрытые записи (см. lib/tenants.ts::TenantListItem.active) — false у тех,
+   * кто полностью съехал. При status="archived" все строки здесь false, при "active" — все true. */
+  active: boolean;
 }
 
 interface ContainerRef {
@@ -33,6 +36,10 @@ export default function TenantsPage() {
   const [query, setQuery] = useState("");
   const [view, setView] = useState<"list" | "matrix">("matrix");
   const [isOwner, setIsOwner] = useState(false);
+  // "Активные" — арендаторы, у которых ещё есть незакрытые записи (по умолчанию, чтобы съехавшие
+  // не захламляли список, см. lib/tenants.ts::getAllTenants). "Архив" — те, кто полностью съехал
+  // (все записи закрыты), но карточка/долг/история остаются доступны. "Все" — без фильтра.
+  const [status, setStatus] = useState<"active" | "archived" | "all">("active");
 
   useEffect(() => {
     fetch("/api/containers")
@@ -47,11 +54,12 @@ export default function TenantsPage() {
     setLoading(true);
     const params = new URLSearchParams();
     if (containerId) params.set("containerId", containerId);
+    params.set("status", status);
     fetch(`/api/tenants?${params.toString()}`)
       .then((r) => r.json())
       .then((d) => setTenants(d.tenants || []))
       .finally(() => setLoading(false));
-  }, [containerId]);
+  }, [containerId, status]);
 
   const filtered = tenants.filter(
     (t) =>
@@ -113,6 +121,34 @@ export default function TenantsPage() {
         <TenantMatrixTable isOwner={isOwner} containerId={containerId} />
       ) : (
         <>
+      <div className="mb-6 flex flex-wrap items-center gap-3">
+        <div className="inline-flex rounded-xl border border-ink-200 bg-white p-1">
+          {(
+            [
+              { key: "active", label: "Активные" },
+              { key: "archived", label: "Архив" },
+              { key: "all", label: "Все" },
+            ] as const
+          ).map((opt) => (
+            <button
+              key={opt.key}
+              className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
+                status === opt.key ? "bg-brand-50 text-brand-700" : "text-ink-500"
+              }`}
+              onClick={() => setStatus(opt.key)}
+            >
+              {opt.key === "archived" && <Archive className="h-3.5 w-3.5" strokeWidth={2} />}
+              {opt.label}
+            </button>
+          ))}
+        </div>
+        {status === "archived" && (
+          <p className="text-xs text-ink-400">
+            Арендаторы, у которых закрыты все записи («товар забран») — они больше не занимают
+            камеру, но история и задолженность сохранены.
+          </p>
+        )}
+      </div>
       <div className="card mb-6 max-w-md">
         <input
           className="input"
@@ -163,6 +199,11 @@ export default function TenantsPage() {
                           <Icon className="h-4 w-4" strokeWidth={2} />
                         </div>
                         <span className="font-medium text-ink-800">{t.ownerLabel}</span>
+                        {!t.active && (
+                          <span className="badge bg-ink-100 text-ink-500 inline-flex items-center gap-1">
+                            <Archive className="h-3 w-3" strokeWidth={2} /> архив
+                          </span>
+                        )}
                       </Link>
                     </td>
                     <td className="text-ink-500">{t.phoneOrInn}</td>

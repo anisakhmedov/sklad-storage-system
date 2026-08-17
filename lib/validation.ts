@@ -256,8 +256,11 @@ export const quantityAdjustSchema = z.object({
 // Расход (снятие владельцем/зарплата/прочее, см. models/Expense.ts). status выставляется
 // сервером в зависимости от того, кто создаёт (owner → approved сразу, employee → pending) —
 // не принимается от клиента.
+// containerId обязателен у ВСЕХ новых расходов (по решению владельца — "абсолютно всё должно
+// быть привязано к каждому контейнеру", см. models/Expense.ts, lib/finance.ts::getFinanceByContainer).
 export const expenseCreateSchema = z.object({
   type: z.enum(["owner_withdrawal", "salary", "other"]),
+  containerId: z.string().min(1, "Выберите контейнер"),
   amount: z.coerce.number().positive("Сумма должна быть больше 0"),
   method: expensePaymentMethodEnum,
   note: z.string().max(500).optional().default(""),
@@ -273,14 +276,19 @@ export const expenseStatusSchema = z.object({
 // доступна независимо от текущего способа оплаты и статуса (см. app/api/expenses/[id]/route.ts).
 export const expenseUpdateSchema = z.object({
   type: z.enum(["owner_withdrawal", "salary", "other"]).optional(),
+  // Используется и для обычного редактирования, и для ручной привязки старых расходов (без
+  // containerId) к контейнеру задним числом — то же, что inventoryItemUpdateSchema.containerId.
+  containerId: z.string().min(1, "Выберите контейнер").optional(),
   amount: z.coerce.number().positive("Сумма должна быть больше 0").optional(),
   method: expensePaymentMethodEnum.optional(),
   note: z.string().max(500).optional(),
   employeeName: z.string().max(200).optional(),
 });
 
-// «Приход на холодильник» — общий приход не по конкретному клиенту (см. models/GeneralIncome.ts).
+// «Приход на холодильник» — общий приход не по конкретному клиенту, но привязан к конкретному
+// контейнеру (см. models/GeneralIncome.ts) — containerId обязателен у ВСЕХ новых записей.
 export const generalIncomeCreateSchema = z.object({
+  containerId: z.string().min(1, "Выберите контейнер"),
   amount: z.coerce.number().positive("Сумма должна быть больше 0"),
   method: incomePaymentMethodEnum,
   note: z.string().max(500).optional().default(""),

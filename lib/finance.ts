@@ -1,7 +1,9 @@
+import { Types } from "mongoose";
 import { connectDB } from "./db";
 import { Income } from "@/models/Income";
 import { GeneralIncome } from "@/models/GeneralIncome";
 import { Expense } from "@/models/Expense";
+import { Container } from "@/models/Container";
 import type { PaymentMethod } from "@/models/StorageRecord";
 
 /**
@@ -104,27 +106,36 @@ export async function getIncomeBreakdown(): Promise<IncomeBreakdownRow[]> {
     .sort((a, b) => a.containerName.localeCompare(b.containerName, "ru") || (a.cellNumber ?? 0) - (b.cellNumber ?? 0));
 }
 
-/** Сводка для карточек на странице «Оплаты» (см. app/dashboard/income/page.tsx). */
-export async function getFinanceSummary(): Promise<FinanceSummary> {
+/**
+ * Сводка для карточек на странице «Оплаты» (см. app/dashboard/income/page.tsx).
+ * opts.containerId — сузить ВСЕ карточки до одного контейнера (приход/расход/остаток по нему).
+ * Расходы/«Приход на холодильник», заведённые до привязки к контейнеру (containerId
+ * отсутствует), при выбранном фильтре в сумму не попадают — см. лучше getFinanceByContainer,
+ * где такие легаси-записи явно показаны отдельной строкой, а не молча исключены.
+ */
+export async function getFinanceSummary(opts: { containerId?: string } = {}): Promise<FinanceSummary> {
   await connectDB();
+  const containerId = opts.containerId ? new Types.ObjectId(opts.containerId) : undefined;
+  const incomeMatch = containerId ? { containerId } : {};
+  const expenseMatch = containerId ? { status: "approved", containerId } : { status: "approved" };
 
   const [incomeAgg, generalIncomeAgg, expenseByTypeAgg, expenseByMethodAgg, pendingCount, ownerCashAgg] =
     await Promise.all([
-      Income.aggregate([{ $group: { _id: "$method", total: { $sum: "$amount" } } }]),
-      GeneralIncome.aggregate([{ $group: { _id: "$method", total: { $sum: "$amount" } } }]),
+      Income.aggregate([{ $match: incomeMatch }, { $group: { _id: "$method", total: { $sum: "$amount" } } }]),
+      GeneralIncome.aggregate([{ $match: incomeMatch }, { $group: { _id: "$method", total: { $sum: "$amount" } } }]),
       Expense.aggregate([
-        { $match: { status: "approved" } },
+        { $match: expenseMatch },
         { $group: { _id: "$type", total: { $sum: "$amount" } } },
       ]),
       // Отдельная агрегация по способу — нужна, чтобы вычесть наличные расходы из кассы (см.
       // ниже), не полагаясь на то, что "type" и "method" агрегируются вместе.
       Expense.aggregate([
-        { $match: { status: "approved" } },
+        { $match: expenseMatch },
         { $group: { _id: "$method", total: { $sum: "$amount" } } },
       ]),
-      Expense.countDocuments({ status: "pending" }),
+      Expense.countDocuments({ status: "pending", ...(containerId ? { containerId } : {}) }),
       Expense.aggregate([
-        { $match: { type: "owner_withdrawal", method: "cash", status: "approved" } },
+        { $match: { type: "owner_withdrawal", method: "cash", ...expenseMatch } },
         { $group: { _id: null, total: { $sum: "$amount" } } },
       ]),
     ]);
@@ -166,4 +177,70 @@ export async function getFinanceSummary(): Promise<FinanceSummary> {
     pendingExpensesCount: pendingCount,
     ownerCashWithdrawn: ownerCashAgg[0]?.total || 0,
   };
+}
+
+export interface ContainerFinanceRow {
+  /** null — не одна конкретная камера/контейнер, а "легаси"-операции (расход/приход, заведённые
+   * до того, как containerId стал обязателен, см. models/Expense.ts, models/GeneralIncome.ts). */
+  containerId: string | null;
+  containerName: string;
+  /** Приход — Income (оплаты арендаторов) + GeneralIncome ("Приход на холодильник") по этому
+   * контейнеру. */
+  income: number;
+  /** Расход — Expense со статусом "approved" по этому контейнеру. */
+  expenses: number;
+  balance: number;
+}
+
+/**
+ * «Оборот и расход по контейнерам» (см. app/dashboard/income/page.tsx) — по просьбе владельца
+ * ("абсолютно всё должно быть привязано к каждому контейнеру") приход и расход считаются
+ * ОТДЕЛЬНО для каждого холодильника, а не одной общей суммой на всех, как раньше. Контейнеры без
+ * единой операции тоже попадают в список (нулевыми строками) — чтобы сразу было видно, что по
+ * ним ещё ничего не проведено. Операции без привязки к контейнеру (легаси, до этой доработки)
+ * не отбрасываются молча — сведены в отдельную строку "Без привязки к контейнеру" последней.
+ */
+export async function getFinanceByContainer(): Promise<ContainerFinanceRow[]> {
+  await connectDB();
+
+  const [incomeAgg, generalIncomeAgg, expenseAgg, containers] = await Promise.all([
+    Income.aggregate([{ $group: { _id: "$containerId", total: { $sum: "$amount" } } }]),
+    GeneralIncome.aggregate([{ $group: { _id: "$containerId", total: { $sum: "$amount" } } }]),
+    Expense.aggregate([
+      { $match: { status: "approved" } },
+      { $group: { _id: "$containerId", total: { $sum: "$amount" } } },
+    ]),
+    Container.find().sort({ name: 1 }).lean(),
+  ]);
+
+  const nameById = new Map(containers.map((c) => [String(c._id), c.name]));
+  const rows = new Map<string, ContainerFinanceRow>();
+  const ensure = (id: string | null): ContainerFinanceRow => {
+    const key = id ?? "__none";
+    let row = rows.get(key);
+    if (!row) {
+      row = {
+        containerId: id,
+        containerName: id ? nameById.get(id) || "—" : "Без привязки к контейнеру",
+        income: 0,
+        expenses: 0,
+        balance: 0,
+      };
+      rows.set(key, row);
+    }
+    return row;
+  };
+
+  for (const c of containers) ensure(String(c._id)); // нулевые строки для контейнеров без операций
+  for (const row of incomeAgg) ensure(row._id ? String(row._id) : null).income += row.total;
+  for (const row of generalIncomeAgg) ensure(row._id ? String(row._id) : null).income += row.total;
+  for (const row of expenseAgg) ensure(row._id ? String(row._id) : null).expenses += row.total;
+
+  for (const row of rows.values()) row.balance = row.income - row.expenses;
+
+  return Array.from(rows.values()).sort((a, b) => {
+    if (a.containerId === null) return 1;
+    if (b.containerId === null) return -1;
+    return a.containerName.localeCompare(b.containerName, "ru");
+  });
 }

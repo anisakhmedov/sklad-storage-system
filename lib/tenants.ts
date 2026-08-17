@@ -36,14 +36,28 @@ export interface TenantListItem {
   totalPaid: number;
   totalBalance: number;
   lastActivity: Date;
+  /**
+   * true — у клиента есть хотя бы одна незакрытая запись (см. models/StorageRecord.ts::closedAt)
+   * в рассматриваемой области (все контейнеры или один, если сужено через opts.containerId).
+   * false — клиент "съехал": все его записи здесь закрыты ("товар забран"). Используется, чтобы
+   * отделить архив от активных арендаторов на странице "Арендаторы" (см. GET /api/tenants,
+   * app/dashboard/tenants/page.tsx) — сам клиент и его долг/история при этом никуда не удаляются,
+   * только перестаёт "маячить" среди тех, кто ещё реально занимает место.
+   */
+  active: boolean;
 }
 
 /**
  * Сводный список арендаторов, агрегированный по всем связкам клиент+контейнер.
  * `containerId` сужает агрегацию до одного контейнера — арендатор, у которого нет записей в
  * этом контейнере, в список не попадает вовсе (см. GET /api/tenants, страница "Арендаторы").
+ * `status` фильтрует по TenantListItem.active выше: "active" — только те, кто ещё занимает
+ * место (по умолчанию — так список не захламляется съехавшими), "archived" — только съехавшие,
+ * "all" — без фильтра.
  */
-export async function getAllTenants(opts: { containerId?: string } = {}): Promise<TenantListItem[]> {
+export async function getAllTenants(
+  opts: { containerId?: string; status?: "active" | "archived" | "all" } = {}
+): Promise<TenantListItem[]> {
   const debts = await getAllClientContainerDebts(opts.containerId ? { containerIds: [opts.containerId] } : {});
 
   const map = new Map<string, TenantListItem>();
@@ -52,6 +66,7 @@ export async function getAllTenants(opts: { containerId?: string } = {}): Promis
       (max, r) => (r.since > max ? r.since : max),
       d.since
     );
+    const hasOpenRecord = d.records.some((r) => !r.closedAt);
     const existing = map.get(d.clientId);
     if (existing) {
       existing.containerCount += 1;
@@ -60,6 +75,7 @@ export async function getAllTenants(opts: { containerId?: string } = {}): Promis
       existing.totalPaid += d.paid;
       existing.totalBalance += d.balance;
       if (lastRecordDate > existing.lastActivity) existing.lastActivity = lastRecordDate;
+      if (hasOpenRecord) existing.active = true;
     } else {
       map.set(d.clientId, {
         clientId: d.clientId,
@@ -72,11 +88,15 @@ export async function getAllTenants(opts: { containerId?: string } = {}): Promis
         totalPaid: d.paid,
         totalBalance: d.balance,
         lastActivity: lastRecordDate,
+        active: hasOpenRecord,
       });
     }
   }
 
-  const items = Array.from(map.values());
+  let items = Array.from(map.values());
+  const status = opts.status || "active";
+  if (status !== "all") items = items.filter((i) => (status === "active" ? i.active : !i.active));
+
   if (items.length > 0) {
     await connectDB();
     const clients = await Client.find({ _id: { $in: items.map((i) => i.clientId) } })
@@ -122,9 +142,11 @@ export interface TenantDetail {
   totals: { accrued: number; paid: number; balance: number };
 }
 
-/** Полные карточки всех арендаторов — источник для «одного файла со всеми» (buildAllTenantsWorkbook). */
+/** Полные карточки всех арендаторов — источник для «одного файла со всеми» (buildAllTenantsWorkbook).
+ * status: "all" — выгрузка исторически включает и съехавших (см. п.8 доработок — «экспортировать
+ * абсолютно всех пользователей»), фильтрация по активности здесь неуместна. */
 export async function getAllTenantDetails(): Promise<TenantDetail[]> {
-  const tenants = await getAllTenants();
+  const tenants = await getAllTenants({ status: "all" });
   const details = await Promise.all(tenants.map((t) => getTenantDetail(t.clientId)));
   return details.filter((d): d is TenantDetail => d !== null);
 }

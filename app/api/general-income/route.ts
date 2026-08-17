@@ -16,7 +16,11 @@ export async function GET() {
   if (user.role !== "owner") return jsonError("Доступно только владельцу", 403);
 
   await connectDB();
-  const entries = await GeneralIncome.find().sort({ paidAt: -1 }).limit(200).lean();
+  const entries = await GeneralIncome.find()
+    .sort({ paidAt: -1 })
+    .populate("containerId", "name")
+    .limit(200)
+    .lean();
   return NextResponse.json({ entries });
 }
 
@@ -33,6 +37,7 @@ export async function POST(req: NextRequest) {
   const entry = await GeneralIncome.create({
     amount: parsed.data.amount,
     method: parsed.data.method,
+    containerId: parsed.data.containerId,
     note: parsed.data.note,
     paidAt: parsed.data.paidAt || new Date(),
     recordedBy: user.identifier,
@@ -44,7 +49,7 @@ export async function POST(req: NextRequest) {
     action: "create",
     actorId: user.identifier,
     actorRole: user.role,
-    changes: { amount: entry.amount, method: entry.method },
+    changes: { amount: entry.amount, method: entry.method, containerId: String(entry.containerId) },
   });
 
   return NextResponse.json({ entry });

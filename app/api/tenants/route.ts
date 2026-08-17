@@ -9,7 +9,9 @@ export async function GET(req: NextRequest) {
 
   try {
     const containerId = req.nextUrl.searchParams.get("containerId") || undefined;
-    const tenants = await getAllTenants({ containerId });
+    const statusParam = req.nextUrl.searchParams.get("status");
+    const status = statusParam === "archived" || statusParam === "all" ? statusParam : "active";
+    const tenants = await getAllTenants({ containerId, status });
     return NextResponse.json({ tenants });
   } catch (err) {
     console.error("GET /api/tenants:", err);

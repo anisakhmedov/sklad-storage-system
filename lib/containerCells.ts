@@ -30,10 +30,13 @@ export interface ContainerCellsGrid {
 /**
  * Сетка камер хранения (по умолчанию 2×4 на контейнер, см. lib/cells.ts — количество камер
  * теперь редактируется индивидуально на контейнер, см. models/Container.ts::cellCount) для
- * одного или нескольких контейнеров. Занятость камеры вычисляется из активных (quantity > 0) StorageRecord —
- * записи с обнулённым количеством (см. app/api/miniapp/records/[id]/adjust/route.ts)
- * считаются вывезенными и не занимают камеру. Один арендатор с несколькими записями в
- * одной камере схлопывается в одного occupant (по clientId), как и в lib/debt.ts.
+ * одного или нескольких контейнеров. Занятость камеры вычисляется из активных
+ * (quantity > 0 И closedAt не проставлен) StorageRecord — записи с обнулённым количеством (см.
+ * app/api/miniapp/records/[id]/adjust/route.ts) считаются вывезенными, а закрытые (см.
+ * models/StorageRecord.ts::closedAt — "товар забран"/арендатор съехал) считаются покинувшими
+ * камеру, даже если количество в них не обнулили — оба случая не занимают камеру. Один
+ * арендатор с несколькими записями в одной камере схлопывается в одного occupant (по
+ * clientId), как и в lib/debt.ts.
  *
  * containerIds — undefined = все контейнеры (веб-дашборд, app/api/containers/cells/route.ts);
  * массив из одного id = один контейнер (mini app, ограничен доступом сотрудника через
@@ -49,6 +52,11 @@ export async function getCellsGrid(containerIds?: string[]): Promise<ContainerCe
   const records = (await StorageRecord.find({
     containerId: { $in: containers.map((c) => c._id) },
     quantity: { $gt: 0 },
+    // Закрытая запись ("товар забран"/арендатор съехал, см. models/StorageRecord.ts::closedAt) —
+    // клиент физически покинул камеру, даже если количество в записи не обнулили. Раньше это
+    // поле здесь не проверялось, и такой клиент продолжал висеть "занимающим" камеру на сетке
+    // (веб-дашборд "Контейнеры" и выбор камеры в Mini App) сколь угодно долго после ухода.
+    closedAt: { $exists: false },
   })
     .select("containerId cellNumber productName goodsOwner clientId")
     .lean()) as unknown as {

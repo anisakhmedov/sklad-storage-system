@@ -94,6 +94,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
 
   const before = expense.toObject();
   if (data.type !== undefined) expense.type = data.type;
+  if (data.containerId !== undefined) expense.containerId = data.containerId as any;
   if (data.amount !== undefined) expense.amount = data.amount;
   if (data.method !== undefined) expense.method = data.method;
   if (data.note !== undefined) expense.note = data.note;

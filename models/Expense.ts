@@ -16,6 +16,15 @@ export interface IExpense {
   type: ExpenseType;
   amount: number;
   method: PaymentMethod;
+  /**
+   * К какому контейнеру (холодильнику) относится расход — по решению владельца, "абсолютно всё
+   * должно быть привязано к каждому контейнеру" (см. страницу "Оплаты" → блок "Оборот и расход
+   * по контейнерам", lib/finance.ts::getFinanceByContainer). Помечено необязательным на уровне
+   * схемы только для СТАРЫХ расходов, заведённых до этой доработки — они попадают в отчёте по
+   * контейнерам отдельной строкой "Без привязки к контейнеру"; zod на входе
+   * (lib/validation.ts::expenseCreateSchema) требует containerId у ВСЕХ новых расходов.
+   */
+  containerId?: Types.ObjectId;
   note?: string;
   employeeName?: string; // для type "salary" — кому выплачено
   createdBy: string; // identifier веб-пользователя либо имя сотрудника (Mini App)
@@ -29,6 +38,7 @@ export interface IExpense {
 const ExpenseSchema = new Schema<IExpense>({
   type: { type: String, enum: ["owner_withdrawal", "salary", "other"], required: true },
   amount: { type: Number, required: true, min: 0 },
+  containerId: { type: Schema.Types.ObjectId, ref: "Container", index: true },
   // Схема сознательно НЕ сужена до ["cash","transfer","card"] здесь: PATCH .../[id]/route.ts
   // делает expense.save() (полная валидация) при одобрении уже существующей заявки — если бы
   // "terminal" убрали из enum, легаси-заявки с этим способом (созданные до отказа от

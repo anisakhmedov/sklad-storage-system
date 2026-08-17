@@ -15,8 +15,14 @@ export async function GET(req: NextRequest) {
 
   await connectDB();
   const status = req.nextUrl.searchParams.get("status");
-  const filter = status ? { status } : {};
-  const expenses = await Expense.find(filter).sort({ createdAt: -1 }).lean();
+  const containerId = req.nextUrl.searchParams.get("containerId");
+  const filter: Record<string, unknown> = {};
+  if (status) filter.status = status;
+  if (containerId) filter.containerId = containerId;
+  const expenses = await Expense.find(filter)
+    .sort({ createdAt: -1 })
+    .populate("containerId", "name")
+    .lean();
   return NextResponse.json({ expenses });
 }
 

@@ -99,6 +99,7 @@ interface ContainerRef {
 interface ExpenseEntry {
   _id: string;
   type: "owner_withdrawal" | "salary" | "other";
+  containerId: { _id: string; name: string } | string | null;
   amount: number;
   method: string;
   note?: string;
@@ -107,6 +108,14 @@ interface ExpenseEntry {
   createdByRole: "owner" | "employee";
   status: "pending" | "approved" | "rejected";
   createdAt: string;
+}
+
+interface ContainerFinanceRow {
+  containerId: string | null;
+  containerName: string;
+  income: number;
+  expenses: number;
+  balance: number;
 }
 
 const expenseStatusLabels: Record<string, string> = {
@@ -153,8 +162,12 @@ export default function IncomePage() {
   const [expanded, setExpanded] = useState<string | null>(null);
   const [finance, setFinance] = useState<FinanceSummary | null>(null);
   const [breakdown, setBreakdown] = useState<IncomeBreakdownRow[]>([]);
+  const [byContainer, setByContainer] = useState<ContainerFinanceRow[]>([]);
   const [expenses, setExpenses] = useState<ExpenseEntry[]>([]);
   const [containers, setContainers] = useState<ContainerRef[]>([]);
+  // Отдельный фильтр по контейнеру для карточек "Касса и расходы" вверху страницы — независим от
+  // incomeFilter.containerId (тот фильтрует таблицы "Задолженность"/"Последние платежи" ниже).
+  const [financeContainerId, setFinanceContainerId] = useState("");
   const [isOwner, setIsOwner] = useState(false);
   const [showExpenseModal, setShowExpenseModal] = useState(false);
   const [showGeneralIncomeModal, setShowGeneralIncomeModal] = useState(false);
@@ -184,7 +197,7 @@ export default function IncomePage() {
   // по одобренным расходам, поэтому клик по конкретной карточке (Зарплата/Владелец забрал)
   // фильтрует и по status: "approved" — иначе в таблице вперемешку показывались бы ещё и
   // заявки "на одобрении"/"отклонено", и сумма видимых строк не совпадала бы с цифrой на карточке.
-  const [expenseFilter, setExpenseFilter] = useState({ type: "", method: "", status: "" });
+  const [expenseFilter, setExpenseFilter] = useState({ type: "", method: "", status: "", containerId: "" });
 
   function toggleIncomeMethodFilter(method: string) {
     setIncomeFilter((f) => ({ ...f, method: f.method === method ? "" : method }));
@@ -197,21 +210,23 @@ export default function IncomePage() {
   function toggleExpenseFilter(type: string, method: string, status = "") {
     setExpenseFilter((f) =>
       f.type === type && f.method === method && f.status === status
-        ? { type: "", method: "", status: "" }
-        : { type, method, status }
+        ? { ...f, type: "", method: "", status: "" }
+        : { ...f, type, method, status }
     );
     scrollToTable(expensesTableRef);
   }
   function resetExpenseFilter() {
-    setExpenseFilter({ type: "", method: "", status: "" });
+    setExpenseFilter({ type: "", method: "", status: "", containerId: "" });
     scrollToTable(expensesTableRef);
   }
 
   const loadFinance = useCallback(async () => {
-    const res = await fetch("/api/finance/summary");
+    const params = new URLSearchParams();
+    if (financeContainerId) params.set("containerId", financeContainerId);
+    const res = await fetch(`/api/finance/summary?${params.toString()}`);
     const data = await res.json().catch(() => ({}));
     if (res.ok) setFinance(data.summary);
-  }, []);
+  }, [financeContainerId]);
 
   const loadExpenses = useCallback(async () => {
     const res = await fetch("/api/expenses");
@@ -225,6 +240,12 @@ export default function IncomePage() {
     if (res.ok) setBreakdown(data.breakdown || []);
   }, []);
 
+  const loadByContainer = useCallback(async () => {
+    const res = await fetch("/api/finance/by-container");
+    const data = await res.json().catch(() => ({}));
+    if (res.ok) setByContainer(data.rows || []);
+  }, []);
+
   useEffect(() => {
     fetch("/api/auth/me")
       .then((r) => r.json())
@@ -232,10 +253,14 @@ export default function IncomePage() {
     fetch("/api/containers")
       .then((r) => r.json())
       .then((d) => setContainers(d.containers || []));
-    loadFinance();
     loadExpenses();
     loadBreakdown();
-  }, [loadFinance, loadExpenses, loadBreakdown]);
+    loadByContainer();
+  }, [loadExpenses, loadBreakdown, loadByContainer]);
+
+  useEffect(() => {
+    loadFinance();
+  }, [loadFinance]);
 
   const loadDebts = useCallback(async () => {
     setLoading(true);
@@ -271,7 +296,7 @@ export default function IncomePage() {
   }, [loadIncomes]);
 
   async function refreshAll() {
-    await Promise.all([loadDebts(), loadIncomes(), loadFinance(), loadExpenses(), loadBreakdown()]);
+    await Promise.all([loadDebts(), loadIncomes(), loadFinance(), loadExpenses(), loadBreakdown(), loadByContainer()]);
   }
 
   async function handleExpenseStatus(id: string, status: "approved" | "rejected") {
@@ -317,6 +342,8 @@ export default function IncomePage() {
       if (expenseFilter.type && exp.type !== expenseFilter.type) return false;
       if (expenseFilter.method && exp.method !== expenseFilter.method) return false;
       if (expenseFilter.status && exp.status !== expenseFilter.status) return false;
+      const containerId = exp.containerId && typeof exp.containerId === "object" ? exp.containerId._id : exp.containerId;
+      if (expenseFilter.containerId && containerId !== expenseFilter.containerId) return false;
       return true;
     });
   }, [expenses, expenseFilter]);
@@ -328,7 +355,7 @@ export default function IncomePage() {
     incomeFilter.search ||
     incomeFilter.source
   );
-  const hasExpenseFilter = !!(expenseFilter.type || expenseFilter.method || expenseFilter.status);
+  const hasExpenseFilter = !!(expenseFilter.type || expenseFilter.method || expenseFilter.status || expenseFilter.containerId);
 
   // Диапазон камер для фильтра "Последние платежи" — камеры теперь редактируются индивидуально
   // на контейнер (см. models/Container.ts::cellCount): если выбран конкретный контейнер, берём
@@ -358,7 +385,22 @@ export default function IncomePage() {
 
       <div className="mb-3 flex items-center justify-between flex-wrap gap-2">
         <h2 className="text-base font-semibold text-ink-800">Касса и расходы</h2>
-        <div className="flex gap-2">
+        <div className="flex items-end gap-2 flex-wrap">
+          <div>
+            <label className="label">Контейнер</label>
+            <select
+              className="input"
+              value={financeContainerId}
+              onChange={(e) => setFinanceContainerId(e.target.value)}
+            >
+              <option value="">Все контейнеры</option>
+              {containers.map((c) => (
+                <option key={c._id} value={c._id}>
+                  {c.name}
+                </option>
+              ))}
+            </select>
+          </div>
           {isOwner && (
             <button className="btn-secondary" onClick={() => setShowGeneralIncomeModal(true)}>
               <Snowflake className="h-4 w-4" strokeWidth={2.1} />
@@ -375,6 +417,7 @@ export default function IncomePage() {
       <p className="text-xs text-ink-400 mb-2">
         Карточки кассы/П2П/банк. перевода, а также «Расходы»/«Зарплата»/«Владелец забрал» —
         кликабельны: фильтруют таблицу платежей или расходов ниже именно под этот блок.
+        {financeContainerId && " Суммы на карточках сейчас показаны только по выбранному контейнеру."}
       </p>
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
         <button
@@ -485,6 +528,42 @@ export default function IncomePage() {
         </div>
       )}
 
+      <div className="card mb-8 overflow-x-auto">
+        <h2 className="card-title mb-1">Оборот и расход по контейнерам</h2>
+        <p className="card-subtitle mb-3">
+          Приход (оплаты арендаторов + «Приход на холодильник») и одобренные расходы — отдельно
+          по каждому контейнеру.
+        </p>
+        {byContainer.length === 0 ? (
+          <div className="empty-state">
+            <p className="text-sm text-ink-500">Контейнеров пока нет.</p>
+          </div>
+        ) : (
+          <table className="table-base">
+            <thead>
+              <tr>
+                <th>Контейнер</th>
+                <th>Оборот (приход)</th>
+                <th>Расход</th>
+                <th>Баланс</th>
+              </tr>
+            </thead>
+            <tbody>
+              {byContainer.map((row) => (
+                <tr key={row.containerId ?? "__none"} className={row.containerId === null ? "text-ink-400" : undefined}>
+                  <td className={row.containerId === null ? "" : "font-medium text-ink-800"}>{row.containerName}</td>
+                  <td className="whitespace-nowrap tabular-nums text-emerald-700">{money(row.income)} сум</td>
+                  <td className="whitespace-nowrap tabular-nums text-rose-600">{money(row.expenses)} сум</td>
+                  <td className={`whitespace-nowrap font-semibold tabular-nums ${row.balance < 0 ? "text-rose-600" : "text-emerald-600"}`}>
+                    {money(row.balance)} сум
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+
       <div ref={expensesTableRef} className="card mb-8 overflow-x-auto scroll-mt-4">
         <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
           <h2 className="card-title mb-0">Расходы</h2>
@@ -492,12 +571,32 @@ export default function IncomePage() {
             <button className="btn-secondary btn-sm" onClick={resetExpenseFilter}>
               <XCircle className="h-3.5 w-3.5" strokeWidth={2} />
               Сбросить фильтр (
-              {[expenseTypeLabels[expenseFilter.type], methodLabels[expenseFilter.method], expenseStatusLabels[expenseFilter.status]]
+              {[
+                expenseTypeLabels[expenseFilter.type],
+                methodLabels[expenseFilter.method],
+                expenseStatusLabels[expenseFilter.status],
+                containers.find((c) => c._id === expenseFilter.containerId)?.name,
+              ]
                 .filter(Boolean)
                 .join(" · ") || "активен"}
               )
             </button>
           )}
+        </div>
+        <div className="max-w-xs mb-4">
+          <label className="label">Контейнер</label>
+          <select
+            className="input"
+            value={expenseFilter.containerId}
+            onChange={(e) => setExpenseFilter({ ...expenseFilter, containerId: e.target.value })}
+          >
+            <option value="">Все</option>
+            {containers.map((c) => (
+              <option key={c._id} value={c._id}>
+                {c.name}
+              </option>
+            ))}
+          </select>
         </div>
         {expenses.length === 0 ? (
           <div className="empty-state">
@@ -516,6 +615,7 @@ export default function IncomePage() {
               <tr>
                 <th>Дата</th>
                 <th>Тип</th>
+                <th>Контейнер</th>
                 <th>Сумма</th>
                 <th>Способ</th>
                 <th>Кому/примечание</th>
@@ -533,6 +633,9 @@ export default function IncomePage() {
                       {new Date(exp.createdAt).toLocaleDateString("ru-RU")}
                     </td>
                     <td className="text-ink-800">{expenseTypeLabels[exp.type] || exp.type}</td>
+                    <td className="text-ink-500">
+                      {exp.containerId && typeof exp.containerId === "object" ? exp.containerId.name : "—"}
+                    </td>
                     <td className="whitespace-nowrap font-medium text-ink-800 tabular-nums">{money(exp.amount)} сум</td>
                     <td>
                       <span className="inline-flex items-center gap-1.5 text-ink-600">
@@ -927,11 +1030,7 @@ export default function IncomePage() {
                       )}
                     </td>
                     <td>
-                      {inc.source === "general"
-                        ? "—"
-                        : typeof inc.containerId === "object"
-                          ? inc.containerId?.name
-                          : inc.containerId}
+                      {typeof inc.containerId === "object" ? inc.containerId?.name || "—" : inc.containerId || "—"}
                     </td>
                     <td className="text-ink-600">{inc.source === "general" ? "—" : (inc.cellNumber ?? "—")}</td>
                     <td className="whitespace-nowrap font-medium text-ink-800 tabular-nums">{money(inc.amount)} сум</td>
@@ -1008,6 +1107,7 @@ export default function IncomePage() {
 
       {showExpenseModal && (
         <ExpenseModal
+          containers={containers}
           onClose={() => setShowExpenseModal(false)}
           onSaved={async () => {
             setShowExpenseModal(false);
@@ -1017,6 +1117,7 @@ export default function IncomePage() {
       )}
       {showGeneralIncomeModal && (
         <GeneralIncomeModal
+          containers={containers}
           onClose={() => setShowGeneralIncomeModal(false)}
           onSaved={async () => {
             setShowGeneralIncomeModal(false);
@@ -1038,6 +1139,7 @@ export default function IncomePage() {
       {editingExpense && (
         <ExpenseEditModal
           expense={editingExpense}
+          containers={containers}
           onClose={() => setEditingExpense(null)}
           onSaved={async () => {
             setEditingExpense(null);
@@ -1344,8 +1446,17 @@ function EmployeeNameField({ value, onChange }: { value: string; onChange: (v: s
  * Расход — если создаёт владелец на сайте, сразу учитывается в остатке (см. app/api/expenses/route.ts).
  * Тип "salary" дополнительно просит имя сотрудника, кому заплатили.
  */
-function ExpenseModal({ onClose, onSaved }: { onClose: () => void; onSaved: () => void }) {
+function ExpenseModal({
+  containers,
+  onClose,
+  onSaved,
+}: {
+  containers: ContainerRef[];
+  onClose: () => void;
+  onSaved: () => void;
+}) {
   const [type, setType] = useState<"owner_withdrawal" | "salary" | "other">("owner_withdrawal");
+  const [containerId, setContainerId] = useState("");
   const [amount, setAmount] = useState("");
   const [method, setMethod] = useState("cash");
   const [employeeName, setEmployeeName] = useState("");
@@ -1356,12 +1467,16 @@ function ExpenseModal({ onClose, onSaved }: { onClose: () => void; onSaved: () =
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
+    if (!containerId) {
+      setError("Выберите контейнер");
+      return;
+    }
     setBusy(true);
     try {
       const res = await fetch("/api/expenses", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ type, amount, method, employeeName, note }),
+        body: JSON.stringify({ type, containerId, amount, method, employeeName, note }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
@@ -1393,6 +1508,17 @@ function ExpenseModal({ onClose, onSaved }: { onClose: () => void; onSaved: () =
               <option value="owner_withdrawal">Снятие владельцем</option>
               <option value="salary">Зарплата сотруднику</option>
               <option value="other">Прочее</option>
+            </select>
+          </div>
+          <div>
+            <label className="label">Контейнер</label>
+            <select className="input" value={containerId} onChange={(e) => setContainerId(e.target.value)} required>
+              <option value="">Выберите контейнер</option>
+              {containers.map((c) => (
+                <option key={c._id} value={c._id}>
+                  {c.name}
+                </option>
+              ))}
             </select>
           </div>
           {type === "salary" && <EmployeeNameField value={employeeName} onChange={setEmployeeName} />}
@@ -1443,8 +1569,18 @@ function ExpenseModal({ onClose, onSaved }: { onClose: () => void; onSaved: () =
   );
 }
 
-/** «Приход на холодильник» — общий приход не по конкретному клиенту, только владелец. */
-function GeneralIncomeModal({ onClose, onSaved }: { onClose: () => void; onSaved: () => void }) {
+/** «Приход на холодильник» — общий приход не по конкретному клиенту, но привязан к конкретному
+ * контейнеру (holодильнику), только владелец. */
+function GeneralIncomeModal({
+  containers,
+  onClose,
+  onSaved,
+}: {
+  containers: ContainerRef[];
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const [containerId, setContainerId] = useState("");
   const [amount, setAmount] = useState("");
   const [method, setMethod] = useState("cash");
   const [note, setNote] = useState("");
@@ -1454,12 +1590,16 @@ function GeneralIncomeModal({ onClose, onSaved }: { onClose: () => void; onSaved
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
+    if (!containerId) {
+      setError("Выберите контейнер");
+      return;
+    }
     setBusy(true);
     try {
       const res = await fetch("/api/general-income", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ amount, method, note }),
+        body: JSON.stringify({ containerId, amount, method, note }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
@@ -1485,6 +1625,17 @@ function GeneralIncomeModal({ onClose, onSaved }: { onClose: () => void; onSaved
           </button>
         </div>
         <form onSubmit={handleSubmit} className="space-y-3">
+          <div>
+            <label className="label">Контейнер</label>
+            <select className="input" value={containerId} onChange={(e) => setContainerId(e.target.value)} required>
+              <option value="">Выберите контейнер</option>
+              {containers.map((c) => (
+                <option key={c._id} value={c._id}>
+                  {c.name}
+                </option>
+              ))}
+            </select>
+          </div>
           <div className="flex gap-3">
             <div className="flex-1">
               <label className="label">Сумма, сум</label>
@@ -1701,14 +1852,19 @@ function IncomeEditModal({
  */
 function ExpenseEditModal({
   expense,
+  containers,
   onClose,
   onSaved,
 }: {
   expense: ExpenseEntry;
+  containers: ContainerRef[];
   onClose: () => void;
   onSaved: () => void;
 }) {
+  const initialContainerId =
+    expense.containerId && typeof expense.containerId === "object" ? expense.containerId._id : expense.containerId || "";
   const [type, setType] = useState<"owner_withdrawal" | "salary" | "other">(expense.type);
+  const [containerId, setContainerId] = useState(initialContainerId);
   const [amount, setAmount] = useState(String(expense.amount));
   const [method, setMethod] = useState(expense.method);
   const [employeeName, setEmployeeName] = useState(expense.employeeName || "");
@@ -1719,12 +1875,16 @@ function ExpenseEditModal({
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
+    if (!containerId) {
+      setError("Выберите контейнер");
+      return;
+    }
     setBusy(true);
     try {
       const res = await fetch(`/api/expenses/${expense._id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ type, amount, method, employeeName, note }),
+        body: JSON.stringify({ type, containerId, amount, method, employeeName, note }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
@@ -1756,6 +1916,17 @@ function ExpenseEditModal({
               <option value="owner_withdrawal">Снятие владельцем</option>
               <option value="salary">Зарплата сотруднику</option>
               <option value="other">Прочее</option>
+            </select>
+          </div>
+          <div>
+            <label className="label">Контейнер</label>
+            <select className="input" value={containerId} onChange={(e) => setContainerId(e.target.value)} required>
+              <option value="">{expense.containerId ? "—" : "Выберите контейнер"}</option>
+              {containers.map((c) => (
+                <option key={c._id} value={c._id}>
+                  {c.name}
+                </option>
+              ))}
             </select>
           </div>
           {type === "salary" && <EmployeeNameField value={employeeName} onChange={setEmployeeName} />}

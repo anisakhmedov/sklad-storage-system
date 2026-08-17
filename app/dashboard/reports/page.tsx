@@ -13,7 +13,8 @@ import {
   Cell,
 } from "recharts";
 import { UNIT_COLORS, UNIT_LABELS, METHOD_COLORS, CHART_CHROME } from "@/components/charts/colors";
-import { BarChart3, PackageMinus, Layers3, AlertCircle } from "lucide-react";
+import { BarChart3, PackageMinus, Layers3, AlertCircle, Table2 } from "lucide-react";
+import CellSessionsReport from "@/components/dashboard/CellSessionsReport";
 
 interface Summary {
   monthlyVolume: Array<Record<string, number | string>>;
@@ -48,6 +49,15 @@ export default function ReportsPage() {
   const [month, setMonth] = useState<number | "">("");
   const [data, setData] = useState<Summary | null>(null);
   const [loading, setLoading] = useState(true);
+  const [view, setView] = useState<"summary" | "cells">("summary");
+  const [containers, setContainers] = useState<Array<{ _id: string; name: string }>>([]);
+  const [cellsContainerId, setCellsContainerId] = useState("");
+
+  useEffect(() => {
+    fetch("/api/containers")
+      .then((r) => r.json())
+      .then((d) => setContainers(d.containers || []));
+  }, []);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -65,11 +75,50 @@ export default function ReportsPage() {
 
   return (
     <div>
-      <div className="mb-7">
-        <p className="section-eyebrow">Аналитика</p>
-        <h1 className="section-title mt-1">Отчётность</h1>
+      <div className="mb-7 flex items-end justify-between flex-wrap gap-3">
+        <div>
+          <p className="section-eyebrow">Аналитика</p>
+          <h1 className="section-title mt-1">Отчётность</h1>
+        </div>
+        <div className="inline-flex rounded-xl border border-ink-200 bg-white p-1">
+          <button
+            className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
+              view === "summary" ? "bg-brand-50 text-brand-700" : "text-ink-500"
+            }`}
+            onClick={() => setView("summary")}
+          >
+            <BarChart3 className="h-3.5 w-3.5" strokeWidth={2} />
+            Сводка
+          </button>
+          <button
+            className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
+              view === "cells" ? "bg-brand-50 text-brand-700" : "text-ink-500"
+            }`}
+            onClick={() => setView("cells")}
+          >
+            <Table2 className="h-3.5 w-3.5" strokeWidth={2} />
+            Заполненность камер
+          </button>
+        </div>
       </div>
 
+      {view === "cells" ? (
+        <>
+          <div className="card mb-6 max-w-xs">
+            <label className="label">Контейнер</label>
+            <select className="input" value={cellsContainerId} onChange={(e) => setCellsContainerId(e.target.value)}>
+              <option value="">Все</option>
+              {containers.map((c) => (
+                <option key={c._id} value={c._id}>
+                  {c.name}
+                </option>
+              ))}
+            </select>
+          </div>
+          <CellSessionsReport containerId={cellsContainerId} />
+        </>
+      ) : (
+        <>
       <div className="card mb-6 flex flex-wrap gap-3 items-end">
         <div>
           <label className="label">Год</label>
@@ -208,6 +257,8 @@ export default function ReportsPage() {
 
           <WithdrawalForm onSaved={load} />
         </div>
+      )}
+        </>
       )}
     </div>
   );

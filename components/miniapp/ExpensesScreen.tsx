@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { miniAppFetch, haptic } from "./telegram";
 import { useI18n } from "./i18n";
 import MiniAppHeader from "./MiniAppHeader";
@@ -11,13 +11,23 @@ type ExpenseType = "owner_withdrawal" | "salary" | "other";
 // (см. lib/validation.ts::expensePaymentMethodEnum).
 type Method = "cash" | "transfer" | "card";
 
+interface ContainerRef {
+  id: string;
+  name: string;
+}
+
 /**
  * Заявка сотрудника на расход (см. app/api/miniapp/expenses/route.ts) — всегда уходит владельцу
  * «на одобрение» и не меняет остаток на веб-панели, пока не подтверждена (см. lib/finance.ts).
+ * Контейнер обязателен (см. lib/validation.ts::expenseCreateSchema — "абсолютно всё должно быть
+ * привязано к каждому контейнеру"), выбор ограничен контейнерами, доступными этому сотруднику
+ * (см. app/api/miniapp/containers/route.ts, lib/miniAuth.ts::allowedContainerIds).
  */
 export default function ExpensesScreen({ onExit }: { onExit: () => void }) {
   const { t } = useI18n();
   const [type, setType] = useState<ExpenseType>("other");
+  const [containers, setContainers] = useState<ContainerRef[]>([]);
+  const [containerId, setContainerId] = useState("");
   const [amount, setAmount] = useState("");
   const [method, setMethod] = useState<Method>("cash");
   const [employeeName, setEmployeeName] = useState("");
@@ -25,6 +35,12 @@ export default function ExpensesScreen({ onExit }: { onExit: () => void }) {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState(false);
+
+  useEffect(() => {
+    miniAppFetch("/api/miniapp/containers")
+      .then((r) => r.json())
+      .then((d) => setContainers(d.containers || []));
+  }, []);
 
   const TYPE_LABELS: Record<ExpenseType, string> = {
     owner_withdrawal: t("expenses.typeOwnerWithdrawal"),
@@ -43,12 +59,17 @@ export default function ExpensesScreen({ onExit }: { onExit: () => void }) {
       setError(t("expenses.amountRequired"));
       return;
     }
+    if (!containerId) {
+      haptic.error();
+      setError(t("expenses.containerRequired"));
+      return;
+    }
     setBusy(true);
     setError(null);
     try {
       const res = await miniAppFetch("/api/miniapp/expenses", {
         method: "POST",
-        body: JSON.stringify({ type, amount, method, employeeName, note }),
+        body: JSON.stringify({ type, containerId, amount, method, employeeName, note }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
@@ -92,6 +113,20 @@ export default function ExpensesScreen({ onExit }: { onExit: () => void }) {
             {(Object.keys(TYPE_LABELS) as ExpenseType[]).map((tp) => (
               <option key={tp} value={tp}>
                 {TYPE_LABELS[tp]}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div>
+          <label className="label">{t("expenses.containerLabel")}</label>
+          <select className="input" value={containerId} onChange={(e) => setContainerId(e.target.value)}>
+            <option value="" disabled>
+              {t("expenses.containerPlaceholder")}
+            </option>
+            {containers.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name}
               </option>
             ))}
           </select>

@@ -37,7 +37,11 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ incomes: incomes.map((e) => ({ ...e, source: "tenant" as const })) });
   }
 
-  const generalEntries = await GeneralIncome.find().sort({ paidAt: -1 }).limit(200).lean();
+  const generalEntries = await GeneralIncome.find()
+    .sort({ paidAt: -1 })
+    .populate("containerId", "name")
+    .limit(200)
+    .lean();
   const tagged = [
     ...incomes.map((e) => ({ ...e, source: "tenant" as const })),
     ...generalEntries.map((e) => ({
@@ -45,7 +49,9 @@ export async function GET(req: NextRequest) {
       ownerType: "company" as const,
       clientId: null,
       ownerLabel: "Внешний приход (холодильник)",
-      containerId: null,
+      // containerId теперь есть у "Прихода на холодильник" (см. models/GeneralIncome.ts) — у
+      // легаси-записей, заведённых до этой доработки, поле может отсутствовать (null).
+      containerId: e.containerId ?? null,
       cellNumber: undefined,
       source: "general" as const,
     })),
