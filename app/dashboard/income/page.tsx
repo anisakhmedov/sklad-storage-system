@@ -52,8 +52,9 @@ interface ClientCellDebt {
   balance: number;
   records: DebtRecordBreakdown[];
   /** false — клиент архивный (все его записи закрыты, см. lib/debt.ts::ClientCellDebt.active) —
-   * скрыт из выпадающего списка «Записать оплату» ниже независимо от долга. Таблицу
-   * «Задолженность по владельцам» это не затрагивает — там архивные по-прежнему видны. */
+   * скрыт и из выпадающего списка «Записать оплату» ниже, и из таблицы «Задолженность по
+   * владельцам»/«Итоговая задолженность» (см. filteredDebts) — независимо от долга. Долг по нему
+   * никуда не делся — он виден на карточке арендатора и на странице «Архив». */
   active: boolean;
   /** false — именно ЭТА камера архивная (клиент из неё съехал, см.
    * lib/debt.ts::ClientCellDebt.cellActive), даже если у клиента есть другие открытые камеры.
@@ -173,9 +174,6 @@ export default function IncomePage() {
   const [byContainer, setByContainer] = useState<ContainerFinanceRow[]>([]);
   const [expenses, setExpenses] = useState<ExpenseEntry[]>([]);
   const [containers, setContainers] = useState<ContainerRef[]>([]);
-  // Отдельный фильтр по контейнеру для карточек "Касса и расходы" вверху страницы — независим от
-  // incomeFilter.containerId (тот фильтрует таблицы "Задолженность"/"Последние платежи" ниже).
-  const [financeContainerId, setFinanceContainerId] = useState("");
   const [isOwner, setIsOwner] = useState(false);
   const [showExpenseModal, setShowExpenseModal] = useState(false);
   const [showGeneralIncomeModal, setShowGeneralIncomeModal] = useState(false);
@@ -191,8 +189,13 @@ export default function IncomePage() {
     ref.current?.scrollIntoView({ behavior: "smooth", block: "start" });
   }
 
-  // Фильтр таблицы "Последние платежи" — управляется и селектами в панели фильтра, и кликом
-  // по карточкам кассы/П2П/банк.перевода/внешнего прихода (см. cardClickFilter ниже).
+  // ОДИН общий фильтр "Контейнер"/"Камера" для ВСЕЙ страницы "Оплаты" (карточки кассы, обе
+  // таблицы задолженности/платежей, расходы, разбивка по холодильникам) — задаётся один раз в
+  // селекте вверху страницы (см. рендер ниже), а не отдельным дублирующимся селектом в каждой
+  // секции, как было раньше. method/search/source — локальные быстрые фильтры именно таблицы
+  // "Последние платежи" (управляются и своей панелью, и кликом по карточкам кассы/П2П/банк.
+  // перевода/внешнего прихода, см. toggleIncomeMethodFilter/toggleIncomeSourceFilter ниже) —
+  // сброс этой панели не трогает общий containerId/cellNumber.
   const [incomeFilter, setIncomeFilter] = useState({
     method: "",
     containerId: "",
@@ -201,11 +204,13 @@ export default function IncomePage() {
     source: "",
   });
   // Фильтр таблицы "Расходы" — управляется кликом по карточкам Расходы/Зарплата/Владелец забрал.
+  // Контейнер сюда не входит — Расходы тоже подчиняются общему incomeFilter.containerId выше
+  // (у Expense нет понятия камеры, поэтому cellNumber на них не действует).
   // status — карточки над таблицей (см. lib/finance.ts::getFinanceSummary) считают суммы ТОЛЬКО
   // по одобренным расходам, поэтому клик по конкретной карточке (Зарплата/Владелец забрал)
   // фильтрует и по status: "approved" — иначе в таблице вперемешку показывались бы ещё и
   // заявки "на одобрении"/"отклонено", и сумма видимых строк не совпадала бы с цифrой на карточке.
-  const [expenseFilter, setExpenseFilter] = useState({ type: "", method: "", status: "", containerId: "" });
+  const [expenseFilter, setExpenseFilter] = useState({ type: "", method: "", status: "" });
 
   function toggleIncomeMethodFilter(method: string) {
     setIncomeFilter((f) => ({ ...f, method: f.method === method ? "" : method }));
@@ -215,26 +220,32 @@ export default function IncomePage() {
     setIncomeFilter((f) => ({ ...f, source: f.source === source ? "" : source }));
     scrollToTable(incomesTableRef);
   }
+  function resetIncomeQuickFilter() {
+    // Сбрасывает только локальные фильтры этой таблицы — общий containerId/cellNumber наверху
+    // страницы не трогает (его можно сбросить только там, выбрав "Все").
+    setIncomeFilter((f) => ({ ...f, method: "", search: "", source: "" }));
+    scrollToTable(incomesTableRef);
+  }
   function toggleExpenseFilter(type: string, method: string, status = "") {
     setExpenseFilter((f) =>
       f.type === type && f.method === method && f.status === status
-        ? { ...f, type: "", method: "", status: "" }
-        : { ...f, type, method, status }
+        ? { type: "", method: "", status: "" }
+        : { type, method, status }
     );
     scrollToTable(expensesTableRef);
   }
   function resetExpenseFilter() {
-    setExpenseFilter({ type: "", method: "", status: "", containerId: "" });
+    setExpenseFilter({ type: "", method: "", status: "" });
     scrollToTable(expensesTableRef);
   }
 
   const loadFinance = useCallback(async () => {
     const params = new URLSearchParams();
-    if (financeContainerId) params.set("containerId", financeContainerId);
+    if (incomeFilter.containerId) params.set("containerId", incomeFilter.containerId);
     const res = await fetch(`/api/finance/summary?${params.toString()}`);
     const data = await res.json().catch(() => ({}));
     if (res.ok) setFinance(data.summary);
-  }, [financeContainerId]);
+  }, [incomeFilter.containerId]);
 
   const loadExpenses = useCallback(async () => {
     const res = await fetch("/api/expenses");
@@ -328,12 +339,14 @@ export default function IncomePage() {
     await refreshAll();
   }
 
-  // Общий фильтр по контейнерам и камерам (incomeFilter.containerId/cellNumber) — применяется и к
-  // задолженности здесь, и к "Последним платежам"/"По холодильникам и камерам" ниже (см.
-  // filteredIncomes, filteredBreakdown), одним и тем же выбором — селекты в каждой секции читают
-  // и пишут одно и то же состояние, поэтому остаются синхронными между собой.
+  // Общий фильтр по контейнерам и камерам (incomeFilter.containerId/cellNumber, задаётся один раз
+  // вверху страницы) — применяется и к задолженности здесь, и к "Последним платежам"/"По
+  // холодильникам и камерам"/"Расходам" ниже, одним и тем же выбором. Архивные арендаторы (см.
+  // lib/tenants.ts — все записи закрыты) в итоговую задолженность и эту таблицу не попадают —
+  // по ним долг числится в карточке арендатора и на странице "Архив", а не здесь.
   const filteredDebts = useMemo(() => {
     return debts.filter((d) => {
+      if (!d.active) return false;
       if (incomeFilter.containerId && d.containerId !== incomeFilter.containerId) return false;
       if (incomeFilter.cellNumber && String(d.cellNumber) !== incomeFilter.cellNumber) return false;
       return true;
@@ -361,11 +374,13 @@ export default function IncomePage() {
       if (expenseFilter.type && exp.type !== expenseFilter.type) return false;
       if (expenseFilter.method && exp.method !== expenseFilter.method) return false;
       if (expenseFilter.status && exp.status !== expenseFilter.status) return false;
+      // Общий фильтр по контейнеру (см. комментарий у filteredDebts выше) — у Expense нет камеры,
+      // поэтому incomeFilter.cellNumber на расходы не действует.
       const containerId = exp.containerId && typeof exp.containerId === "object" ? exp.containerId._id : exp.containerId;
-      if (expenseFilter.containerId && containerId !== expenseFilter.containerId) return false;
+      if (incomeFilter.containerId && containerId !== incomeFilter.containerId) return false;
       return true;
     });
-  }, [expenses, expenseFilter]);
+  }, [expenses, expenseFilter, incomeFilter.containerId]);
 
   // Тот же общий фильтр контейнер+камера (см. комментарий у filteredDebts выше) — для таблицы
   // "По холодильникам и камерам". cellNumber в этой таблице может быть null (платежи "за
@@ -379,14 +394,11 @@ export default function IncomePage() {
     });
   }, [breakdown, incomeFilter.containerId, incomeFilter.cellNumber]);
 
-  const hasIncomeFilter = !!(
-    incomeFilter.method ||
-    incomeFilter.containerId ||
-    incomeFilter.cellNumber ||
-    incomeFilter.search ||
-    incomeFilter.source
-  );
-  const hasExpenseFilter = !!(expenseFilter.type || expenseFilter.method || expenseFilter.status || expenseFilter.containerId);
+  // Только локальные быстрые фильтры этой таблицы — общий containerId/cellNumber наверху
+  // страницы отображается и сбрасывается там же, отдельным индикатором (см. рендер общего
+  // фильтра ниже), чтобы не дублировать один и тот же "активен фильтр" сразу в двух местах.
+  const hasIncomeFilter = !!(incomeFilter.method || incomeFilter.search || incomeFilter.source);
+  const hasExpenseFilter = !!(expenseFilter.type || expenseFilter.method || expenseFilter.status);
 
   // Диапазон камер для фильтра "Последние платежи" — камеры теперь редактируются индивидуально
   // на контейнер (см. models/Container.ts::cellCount): если выбран конкретный контейнер, берём
@@ -403,7 +415,7 @@ export default function IncomePage() {
 
   return (
     <div>
-      <div className="mb-7">  
+      <div className="mb-7">
         <p className="section-eyebrow">Финансы</p>
         <h1 className="section-title mt-1">Оплаты и задолженность</h1>
         <p className="text-sm text-ink-400 mt-2 max-w-2xl leading-relaxed">
@@ -414,15 +426,18 @@ export default function IncomePage() {
         </p>
       </div>
 
-      <div className="mb-3 flex items-center justify-between flex-wrap gap-2">
-        <h2 className="text-base font-semibold text-ink-800">Касса и расходы</h2>
-        <div className="flex items-end gap-2 flex-wrap">
-          <div>
+      {/* Один общий фильтр "Контейнер"/"Камера" на всю страницу — управляет карточками кассы,
+          обеими таблицами задолженности/платежей, расходами и разбивкой по холодильникам ниже
+          (см. incomeFilter выше). Раньше почти в каждой секции был свой отдельный такой же
+          селект — теперь он один. */}
+      <div className="card mb-6">
+        <div className="flex flex-wrap items-end gap-3">
+          <div className="min-w-[180px]">
             <label className="label">Контейнер</label>
             <select
               className="input"
-              value={financeContainerId}
-              onChange={(e) => setFinanceContainerId(e.target.value)}
+              value={incomeFilter.containerId}
+              onChange={(e) => setIncomeFilter((f) => ({ ...f, containerId: e.target.value, cellNumber: "" }))}
             >
               <option value="">Все контейнеры</option>
               {containers.map((c) => (
@@ -432,6 +447,40 @@ export default function IncomePage() {
               ))}
             </select>
           </div>
+          <div className="min-w-[160px]">
+            <label className="label">Камера</label>
+            <select
+              className="input"
+              value={incomeFilter.cellNumber}
+              onChange={(e) => setIncomeFilter((f) => ({ ...f, cellNumber: e.target.value }))}
+            >
+              <option value="">Все камеры</option>
+              {filterCellOptions.map((n) => (
+                <option key={n} value={n}>
+                  Камера {n}
+                </option>
+              ))}
+            </select>
+          </div>
+          {(incomeFilter.containerId || incomeFilter.cellNumber) && (
+            <button
+              className="btn-secondary btn-sm"
+              onClick={() => setIncomeFilter((f) => ({ ...f, containerId: "", cellNumber: "" }))}
+            >
+              <XCircle className="h-3.5 w-3.5" strokeWidth={2} />
+              Сбросить
+            </button>
+          )}
+        </div>
+        <p className="text-xs text-ink-400 mt-2">
+          Общий фильтр для всей страницы — сужает карточки кассы, задолженность, платежи, расходы
+          и разбивку по холодильникам ниже сразу везде.
+        </p>
+      </div>
+
+      <div className="mb-3 flex items-center justify-between flex-wrap gap-2">
+        <h2 className="text-base font-semibold text-ink-800">Касса и расходы</h2>
+        <div className="flex items-end gap-2 flex-wrap">
           {isOwner && (
             <button className="btn-secondary" onClick={() => setShowGeneralIncomeModal(true)}>
               <Snowflake className="h-4 w-4" strokeWidth={2.1} />
@@ -448,22 +497,19 @@ export default function IncomePage() {
       <p className="text-xs text-ink-400 mb-2">
         Карточки кассы/П2П/банк. перевода, а также «Расходы»/«Зарплата»/«Владелец забрал» —
         кликабельны: фильтруют таблицу платежей или расходов ниже именно под этот блок.
-        {financeContainerId && " Суммы на карточках сейчас показаны только по выбранному контейнеру."}
+        {incomeFilter.containerId && " Суммы на карточках сейчас показаны только по выбранному контейнеру (см. общий фильтр выше)."}
       </p>
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
         <button
           className="card text-left transition-colors hover:border-brand-300"
-          onClick={() => {
-            setIncomeFilter({ method: "", containerId: "", cellNumber: "", search: "", source: "" });
-            scrollToTable(incomesTableRef);
-          }}
-          title="Показать все платежи без фильтра"
+          onClick={resetIncomeQuickFilter}
+          title="Показать все платежи без фильтра способа/источника/поиска (общий фильтр по контейнеру/камере вверху сохранится)"
         >
           <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-brand-50 text-brand-600 mb-3">
             <TrendingUp className="h-4.5 w-4.5" strokeWidth={2} />
           </div>
           <div className="text-2xl font-semibold text-ink-900 tabular-nums">{money(finance?.totalIncome || 0)}</div>
-          <div className="text-xs text-ink-400 mt-1">Общий приход, сум</div>
+          <div className="text-xs text-ink-400 mt-1">Общий приход от арендаторов, сум</div>
         </button>
         <button
           className={`card text-left transition-colors ${incomeFilter.method === "cash" ? "ring-2 ring-brand-600" : "hover:border-brand-300"}`}
@@ -606,28 +652,12 @@ export default function IncomePage() {
                 expenseTypeLabels[expenseFilter.type],
                 methodLabels[expenseFilter.method],
                 expenseStatusLabels[expenseFilter.status],
-                containers.find((c) => c._id === expenseFilter.containerId)?.name,
               ]
                 .filter(Boolean)
                 .join(" · ") || "активен"}
               )
             </button>
           )}
-        </div>
-        <div className="max-w-xs mb-4">
-          <label className="label">Контейнер</label>
-          <select
-            className="input"
-            value={expenseFilter.containerId}
-            onChange={(e) => setExpenseFilter({ ...expenseFilter, containerId: e.target.value })}
-          >
-            <option value="">Все</option>
-            {containers.map((c) => (
-              <option key={c._id} value={c._id}>
-                {c.name}
-              </option>
-            ))}
-          </select>
         </div>
         {expenses.length === 0 ? (
           <div className="empty-state">
@@ -764,36 +794,6 @@ export default function IncomePage() {
             <p className="card-subtitle">Начислено с даты создания каждой записи по выбранную дату включительно</p>
           </div>
           <div className="flex items-end gap-2">
-            <div>
-              <label className="label">Контейнер</label>
-              <select
-                className="input"
-                value={incomeFilter.containerId}
-                onChange={(e) => setIncomeFilter({ ...incomeFilter, containerId: e.target.value })}
-              >
-                <option value="">Все</option>
-                {containers.map((c) => (
-                  <option key={c._id} value={c._id}>
-                    {c.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="label">Камера</label>
-              <select
-                className="input"
-                value={incomeFilter.cellNumber}
-                onChange={(e) => setIncomeFilter({ ...incomeFilter, cellNumber: e.target.value })}
-              >
-                <option value="">Все</option>
-                {filterCellOptions.map((n) => (
-                  <option key={n} value={n}>
-                    Камера {n}
-                  </option>
-                ))}
-              </select>
-            </div>
             <div>
               <label className="label">По дату</label>
               <div className="input-icon-wrap">
@@ -946,17 +946,14 @@ export default function IncomePage() {
         <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
           <h2 className="card-title mb-0">Последние платежи</h2>
           {hasIncomeFilter && (
-            <button
-              className="btn-secondary btn-sm"
-              onClick={() => setIncomeFilter({ method: "", containerId: "", cellNumber: "", search: "", source: "" })}
-            >
+            <button className="btn-secondary btn-sm" onClick={resetIncomeQuickFilter}>
               <XCircle className="h-3.5 w-3.5" strokeWidth={2} />
               Сбросить фильтр
             </button>
           )}
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 mb-4">
           <div>
             <label className="label">Способ оплаты</label>
             <select
@@ -982,36 +979,6 @@ export default function IncomePage() {
               <option value="">Все</option>
               <option value="tenant">Оплата арендатора</option>
               <option value="general">Внешний приход (холодильник)</option>
-            </select>
-          </div>
-          <div>
-            <label className="label">Контейнер (бокс)</label>
-            <select
-              className="input"
-              value={incomeFilter.containerId}
-              onChange={(e) => setIncomeFilter({ ...incomeFilter, containerId: e.target.value })}
-            >
-              <option value="">Все</option>
-              {containers.map((c) => (
-                <option key={c._id} value={c._id}>
-                  {c.name}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className="label">Камера</label>
-            <select
-              className="input"
-              value={incomeFilter.cellNumber}
-              onChange={(e) => setIncomeFilter({ ...incomeFilter, cellNumber: e.target.value })}
-            >
-              <option value="">Все</option>
-              {filterCellOptions.map((n) => (
-                <option key={n} value={n}>
-                  Камера {n}
-                </option>
-              ))}
             </select>
           </div>
           <div>
@@ -1133,46 +1100,10 @@ export default function IncomePage() {
       </div>
 
       <div className="card overflow-x-auto mt-8">
-        <div className="flex flex-wrap items-end justify-between gap-3 mb-3">
-          <div>
-            <h2 className="card-title mb-1">По холодильникам и камерам</h2>
-            <p className="card-subtitle">
-              Сумма фактически полученных платежей (Income), сгруппированная по контейнеру и камере.
-            </p>
-          </div>
-          <div className="flex items-end gap-2">
-            <div>
-              <label className="label">Контейнер</label>
-              <select
-                className="input"
-                value={incomeFilter.containerId}
-                onChange={(e) => setIncomeFilter({ ...incomeFilter, containerId: e.target.value })}
-              >
-                <option value="">Все</option>
-                {containers.map((c) => (
-                  <option key={c._id} value={c._id}>
-                    {c.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="label">Камера</label>
-              <select
-                className="input"
-                value={incomeFilter.cellNumber}
-                onChange={(e) => setIncomeFilter({ ...incomeFilter, cellNumber: e.target.value })}
-              >
-                <option value="">Все</option>
-                {filterCellOptions.map((n) => (
-                  <option key={n} value={n}>
-                    Камера {n}
-                  </option>
-                ))}
-              </select>
-            </div>
-          </div>
-        </div>
+        <h2 className="card-title mb-1">По холодильникам и камерам</h2>
+        <p className="card-subtitle mb-3">
+          Сумма фактически полученных платежей (Income), сгруппированная по контейнеру и камере.
+        </p>
         {breakdown.length === 0 ? (
           <div className="empty-state">
             <p className="text-sm text-ink-500">Платежей ещё не было.</p>

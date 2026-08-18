@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { Boxes, CircleDot, Users, PackageSearch } from "lucide-react";
 
 interface Participant {
@@ -140,11 +141,14 @@ export default function CellSessionsReport({
                               key={p.clientId}
                               className="flex flex-wrap items-center justify-between gap-x-3 gap-y-0.5 text-xs"
                             >
-                              <span className="text-ink-700 font-medium flex items-center gap-1.5">
+                              <Link
+                                href={`/dashboard/tenants/${encodeURIComponent(p.clientId)}`}
+                                className="text-ink-700 font-medium flex items-center gap-1.5 hover:text-brand-600"
+                              >
                                 <Users className="h-3 w-3 text-ink-400" strokeWidth={2} />
                                 {p.ownerLabel}
                                 {p.productSummary && <span className="text-ink-400 font-normal">· {p.productSummary}</span>}
-                              </span>
+                              </Link>
                               <span className="text-ink-400 whitespace-nowrap">
                                 {fmt(p.arrivedAt)} → {p.leftAt ? fmt(p.leftAt) : "ещё здесь"}
                               </span>

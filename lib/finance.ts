@@ -13,22 +13,30 @@ import type { PaymentMethod } from "@/models/StorageRecord";
 export const KASSA_METHODS: PaymentMethod[] = ["cash"];
 
 export interface FinanceSummary {
-  totalIncome: number; // Income + GeneralIncome, все способы
   /**
-   * ЧИСТЫЙ остаток наличных "на руках" = наличный приход минус уже одобренные наличные
-   * расходы (раньше здесь был валовый приход без вычета расходов — баг: карточка "Касса"
-   * не уменьшалась при расходе наличными). Совпадает с getCashBalance() ниже.
+   * "Общий приход" на карточке — ТОЛЬКО оплаты арендаторов (Income), БЕЗ "Прихода на
+   * холодильник" (GeneralIncome, по просьбе владельца — не смешивать деньги от арендаторов с
+   * внешним приходом). Внешний приход виден отдельно в externalIncomeTotal ниже, а в остаток
+   * (balance) по-прежнему засчитан — это реальные деньги в кассе/на счету, а не строчка учёта.
+   */
+  totalIncome: number;
+  /**
+   * ЧИСТЫЙ остаток наличных "на руках" = наличный приход (Income + GeneralIncome) минус уже
+   * одобренные наличные расходы (раньше здесь был валовый приход без вычета расходов — баг:
+   * карточка "Касса" не уменьшалась при расходе наличными). Совпадает с getCashBalance() ниже.
    */
   kassa: number;
   cardTotal: number; // Income + GeneralIncome, method "card" (П2П) — валовый приход
   transferTotal: number; // Income + GeneralIncome, method "transfer" (банковский счёт) — валовый приход
   /** Только GeneralIncome ("Приход на холодильник", см. models/GeneralIncome.ts), все способы —
-   * отдельная карточка на странице "Оплаты", чтобы было видно, сколько из totalIncome не
-   * привязано к конкретному арендатору. */
+   * отдельная карточка на странице "Оплаты", специально НЕ входит в totalIncome выше. */
   externalIncomeTotal: number;
   totalExpenses: number; // Expense со status "approved"
   salaryTotal: number; // Expense type "salary" со status "approved"
-  balance: number; // totalIncome - totalExpenses
+  /** (Income + GeneralIncome) - totalExpenses — в отличие от totalIncome, здесь внешний приход
+   * учтён: это реальные деньги, которые должны быть в кассе/на счету, а не то, что показывается
+   * на карточке "Общий приход" (см. пояснение выше). */
+  balance: number;
   pendingExpensesCount: number;
   ownerCashWithdrawn: number; // Expense type "owner_withdrawal", method "cash", status "approved"
 }
@@ -140,18 +148,29 @@ export async function getFinanceSummary(opts: { containerId?: string } = {}): Pr
       ]),
     ]);
 
+  // totalIncome — только Income (оплаты арендаторов); externalIncomeTotal (GeneralIncome) в него
+  // сознательно не входит (см. FinanceSummary.totalIncome выше). allIncome — блендед-сумма обоих,
+  // нужна только для расчёта реального остатка (balance) ниже, наружу не отдаётся.
   let totalIncome = 0;
+  let allIncome = 0;
   let cashIncome = 0;
   let cardTotal = 0;
   let transferTotal = 0;
   let externalIncomeTotal = 0;
-  for (const row of [...incomeAgg, ...generalIncomeAgg]) {
+  for (const row of incomeAgg) {
     totalIncome += row.total;
+    allIncome += row.total;
     if (KASSA_METHODS.includes(row._id as PaymentMethod)) cashIncome += row.total;
     if (row._id === "card") cardTotal += row.total;
     if (row._id === "transfer") transferTotal += row.total;
   }
-  for (const row of generalIncomeAgg) externalIncomeTotal += row.total;
+  for (const row of generalIncomeAgg) {
+    allIncome += row.total;
+    externalIncomeTotal += row.total;
+    if (KASSA_METHODS.includes(row._id as PaymentMethod)) cashIncome += row.total;
+    if (row._id === "card") cardTotal += row.total;
+    if (row._id === "transfer") transferTotal += row.total;
+  }
 
   let totalExpenses = 0;
   let salaryTotal = 0;
@@ -173,7 +192,7 @@ export async function getFinanceSummary(opts: { containerId?: string } = {}): Pr
     externalIncomeTotal,
     totalExpenses,
     salaryTotal,
-    balance: totalIncome - totalExpenses,
+    balance: allIncome - totalExpenses,
     pendingExpensesCount: pendingCount,
     ownerCashWithdrawn: ownerCashAgg[0]?.total || 0,
   };
